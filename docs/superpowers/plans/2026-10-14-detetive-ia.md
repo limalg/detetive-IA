@@ -125,8 +125,9 @@
 **Interfaces:**
 - Valida o sistema ponta a ponta e assegura conformidade com o limite de 1GB de RAM.
 
-- [ ] **Step 1: Escrever teste de integração E2E (registro -> login -> obter caso -> interrogar -> acusar)**
-- [ ] **Step 2: Executar testes E2E e validar 100% de sucesso**
-- [ ] **Step 3: Criar script de medição de RSS de memória e Dockerfile enxuto (<30MB image)**
-- [ ] **Step 4: Atualizar a nota "Projeto" no Maestri refletindo a conclusão dos fixes**
-- [ ] **Step 5: Commit e push para o repositório GitHub**
+- [x] **Step 1: Escrever teste de integração E2E (registro -> login -> obter caso -> interrogar -> acusar)**
+- [x] **Step 2: Executar testes E2E e validar 100% de sucesso**
+- [x] **Step 3: Criar script de medição de RSS de memória e Dockerfile enxuto (<30MB image)**
+- [x] **Step 4: Atualizar a nota "Projeto" no Maestri refletindo a conclusão dos fixes**
+- [x] **Step 5: Commit e push para o repositório GitHub**
+
