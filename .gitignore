@@ -32,3 +32,7 @@ vendor/
 # Maestri worktrees
 .maestri/floors/
 .worktrees/
+
+# Agent local tooling directories
+.claude/
+agent/
