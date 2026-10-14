@@ -1,0 +1,34 @@
+# Binaries
+bin/
+dist/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+tmp/
+
+# Dependencies
+vendor/
+
+# Environment and secrets
+.env
+*.local
+
+# Storage & Databases
+*.db
+*.sqlite*
+/data/
+
+# IDE & OS
+.DS_Store
+.idea/
+.vscode/
+
+# Superpowers execution workspace
+.superpowers/
+
+# Maestri worktrees
+.maestri/floors/
+.worktrees/
