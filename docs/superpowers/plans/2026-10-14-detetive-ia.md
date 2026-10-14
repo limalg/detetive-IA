@@ -83,11 +83,11 @@
 - Consumes: `internal/auth`, `internal/game`, `internal/db`
 - Produces: `server.NewServer(cfg) *http.Server`, rotas `/api/auth/*`, `/api/game/*`, `/api/health`
 
-- [ ] **Step 1: Escrever testes HTTP para endpoints de auth, game e healthcheck**
-- [ ] **Step 2: Rodar testes e constatar falha**
-- [ ] **Step 3: Implementar roteador HTTP nativo, middleware de sessão e handler de memória (`runtime.MemStats`)**
-- [ ] **Step 4: Executar testes HTTP e validar resposta e status codes**
-- [ ] **Step 5: Commit (`git commit -m "feat(server): implement HTTP server, REST endpoints, and memory healthcheck"`)**
+- [x] **Step 1: Escrever testes HTTP para endpoints de auth, game e healthcheck**
+- [x] **Step 2: Rodar testes e constatar falha**
+- [x] **Step 3: Implementar roteador HTTP nativo, middleware de sessão e handler de memória (`runtime.MemStats`)**
+- [x] **Step 4: Executar testes HTTP e validar resposta e status codes**
+- [x] **Step 5: Commit (`git commit -m "feat(server): implement HTTP server, REST endpoints, and memory healthcheck"`)**
 
 ---
 

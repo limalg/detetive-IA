@@ -9,7 +9,10 @@ import (
 	"path/filepath"
 	"syscall"
 
+	"detetive-ia/internal/auth"
 	"detetive-ia/internal/db"
+	"detetive-ia/internal/game"
+	"detetive-ia/internal/server"
 	"detetive-ia/web"
 )
 
@@ -41,16 +44,25 @@ func main() {
 		log.Fatalf("Erro fatal: falha ao executar migrações do banco: %v", err)
 	}
 
-	handler := web.FileServer()
-
-	server := &http.Server{
-		Addr:    ":" + port,
-		Handler: handler,
+	authService := auth.New(database)
+	gameService := game.New(database, nil)
+	if _, err := gameService.SeedInitialCase(); err != nil {
+		log.Printf("Aviso: falha ao semear caso inicial: %v", err)
 	}
+
+	cfg := server.Config{
+		Addr:        ":" + port,
+		DB:          database,
+		AuthService: authService,
+		GameService: gameService,
+		StaticFS:    web.FileServer(),
+	}
+
+	srv := server.NewServer(cfg)
 
 	go func() {
 		log.Printf("🕵️ Detetive IA rodando em http://localhost:%s", port)
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Erro no servidor HTTP: %v", err)
 		}
 	}()
