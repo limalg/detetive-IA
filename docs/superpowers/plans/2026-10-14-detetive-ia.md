@@ -26,11 +26,11 @@
 **Interfaces:**
 - Produces: `db.InitDB(filepath string) (*sql.DB, error)`, `db.RunMigrations(db *sql.DB) error`
 
-- [ ] **Step 1: Escrever teste de criação e migração do SQLite**
-- [ ] **Step 2: Rodar teste para verificar falha (`go test ./internal/db`)**
-- [ ] **Step 3: Implementar inicialização do SQLite puro Go e migrações DDL**
-- [ ] **Step 4: Executar `go test -v ./internal/db` e validar aprovação**
-- [ ] **Step 5: Commit (`git commit -m "feat(db): add sqlite embedded database connection and migrations"`)**
+- [x] **Step 1: Escrever teste de criação e migração do SQLite**
+- [x] **Step 2: Rodar teste para verificar falha (`go test ./internal/db`)**
+- [x] **Step 3: Implementar inicialização do SQLite puro Go e migrações DDL**
+- [x] **Step 4: Executar `go test -v ./internal/db` e validar aprovação**
+- [x] **Step 5: Commit (`git commit -m "feat(db): add sqlite embedded database connection and migrations"`)**
 
 ---
 
