@@ -64,11 +64,11 @@
 - Consumes: `*sql.DB`, `*models.User`
 - Produces: `game.GetCaseDetails(caseID int64)`, `game.Interrogate(suspectID int64, question string) (string, error)`, `game.SubmitAccusation(caseID int64, suspectID int64, weapon string, motive string) (*models.Verdict, error)`
 
-- [ ] **Step 1: Escrever testes para carregamento de caso, interrogatório (com mock/fallback) e resolução do mistério**
-- [ ] **Step 2: Validar falha dos testes**
-- [ ] **Step 3: Implementar motor do jogo com seed de caso inicial ("O Enigma do Vale das Sombras"), módulo de IA com fallback e validação de veredito**
-- [ ] **Step 4: Rodar `go test -v ./internal/game` e garantir passagem**
-- [ ] **Step 5: Commit (`git commit -m "feat(game): add game engine, clues, interrogation engine with AI fallback, and verdict"`)**
+- [x] **Step 1: Escrever testes para carregamento de caso, interrogatório (com mock/fallback) e resolução do mistério**
+- [x] **Step 2: Validar falha dos testes**
+- [x] **Step 3: Implementar motor do jogo com seed de caso inicial ("O Enigma do Vale das Sombras"), módulo de IA com fallback e validação de veredito**
+- [x] **Step 4: Rodar `go test -v ./internal/game` e garantir passagem**
+- [x] **Step 5: Commit (`git commit -m "feat(game): add game engine, clues, interrogation engine with AI fallback, and verdict"`)**
 
 ---
 

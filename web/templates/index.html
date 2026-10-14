@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Detetive IA - Agência de Investigações</title>
+  
+  <!-- PWA Meta Tags -->
+  <link rel="manifest" href="/static/manifest.json">
+  <meta name="theme-color" content="#121214">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Detetive IA">
+  <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
+  <link rel="icon" type="image/png" href="/static/icons/icon-192.png">
+
+  <!-- Noir Styling -->
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="noir-header">
+      <div class="brand-wrapper">
+        <div class="brand-badge">IA</div>
+        <div>
+          <h1 class="brand-title">Detetive IA</h1>
+          <div class="brand-subtitle">Divisão de Homicídios & Mistérios</div>
+        </div>
+      </div>
+      
+      <div class="header-actions">
+        <button id="pwa-install-btn" class="btn-pwa-install">📲 Instalar App</button>
+        <div class="agent-status">
+          <span id="network-status" class="status-dot" title="Status da Conexão"></span>
+          <span id="user-display">Não identificado</span>
+        </div>
+        <button id="logout-btn" class="btn btn-secondary" style="display: none; padding: 0.35rem 0.75rem; font-size: 0.8rem;">Sair</button>
+      </div>
+    </header>
+
+    <!-- Authentication Section -->
+    <section id="auth-section">
+      <div class="auth-wrapper">
+        <div class="auth-tabs">
+          <div id="tab-login" class="auth-tab active">Entrar no Quartel</div>
+          <div id="tab-register" class="auth-tab">Novo Investigador</div>
+        </div>
+
+        <div id="auth-alert" class="auth-alert"></div>
+
+        <form id="auth-form">
+          <div class="form-group">
+            <label class="form-label" for="username">Identificação (Usuário)</label>
+            <input type="text" id="username" class="form-input" placeholder="Ex: Detetive Marlowe" required autocomplete="username">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="password">Código Secreto (Senha)</label>
+            <input type="password" id="password" class="form-input" placeholder="••••••••" required autocomplete="current-password">
+          </div>
+          <button type="submit" id="auth-submit-btn" class="btn btn-primary" style="width: 100%;">Acessar Registros</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- Game Section (Protected) -->
+    <main id="game-section" style="display: none;">
+      <!-- Navigation Tabs -->
+      <nav class="nav-tabs">
+        <button class="nav-tab-btn active" data-tab="dossier">📁 Dossiê do Caso</button>
+        <button class="nav-tab-btn" data-tab="suspects">👥 Suspeitos & Interrogatório</button>
+        <button class="nav-tab-btn" data-tab="clues">🔍 Cena do Crime & Pistas</button>
+        <button class="nav-tab-btn" data-tab="verdict">⚖️ Dedução & Acusação</button>
+      </nav>
+
+      <!-- Tab Content: Dossier -->
+      <div id="tab-content-dossier" class="tab-pane">
+        <div id="case-summary" class="case-hero">
+          <div id="case-stamp" class="case-stamp in-progress">EM ANDAMENTO</div>
+          <h2 id="case-title" class="case-title">Carregando caso...</h2>
+          <div class="case-meta">
+            <div class="case-meta-item">Vítima: <strong id="case-victim">-</strong></div>
+            <div class="case-meta-item">Status: <strong id="investigation-status">Investigação Ativa</strong></div>
+          </div>
+          <p id="case-desc" class="case-desc">Consultando arquivos confidenciais do departamento...</p>
+        </div>
+      </div>
+
+      <!-- Tab Content: Suspects -->
+      <div id="tab-content-suspects" class="tab-pane" style="display: none;">
+        <h3 style="font-family: var(--font-typewriter); margin-bottom: 1rem; color: var(--accent-amber);">Pessoas de Interesse no Caso</h3>
+        <div id="suspects-list" class="grid-cards">
+          <!-- Cards rendered by app.js -->
+        </div>
+      </div>
+
+      <!-- Tab Content: Clues -->
+      <div id="tab-content-clues" class="tab-pane" style="display: none;">
+        <h3 style="font-family: var(--font-typewriter); margin-bottom: 1rem; color: var(--accent-amber);">Evidências e Laudos Periciais</h3>
+        <div id="clues-list" class="grid-cards">
+          <!-- Clue cards rendered by app.js -->
+        </div>
+      </div>
+
+      <!-- Tab Content: Verdict / Accusation -->
+      <div id="tab-content-verdict" class="tab-pane" style="display: none;">
+        <div class="auth-wrapper" style="max-width: 600px; margin: 1rem auto;">
+          <h3 style="font-family: var(--font-typewriter); color: var(--accent-amber); margin-bottom: 1rem; text-align: center;">Mandado de Prisão Formal</h3>
+          <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1.5rem; text-align: center;">
+            Apresente sua dedução ao Tribunal. Acuse o culpado, especifique a arma do crime e o motivo comprovado.
+          </p>
+
+          <form id="accusation-form">
+            <div class="form-group">
+              <label class="form-label" for="accuse-suspect">Principal Suspeito (Culpado)</label>
+              <select id="accuse-suspect" class="form-input" required>
+                <option value="">Selecione um suspeito...</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="accuse-weapon">Arma do Crime Utilizada</label>
+              <select id="accuse-weapon" class="form-input" required>
+                <option value="">Selecione a arma...</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="accuse-motive">Motivação do Homicídio</label>
+              <select id="accuse-motive" class="form-input" required>
+                <option value="">Selecione a motivação...</option>
+                <option value="Ganância e Herança">Ganância e Herança</option>
+                <option value="Vingança Pessoal">Vingança Pessoal</option>
+                <option value="Chantagem e Segredo">Chantagem e Segredo</option>
+                <option value="Paixão e Ciúmes">Paixão e Ciúmes</option>
+                <option value="Queima de Arquivo">Queima de Arquivo</option>
+              </select>
+            </div>
+
+            <button type="submit" id="submit-accusation-btn" class="btn btn-danger" style="width: 100%;">
+              ⚖️ Emitir Mandado de Prisão
+            </button>
+          </form>
+
+          <div id="verdict-result" style="display: none;"></div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Interrogation Modal -->
+    <div id="interrogation-modal" class="modal-overlay">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3 id="interrogate-modal-title" class="modal-title">Sala de Interrogatório</h3>
+          <button id="close-interrogation-btn" class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div id="interrogate-suspect-profile" style="margin-bottom: 1rem; font-size: 0.9rem; color: var(--text-muted);">
+            <!-- Suspect context -->
+          </div>
+
+          <div id="chat-transcript" class="chat-transcript">
+            <!-- Messages rendered by app.js -->
+          </div>
+
+          <div class="prompt-chips">
+            <button class="chip" data-prompt="Onde você estava na hora do crime?">📍 Onde estava?</button>
+            <button class="chip" data-prompt="Qual era a sua relação com a vítima?">👤 Relação com a vítima</button>
+            <button class="chip" data-prompt="O que você sabe sobre a arma do crime?">🗡️ Sabe algo da arma?</button>
+            <button class="chip" data-prompt="Você tem algum segredo que queira confessar?">🤫 Algum segredo?</button>
+          </div>
+
+          <form id="interrogation-form" class="chat-input-wrapper">
+            <input type="text" id="interrogation-input" class="chat-input" placeholder="Digite sua pergunta ao suspeito..." required autocomplete="off">
+            <button type="submit" id="send-question-btn" class="btn btn-primary">Interrogar</button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Accuse Confirmation Modal (Optional popup) -->
+    <div id="accuse-modal" class="modal-overlay">
+      <div class="modal-card" style="max-width: 500px;">
+        <div class="modal-header">
+          <h3 class="modal-title">Confirmação de Veredito</h3>
+          <button id="close-accuse-modal-btn" class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body" id="accuse-modal-body">
+          <!-- Details filled by app.js -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Application Logic -->
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
