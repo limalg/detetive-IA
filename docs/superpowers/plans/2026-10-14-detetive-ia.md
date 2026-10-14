@@ -45,11 +45,11 @@
 - Consumes: `*sql.DB` de `internal/db`
 - Produces: `auth.Register(username, password)`, `auth.Login(username, password) (token, error)`, `auth.ValidateSession(token) (*models.User, error)`
 
-- [ ] **Step 1: Escrever testes unitários para registro, hash de senha e sessão**
-- [ ] **Step 2: Rodar testes e constatar falha**
-- [ ] **Step 3: Implementar serviço de autenticação com bcrypt e tokens de sessão no SQLite**
-- [ ] **Step 4: Rodar `go test -v ./internal/auth` e verificar sucesso**
-- [ ] **Step 5: Commit (`git commit -m "feat(auth): implement user registration, login, and session validation"`)**
+- [x] **Step 1: Escrever testes unitários para registro, hash de senha e sessão**
+- [x] **Step 2: Rodar testes e constatar falha**
+- [x] **Step 3: Implementar serviço de autenticação com bcrypt e tokens de sessão no SQLite**
+- [x] **Step 4: Rodar `go test -v ./internal/auth` e verificar sucesso**
+- [x] **Step 5: Commit (`git commit -m "feat(auth): implement user registration, login, and session validation"`)**
 
 ---
 
