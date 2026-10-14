@@ -106,11 +106,12 @@
 - Consumes: `web.Assets`, `server.NewServer`
 - Produces: Binário executável único `bin/detetive-ia`
 
-- [ ] **Step 1: Criar arquivos estáticos Web, manifest.json, sw.js e templates HTML com tema Noir**
-- [ ] **Step 2: Implementar JavaScript interativo para login, exploração de pistas, interrogatório em chat e acusação**
-- [ ] **Step 3: Criar ponto de entrada `cmd/server/main.go` integrando `embed.FS` e `db.InitDB`**
-- [ ] **Step 4: Compilar e testar servidor completo (`go build -o bin/detetive-ia ./cmd/server`)**
-- [ ] **Step 5: Commit (`git commit -m "feat(ui): add noir web interface, PWA support, and embedded assets in Go binary"`)**
+- [x] **Step 1: Criar arquivos estáticos Web, manifest.json, sw.js e templates HTML com tema Noir**
+- [x] **Step 2: Implementar JavaScript interativo para login, exploração de pistas, interrogatório em chat e acusação**
+- [x] **Step 3: Criar ponto de entrada `cmd/server/main.go` integrando `embed.FS` e `db.InitDB`**
+- [x] **Step 4: Compilar e testar servidor completo (`go build -o bin/detetive-ia ./cmd/server`)**
+- [x] **Step 5: Commit (`git commit -m "feat(ui): add noir web interface, PWA support, and embedded assets in Go binary"`)**
+
 
 ---
 
