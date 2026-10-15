@@ -30,6 +30,20 @@
       </div>
       
       <div class="header-actions">
+        <!-- Relógio da Madrugada (21:00 às 04:00) -->
+        <div id="night-clock" class="night-clock" title="Relógio da Madrugada: resolva antes das 04:00">
+          <span class="clock-icon">🕰️</span>
+          <span id="clock-display">21:00</span>
+          <span class="clock-sub">(Tempo: <span id="clock-remaining">7h 00m</span>)</span>
+        </div>
+
+        <!-- Contador de Mandados -->
+        <div id="warrants-badge" class="warrants-badge" title="Mandados de Prisão Restantes">
+          <span class="badge-icon">⭐</span>
+          <span id="warrants-count">2/2</span>
+          <span class="badge-label">Mandados</span>
+        </div>
+
         <button id="pwa-install-btn" class="btn-pwa-install">📲 Instalar App</button>
         <div class="agent-status">
           <span id="network-status" class="status-dot" title="Status da Conexão"></span>
@@ -154,41 +168,51 @@
       </div>
     </section>
 
-    <!-- Game Section (Protected) -->
-    <main id="game-section" style="display: none;">
+    <!-- Game Section (Protected Diegetic Desk) -->
+    <main id="game-section" class="desk-surface" style="display: none;">
 
       <!-- Navigation Tabs -->
       <nav class="nav-tabs">
-        <button class="nav-tab-btn active" data-tab="dossier">📁 Dossiê do Caso</button>
-        <button class="nav-tab-btn" data-tab="suspects">👥 Suspeitos & Interrogatório</button>
+        <button class="nav-tab-btn active" data-tab="dossier">📁 Dossiê Manila</button>
+        <button class="nav-tab-btn" data-tab="suspects">👥 Polaroids de Suspeitos</button>
         <button class="nav-tab-btn" data-tab="clues">🔍 Cena do Crime & Pistas</button>
-        <button class="nav-tab-btn" data-tab="verdict">⚖️ Dedução & Acusação</button>
+        <button class="nav-tab-btn" data-tab="verdict">⚖️ Mandado & Acusação</button>
       </nav>
 
-      <!-- Tab Content: Dossier -->
+      <!-- Tab Content: Dossier (Manila Kraft Folder with Confidential Stamp) -->
       <div id="tab-content-dossier" class="tab-pane">
-        <div id="case-summary" class="case-hero">
-          <div id="case-stamp" class="case-stamp in-progress">EM ANDAMENTO</div>
-          <h2 id="case-title" class="case-title">Carregando caso...</h2>
-          <div class="case-meta">
-            <div class="case-meta-item">Vítima: <strong id="case-victim">-</strong></div>
-            <div class="case-meta-item">Status: <strong id="investigation-status">Investigação Ativa</strong></div>
+        <div class="folder-kraft">
+          <div class="dossier-confidential-stamp">CONFIDENCIAL</div>
+          <div id="case-summary" class="case-hero">
+            <div id="case-stamp" class="case-stamp in-progress">EM ANDAMENTO</div>
+            <h2 id="case-title" class="case-title">Carregando caso...</h2>
+            <div class="case-meta">
+              <div class="case-meta-item">Vítima: <strong id="case-victim">-</strong></div>
+              <div class="case-meta-item">Status: <strong id="investigation-status">Investigação Ativa</strong></div>
+            </div>
+            <p id="case-desc" class="case-desc">Consultando arquivos confidenciais do departamento...</p>
           </div>
-          <p id="case-desc" class="case-desc">Consultando arquivos confidenciais do departamento...</p>
         </div>
       </div>
 
       <!-- Tab Content: Suspects -->
       <div id="tab-content-suspects" class="tab-pane" style="display: none;">
-        <h3 style="font-family: var(--font-typewriter); margin-bottom: 1rem; color: var(--accent-amber);">Pessoas de Interesse no Caso</h3>
-        <div id="suspects-list" class="grid-cards">
-          <!-- Cards rendered by app.js -->
+        <h3 style="font-family: var(--font-typewriter); margin-bottom: 1rem; color: var(--accent-amber);">Pessoas de Interesse no Caso (Galeria Polaroid)</h3>
+        <div id="suspects-list" class="grid-cards polaroid-gallery">
+          <!-- Polaroid cards with pushpin rendered dynamically by app.js:
+               <div class="polaroid-card"><div class="pushpin"></div>...</div> -->
         </div>
       </div>
 
       <!-- Tab Content: Clues -->
       <div id="tab-content-clues" class="tab-pane" style="display: none;">
         <h3 style="font-family: var(--font-typewriter); margin-bottom: 1rem; color: var(--accent-amber);">Evidências e Laudos Periciais</h3>
+        <div class="crime-scene-banner" style="margin-bottom: 1.5rem; border-radius: var(--border-radius); overflow: hidden; border: 1px solid var(--border-dim); max-height: 220px; position: relative;">
+          <img src="/static/assets/scene_noir.webp" alt="Cena do Crime Noir" style="width: 100%; height: 220px; object-fit: cover; filter: brightness(0.85) contrast(1.15);">
+          <div style="position: absolute; bottom: 0; left: 0; right: 0; padding: 0.75rem 1rem; background: linear-gradient(to top, rgba(10,10,12,0.9), transparent); font-size: 0.85rem; color: var(--accent-amber); font-family: var(--font-typewriter);">
+            📍 Mansão Blackwood — Fotografia Pericial da Cena do Crime
+          </div>
+        </div>
         <div id="clues-list" class="grid-cards">
           <!-- Clue cards rendered by app.js -->
         </div>
@@ -227,6 +251,19 @@
                 <option value="Paixão e Ciúmes">Paixão e Ciúmes</option>
                 <option value="Queima de Arquivo">Queima de Arquivo</option>
               </select>
+            </div>
+
+            <!-- Seleção Obrigatória de 2 Pistas Corroborantes -->
+            <div class="form-group" style="margin-bottom: 1.5rem;">
+              <label class="form-label" style="color: var(--accent-amber);">
+                📎 Provas de Sustentação do Mandado (Selecione exatamente 2 pistas)
+              </label>
+              <div id="accuse-clues-container" class="accuse-clues-grid">
+                <!-- Checkboxes das pistas coletadas renderizadas por app.js -->
+              </div>
+              <div id="clues-selection-hint" style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.35rem;">
+                Pistas selecionadas: <span id="selected-clues-count" style="font-weight: bold; color: var(--accent-amber);">0</span> / 2
+              </div>
             </div>
 
             <button type="submit" id="submit-accusation-btn" class="btn btn-danger" style="width: 100%;">
@@ -300,6 +337,23 @@
         </div>
         <div class="modal-body" id="accuse-modal-body">
           <!-- Details filled by app.js -->
+        </div>
+      </div>
+    </div>
+
+    <!-- Game Over Modal (Madrugada Esgotada ou Distintivo Cassado) -->
+    <div id="game-over-modal" class="modal-overlay">
+      <div class="modal-card game-over-card" style="max-width: 520px; text-align: center;">
+        <div class="modal-header" style="justify-content: center;">
+          <h3 id="game-over-title" class="modal-title" style="color: var(--accent-crimson); font-size: 1.5rem;">FIM DE JOGO</h3>
+        </div>
+        <div class="modal-body">
+          <div id="game-over-icon" style="font-size: 3.5rem; margin-bottom: 1rem;">💀</div>
+          <h4 id="game-over-headline" style="font-family: var(--font-typewriter); color: var(--accent-amber); margin-bottom: 0.75rem;"></h4>
+          <p id="game-over-reason" style="font-size: 0.95rem; color: var(--text-main); line-height: 1.6; margin-bottom: 1.5rem;"></p>
+          <button type="button" id="btn-restart-game" class="btn btn-primary" style="width: 100%; font-size: 1.05rem;">
+            🔄 Reiniciar Investigação
+          </button>
         </div>
       </div>
     </div>

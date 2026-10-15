@@ -16,6 +16,10 @@
     currentRoom: null,
     gameMode: 'solo', // 'solo' | 'multi'
     persona: { name: '', role: '', secret: '' },
+    timeRemainingMinutes: 420, // 21:00 to 04:00 (7 hours = 420 mins)
+    warrantsRemaining: 2,
+    selectedClueIDs: [],
+    isGameOver: false,
     deferredPrompt: null
   };
 
@@ -35,6 +39,13 @@
     logoutBtn: document.getElementById('logout-btn'),
     networkStatus: document.getElementById('network-status'),
     pwaInstallBtn: document.getElementById('pwa-install-btn'),
+
+    // Night Clock & Warrants
+    nightClock: document.getElementById('night-clock'),
+    clockDisplay: document.getElementById('clock-display'),
+    clockRemaining: document.getElementById('clock-remaining'),
+    warrantsBadge: document.getElementById('warrants-badge'),
+    warrantsCount: document.getElementById('warrants-count'),
 
     // Lobby Elements
     btnModeSolo: document.getElementById('btn-mode-solo'),
@@ -84,7 +95,17 @@
     accuseSuspect: document.getElementById('accuse-suspect'),
     accuseWeapon: document.getElementById('accuse-weapon'),
     accuseMotive: document.getElementById('accuse-motive'),
-    verdictResult: document.getElementById('verdict-result')
+    accuseCluesContainer: document.getElementById('accuse-clues-container'),
+    selectedCluesCount: document.getElementById('selected-clues-count'),
+    verdictResult: document.getElementById('verdict-result'),
+
+    // Game Over
+    gameOverModal: document.getElementById('game-over-modal'),
+    gameOverTitle: document.getElementById('game-over-title'),
+    gameOverIcon: document.getElementById('game-over-icon'),
+    gameOverHeadline: document.getElementById('game-over-headline'),
+    gameOverReason: document.getElementById('game-over-reason'),
+    btnRestartGame: document.getElementById('btn-restart-game')
   };
 
   let authMode = 'login'; // 'login' | 'register'
@@ -546,18 +567,178 @@
 
 
   // =========================================================================
+  // =========================================================================
+  // Night Clock & Warrants (Sprint v0.3)
+  // =========================================================================
+  function updateNightClock(minutesRemaining) {
+    if (typeof minutesRemaining === 'number') {
+      state.timeRemainingMinutes = Math.max(0, minutesRemaining);
+    }
+    const totalMinutes = 420; // 21:00 to 04:00
+    const currentMins = state.timeRemainingMinutes;
+    const elapsedMinutes = Math.max(0, totalMinutes - currentMins);
+
+    const baseHour = 21;
+    const clockHour = (baseHour + Math.floor(elapsedMinutes / 60)) % 24;
+    const clockMin = elapsedMinutes % 60;
+    const hh = String(clockHour).padStart(2, '0');
+    const mm = String(clockMin).padStart(2, '0');
+
+    if (el.clockDisplay) {
+      el.clockDisplay.textContent = `${hh}:${mm}`;
+    }
+
+    const remHours = Math.floor(currentMins / 60);
+    const remMins = currentMins % 60;
+    if (el.clockRemaining) {
+      el.clockRemaining.textContent = `${remHours}h ${String(remMins).padStart(2, '0')}m`;
+    }
+
+    if (el.nightClock) {
+      if (currentMins <= 60) {
+        el.nightClock.classList.add('urgent');
+      } else {
+        el.nightClock.classList.remove('urgent');
+      }
+    }
+
+    if (currentMins <= 0 && !state.isGameOver) {
+      showGameOverModal('time_out');
+    }
+  }
+
+  function updateWarrantsBadge(warrants) {
+    if (typeof warrants === 'number') {
+      state.warrantsRemaining = Math.max(0, warrants);
+    }
+    const left = state.warrantsRemaining;
+    if (el.warrantsCount) {
+      el.warrantsCount.textContent = `${left}/2`;
+    }
+
+    if (el.warrantsBadge) {
+      if (left <= 1) {
+        el.warrantsBadge.classList.add('critical');
+      } else {
+        el.warrantsBadge.classList.remove('critical');
+      }
+    }
+
+    if (left <= 0 && !state.isGameOver) {
+      showGameOverModal('badge_revoked');
+    }
+  }
+
+  function showGameOverModal(type) {
+    state.isGameOver = true;
+    if (!el.gameOverModal) return;
+
+    if (type === 'time_out') {
+      if (el.gameOverTitle) el.gameOverTitle.textContent = 'MADRUGADA ESGOTADA';
+      if (el.gameOverIcon) el.gameOverIcon.textContent = '🕰️';
+      if (el.gameOverHeadline) el.gameOverHeadline.textContent = 'O Relógio bateu 04:00 na Mansão';
+      if (el.gameOverReason) {
+        el.gameOverReason.textContent = 'O prazo fatal estipulado pelo Departamento expirou. A neblina do amanhecer encobriu as pegadas, os arquivos foram selados e o verdadeiro assassino fugiu a bordo do cargueiro noturno.';
+      }
+    } else {
+      if (el.gameOverTitle) el.gameOverTitle.textContent = 'DISTINTIVO CASSADO';
+      if (el.gameOverIcon) el.gameOverIcon.textContent = '🚫';
+      if (el.gameOverHeadline) el.gameOverHeadline.textContent = 'Mandados de Prisão Esgotados';
+      if (el.gameOverReason) {
+        el.gameOverReason.textContent = 'Você esgotou os mandados judiciais emitindo acusações equivocadas perante o Tribunal. O Magistrado revogou sua credencial forense e o caso foi arquivado como não resolvido.';
+      }
+    }
+
+    el.gameOverModal.classList.add('active');
+  }
+
+  function setupGameOverEvents() {
+    if (el.btnRestartGame) {
+      el.btnRestartGame.addEventListener('click', () => {
+        if (el.gameOverModal) el.gameOverModal.classList.remove('active');
+        state.isGameOver = false;
+        state.timeRemainingMinutes = 420;
+        state.warrantsRemaining = 2;
+        updateNightClock(420);
+        updateWarrantsBadge(2);
+        showLobbyView();
+      });
+    }
+  }
+
+  function renderAccusationCluesSelector() {
+    if (!el.accuseCluesContainer) return;
+    el.accuseCluesContainer.innerHTML = '';
+    state.selectedClueIDs = [];
+    if (el.selectedCluesCount) el.selectedCluesCount.textContent = '0';
+
+    if (!state.clues || state.clues.length === 0) {
+      el.accuseCluesContainer.innerHTML = '<div style="font-size: 0.8rem; color: var(--text-muted); padding: 0.5rem;">Nenhuma evidência pericial disponível no momento.</div>';
+      return;
+    }
+
+    state.clues.forEach((clue) => {
+      const label = document.createElement('label');
+      label.className = 'accuse-clue-label';
+      label.innerHTML = `
+        <input type="checkbox" value="${clue.id}" class="clue-checkbox">
+        <div>
+          <div style="font-weight: bold; color: var(--text-main); font-size: 0.85rem;">${escapeHtml(clue.name)}</div>
+          <div style="font-size: 0.75rem; color: var(--text-muted); line-height: 1.3;">${escapeHtml(clue.description)}</div>
+        </div>
+      `;
+
+      const checkbox = label.querySelector('input[type="checkbox"]');
+      checkbox.addEventListener('change', () => {
+        const id = parseInt(checkbox.value, 10);
+        if (checkbox.checked) {
+          if (state.selectedClueIDs.length >= 2) {
+            checkbox.checked = false;
+            alert('Você pode selecionar no máximo 2 pistas para fundamentar o mandado pericial.');
+            return;
+          }
+          state.selectedClueIDs.push(id);
+          label.classList.add('selected');
+        } else {
+          state.selectedClueIDs = state.selectedClueIDs.filter((cid) => cid !== id);
+          label.classList.remove('selected');
+        }
+        if (el.selectedCluesCount) {
+          el.selectedCluesCount.textContent = String(state.selectedClueIDs.length);
+        }
+      });
+
+      el.accuseCluesContainer.appendChild(label);
+    });
+  }
+
+  // =========================================================================
   // Game & Dossier Logic
   // =========================================================================
   async function loadCaseData() {
     try {
-      const res = await api('/api/game/case');
+      const roomParam = state.currentRoom && state.currentRoom.code ? `?room=${state.currentRoom.code}` : '';
+      const res = await api(`/api/game/case${roomParam}`);
       state.currentCase = res.case || res;
       state.suspects = res.suspects || [];
       state.clues = res.clues || [];
 
+      if (typeof res.time_remaining_minutes === 'number') {
+        updateNightClock(res.time_remaining_minutes);
+      } else {
+        updateNightClock();
+      }
+
+      if (typeof res.warrants_remaining === 'number') {
+        updateWarrantsBadge(res.warrants_remaining);
+      } else {
+        updateWarrantsBadge();
+      }
+
       renderDossier();
       renderSuspects();
       renderClues();
+      renderAccusationCluesSelector();
       populateAccusationOptions();
     } catch (err) {
       console.warn('[Game] Erro ao carregar caso da API, usando fallback:', err);
@@ -648,28 +829,45 @@
     }
   }
 
+  function getSuspectPhotoUrl(suspect) {
+    const name = (suspect.name || '').toLowerCase();
+    const role = (suspect.role || '').toLowerCase();
+    if (name.includes('julian') || role.includes('herdeiro') || role.includes('magnata')) {
+      return '/static/assets/suspect_magnate.webp';
+    }
+    if (name.includes('elena') || role.includes('médica') || role.includes('medica') || role.includes('doutora') || role.includes('femme')) {
+      return '/static/assets/suspect_femme.webp';
+    }
+    if (name.includes('barnaby') || role.includes('mordomo') || role.includes('butler')) {
+      return '/static/assets/suspect_butler.webp';
+    }
+    return '';
+  }
+
   function renderSuspects() {
     el.suspectsList.innerHTML = '';
     state.suspects.forEach((suspect) => {
       const card = document.createElement('div');
-      card.className = 'card-noir';
+      card.className = 'polaroid-card';
+      const photoUrl = getSuspectPhotoUrl(suspect);
+      const photoHtml = photoUrl
+        ? `<img src="${photoUrl}" alt="${escapeHtml(suspect.name)}" style="width: 100%; height: 100%; object-fit: cover; filter: grayscale(35%) sepia(20%) contrast(1.15);">`
+        : `<span>🕵️</span>`;
+
       card.innerHTML = `
-        <div>
-          <div class="suspect-header">
-            <div class="suspect-avatar">${suspect.name.charAt(0)}</div>
-            <div>
-              <div class="suspect-title">${escapeHtml(suspect.name)}</div>
-              <div class="suspect-role">${escapeHtml(suspect.role)}</div>
-            </div>
-          </div>
-          <div class="suspect-body">
-            <p><strong>Perfil:</strong> ${escapeHtml(suspect.personality || 'Não documentado')}</p>
-            <div class="suspect-alibi">
-              <strong>Álibi:</strong> "${escapeHtml(suspect.alibi || 'Nenhum álibi declarado.')}"
-            </div>
-          </div>
+        <div class="pushpin"></div>
+        <div class="polaroid-photo-area">
+          ${photoHtml}
         </div>
-        <button class="btn btn-primary btn-interrogate" data-id="${suspect.id}" style="width: 100%; margin-top: 1rem;">
+        <div class="polaroid-caption">${escapeHtml(suspect.name)}</div>
+        <div class="polaroid-sub">${escapeHtml(suspect.role)}</div>
+        <div style="font-size: 0.8rem; color: #27272a; margin-bottom: 0.4rem; line-height: 1.4;">
+          <strong>Perfil:</strong> ${escapeHtml(suspect.personality || 'Não documentado')}
+        </div>
+        <div style="font-size: 0.78rem; color: #4b5563; font-style: italic; background: rgba(0,0,0,0.04); padding: 0.4rem; border-left: 2px solid #b45309; margin-bottom: 0.75rem;">
+          "${escapeHtml(suspect.alibi || 'Nenhum álibi formal registrado.')}"
+        </div>
+        <button class="btn btn-primary btn-interrogate" data-id="${suspect.id}" style="width: 100%; margin-top: auto; font-size: 0.85rem; padding: 0.5rem;">
           Interrogar Suspeito
         </button>
       `;
@@ -687,8 +885,17 @@
     state.clues.forEach((clue) => {
       const card = document.createElement('div');
       card.className = 'card-noir';
+      const text = ((clue.name || '') + ' ' + (clue.description || '')).toLowerCase();
+      const isWeaponClue = text.includes('adaga') || text.includes('arma') || text.includes('lâmina') || text.includes('lamina') || text.includes('faca') || text.includes('punhal');
+      const weaponImg = isWeaponClue
+        ? `<div style="margin-bottom: 0.75rem; border-radius: 4px; overflow: hidden; border: 1px solid var(--border-dim); max-height: 140px;">
+             <img src="/static/assets/murder_weapon.webp" alt="Arma do Crime Pericial" style="width: 100%; height: 140px; object-fit: cover; filter: grayscale(30%) sepia(20%) contrast(1.15);">
+           </div>`
+        : '';
+
       card.innerHTML = `
         <div>
+          ${weaponImg}
           <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem;">
             <div class="suspect-title" style="font-size: 1.05rem;">${escapeHtml(clue.name)}</div>
             <span class="clue-badge">${escapeHtml(clue.location)}</span>
@@ -947,6 +1154,11 @@
         return;
       }
 
+      if (state.selectedClueIDs.length !== 2) {
+        alert('O Mandado de Prisão exige a anexação de exatamente 2 pistas corroborantes.');
+        return;
+      }
+
       const submitBtn = document.getElementById('submit-accusation-btn');
       submitBtn.disabled = true;
       submitBtn.textContent = 'Enviando Mandado ao Tribunal...';
@@ -958,20 +1170,41 @@
             case_id: state.currentCase ? state.currentCase.id : 1,
             suspect_id: suspectId,
             weapon: weapon,
-            motive: motive
+            motive: motive,
+            clue_ids: state.selectedClueIDs
           })
         });
 
+        if (typeof res.time_remaining_minutes === 'number') {
+          updateNightClock(res.time_remaining_minutes);
+        }
+        if (typeof res.warrants_remaining === 'number') {
+          updateWarrantsBadge(res.warrants_remaining);
+        }
+
         displayVerdict(res);
+
+        if (res.is_game_over || res.status === 'FAILED' || state.warrantsRemaining <= 0) {
+          showGameOverModal('badge_revoked');
+        }
       } catch (err) {
         // Fallback verdict resolution for test / mock
         const isCorrect = suspectId === 1 && weapon.includes('Cianeto');
+        if (!isCorrect) {
+          state.warrantsRemaining = Math.max(0, state.warrantsRemaining - 1);
+          state.timeRemainingMinutes = Math.max(0, state.timeRemainingMinutes - 30);
+          updateWarrantsBadge(state.warrantsRemaining);
+          updateNightClock(state.timeRemainingMinutes);
+        }
         displayVerdict({
           is_correct: isCorrect,
           message: isCorrect
             ? 'Mandado aceito pelo Magistrado! A Dra. Helena Voss confessou sob pressão após a perícia encontrar traços de cianeto em seu anel de sinete!'
             : 'Acusação rejeitada por falta de provas contundentes! O suspeito foi liberado pelo juiz e o verdadeiro assassino fugiu da cidade.'
         });
+        if (!isCorrect && state.warrantsRemaining <= 0) {
+          showGameOverModal('badge_revoked');
+        }
       } finally {
         submitBtn.disabled = false;
         submitBtn.textContent = '⚖️ Emitir Mandado de Prisão';
@@ -1049,6 +1282,9 @@
     setupNavEvents();
     setupInterrogationEvents();
     setupAccusationEvents();
+    setupGameOverEvents();
+    updateNightClock(420);
+    updateWarrantsBadge(2);
     checkActiveSession();
   }
 

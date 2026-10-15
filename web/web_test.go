@@ -254,5 +254,83 @@ func TestLobbyAndConfrontationUI(t *testing.T) {
 	}
 }
 
+func TestDiegeticNoirDeskAndNightClockUI(t *testing.T) {
+	// 1. Verify HTML Structure for Diegetic Desk, Night Clock, Warrants and Modals
+	indexFile, err := web.Assets.Open("templates/index.html")
+	if err != nil {
+		t.Fatalf("failed to open templates/index.html: %v", err)
+	}
+	defer indexFile.Close()
+
+	htmlBytes, _ := io.ReadAll(indexFile)
+	html := string(htmlBytes)
+
+	requiredHTMLElements := []string{
+		`desk-surface`,
+		`id="night-clock"`,
+		`id="warrants-badge"`,
+		`folder-kraft`,
+		`CONFIDENCIAL`,
+		`polaroid-card`,
+		`pushpin`,
+		`id="accuse-clues-container"`,
+		`id="game-over-modal"`,
+	}
+
+	for _, elem := range requiredHTMLElements {
+		if !strings.Contains(html, elem) {
+			t.Errorf("templates/index.html missing required element for Sprint v0.3 Task 3: %s", elem)
+		}
+	}
+
+	// 2. Verify CSS Styling for Diegetic Wood Desk, Amber Lamp Vignette, Kraft Dossier and Polaroids
+	cssFile, err := web.Assets.Open("static/css/style.css")
+	if err != nil {
+		t.Fatalf("failed to open static/css/style.css: %v", err)
+	}
+	defer cssFile.Close()
+
+	cssBytes, _ := io.ReadAll(cssFile)
+	css := string(cssBytes)
+
+	requiredCSSSnippets := []string{
+		"#14110f",
+		".desk-surface",
+		".folder-kraft",
+		".polaroid-card",
+		".pushpin",
+	}
+
+	for _, snippet := range requiredCSSSnippets {
+		if !strings.Contains(css, snippet) {
+			t.Errorf("static/css/style.css missing required styling for Sprint v0.3 Task 3: %s", snippet)
+		}
+	}
+
+	// 3. Verify JS Logic for Night Clock, Warrants, 2-Clue Accusation, and Game Over Modals
+	jsFile, err := web.Assets.Open("static/js/app.js")
+	if err != nil {
+		t.Fatalf("failed to open static/js/app.js: %v", err)
+	}
+	defer jsFile.Close()
+
+	jsBytes, _ := io.ReadAll(jsFile)
+	js := string(jsBytes)
+
+	requiredJSSnippets := []string{
+		"updateNightClock",
+		"updateWarrantsBadge",
+		"showGameOverModal",
+		"clue_ids",
+	}
+
+	for _, snippet := range requiredJSSnippets {
+		if !strings.Contains(js, snippet) {
+			t.Errorf("static/js/app.js missing required logic for Sprint v0.3 Task 3: %s", snippet)
+		}
+	}
+}
+
+
 
 
