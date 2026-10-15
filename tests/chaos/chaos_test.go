@@ -540,3 +540,191 @@ func TestServerHealthAndMemoryAfterChaos(t *testing.T) {
 		t.Errorf("Possível vazamento de goroutines detectado: %.0f goroutines ativas", goroutines)
 	}
 }
+
+// 5) Testar robustez, concorrência e clamping de limites em /api/game/solo/start
+func TestSoloStartChaosAndClamping(t *testing.T) {
+	baseURL := getBaseURL()
+	checkServerAvailable(t, baseURL)
+	client := &http.Client{Timeout: 5 * time.Second}
+
+	// 5.1 Clamping de limites em SuspectCount (-1, 0, 10, 100)
+	t.Run("Clamping de SuspectCount e Valores de Borda (-1, 0, 10, 100)", func(t *testing.T) {
+		boundaryCases := []struct {
+			name             string
+			themeID          string
+			suspectCount     int
+			expectedSuspects int
+		}{
+			{name: "SuspectCount Negativo (-1)", themeID: "mansion", suspectCount: -1, expectedSuspects: 4},
+			{name: "SuspectCount Zero (0)", themeID: "mansion", suspectCount: 0, expectedSuspects: 4},
+			{name: "SuspectCount Mínimo Abaixo (1 -> 3)", themeID: "train", suspectCount: 1, expectedSuspects: 3},
+			{name: "SuspectCount Mínimo Abaixo (2 -> 3)", themeID: "train", suspectCount: 2, expectedSuspects: 3},
+			{name: "SuspectCount Excedente (10 -> 6)", themeID: "casino", suspectCount: 10, expectedSuspects: 6},
+			{name: "SuspectCount Extremo (100 -> 6)", themeID: "casino", suspectCount: 100, expectedSuspects: 6},
+		}
+
+		for _, bc := range boundaryCases {
+			t.Run(bc.name, func(t *testing.T) {
+				payload, _ := json.Marshal(map[string]interface{}{
+					"theme_id":      bc.themeID,
+					"suspect_count": bc.suspectCount,
+				})
+				resp, err := client.Post(baseURL+"/api/game/solo/start", "application/json", bytes.NewReader(payload))
+				if err != nil {
+					t.Fatalf("Erro na requisição: %v", err)
+				}
+				defer resp.Body.Close()
+
+				if resp.StatusCode != http.StatusOK {
+					body, _ := io.ReadAll(resp.Body)
+					t.Fatalf("esperado status 200 OK para %s, recebido %d: %s", bc.name, resp.StatusCode, string(body))
+				}
+
+				var data struct {
+					Case struct {
+						ID int64 `json:"id"`
+					} `json:"case"`
+					Suspects             []map[string]interface{} `json:"suspects"`
+					Clues                []map[string]interface{} `json:"clues"`
+					TimeRemainingMinutes int                      `json:"time_remaining_minutes"`
+					WarrantsRemaining    int                      `json:"warrants_remaining"`
+				}
+				if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+					t.Fatalf("decode do payload falhou: %v", err)
+				}
+
+				if len(data.Suspects) != bc.expectedSuspects {
+					t.Errorf("para %s, esperado clamping para %d suspeitos, recebido %d",
+						bc.name, bc.expectedSuspects, len(data.Suspects))
+				}
+				if data.Case.ID <= 0 {
+					t.Errorf("ID do caso inválido: %d", data.Case.ID)
+				}
+				if data.TimeRemainingMinutes != 420 || data.WarrantsRemaining != 2 {
+					t.Errorf("esperado métricas iniciais (420 min / 2 mandados), recebido (%d / %d)",
+						data.TimeRemainingMinutes, data.WarrantsRemaining)
+				}
+			})
+		}
+	})
+
+	// 5.2 Degradação graciosa para ThemeIDs inválidos / payloads anômalos
+	t.Run("Degradação Graciosa para ThemeIDs Inválidos e Injeções", func(t *testing.T) {
+		weirdThemes := []string{
+			"cyberpunk_noir",
+			"",
+			"   ",
+			"'; DROP TABLE cases; --",
+			"<script>alert(1)</script>",
+			"THEME_UNKNOWN_12345",
+		}
+
+		for _, th := range weirdThemes {
+			payload, _ := json.Marshal(map[string]interface{}{
+				"theme_id":      th,
+				"suspect_count": 4,
+			})
+			resp, err := client.Post(baseURL+"/api/game/solo/start", "application/json", bytes.NewReader(payload))
+			if err != nil {
+				t.Fatalf("erro ao enviar tema '%s': %v", th, err)
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode != http.StatusOK {
+				body, _ := io.ReadAll(resp.Body)
+				t.Errorf("esperado 200 OK (fallback gracioso para mansion) para tema '%s', recebido %d: %s",
+					th, resp.StatusCode, string(body))
+				continue
+			}
+
+			var res struct {
+				Case struct {
+					Title string `json:"title"`
+				} `json:"case"`
+				Suspects []map[string]interface{} `json:"suspects"`
+			}
+			if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+				t.Fatalf("decode falhou para tema '%s': %v", th, err)
+			}
+
+			if !strings.Contains(res.Case.Title, "Mansão") {
+				t.Errorf("esperado fallback para tema padrão Mansão, recebido título: %s", res.Case.Title)
+			}
+			if len(res.Suspects) != 4 {
+				t.Errorf("esperado 4 suspeitos, recebido %d", len(res.Suspects))
+			}
+		}
+	})
+
+	// 5.3 Concorrência e Disparo Rápido Back-to-Back (25 requisições simultâneas)
+	t.Run("Disparo Concorrente Back-to-Back (25 Requisições)", func(t *testing.T) {
+		numConcurrent := 25
+		themes := []string{"mansion", "train", "opera", "casino", "alien_invaders", ""}
+		counts := []int{-1, 0, 3, 5, 6, 10, 100}
+
+		var wg sync.WaitGroup
+		var successCount int64
+		var failCount int64
+
+		for i := 0; i < numConcurrent; i++ {
+			wg.Add(1)
+			go func(idx int) {
+				defer wg.Done()
+				th := themes[idx%len(themes)]
+				cnt := counts[idx%len(counts)]
+
+				c := &http.Client{Timeout: 5 * time.Second}
+				bodyBytes, _ := json.Marshal(map[string]interface{}{
+					"theme_id":      th,
+					"suspect_count": cnt,
+				})
+
+				resp, err := c.Post(baseURL+"/api/game/solo/start", "application/json", bytes.NewReader(bodyBytes))
+				if err != nil {
+					atomic.AddInt64(&failCount, 1)
+					return
+				}
+				defer resp.Body.Close()
+
+				if resp.StatusCode == http.StatusOK {
+					var res struct {
+						Case struct {
+							ID int64 `json:"id"`
+						} `json:"case"`
+						Suspects []map[string]interface{} `json:"suspects"`
+					}
+					if err := json.NewDecoder(resp.Body).Decode(&res); err == nil && res.Case.ID > 0 && len(res.Suspects) >= 3 && len(res.Suspects) <= 6 {
+						atomic.AddInt64(&successCount, 1)
+					} else {
+						atomic.AddInt64(&failCount, 1)
+					}
+				} else {
+					atomic.AddInt64(&failCount, 1)
+				}
+			}(i)
+		}
+
+		wg.Wait()
+
+		t.Logf("Resultado de disparo concorrente em /api/game/solo/start: %d sucessos, %d falhas (Total: %d)",
+			successCount, failCount, numConcurrent)
+
+		if failCount > 0 {
+			t.Errorf("Detectadas %d falhas ou inconsistências em %d disparos concorrentes", failCount, numConcurrent)
+		}
+		if successCount != int64(numConcurrent) {
+			t.Errorf("Esperado %d sucessos, recebido %d", numConcurrent, successCount)
+		}
+
+		// Validar que o servidor permanece 100% íntegro e sem pane
+		healthResp, err := client.Get(baseURL + "/api/health")
+		if err != nil {
+			t.Fatalf("servidor parou de responder após estresse de solo start: %v", err)
+		}
+		defer healthResp.Body.Close()
+		if healthResp.StatusCode != http.StatusOK {
+			t.Errorf("esperado 200 OK para healthcheck após estresse, recebido %d", healthResp.StatusCode)
+		}
+	})
+}
+
