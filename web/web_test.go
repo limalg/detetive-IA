@@ -429,3 +429,94 @@ func TestAudioEngineAsset(t *testing.T) {
 	}
 }
 
+func TestTactileDeskElements(t *testing.T) {
+	// 1. Verify HTML elements for Tactile Desk, Manila Kraft Tabs, Forensic Loupe & Stamp Button
+	indexFile, err := web.Assets.Open("templates/index.html")
+	if err != nil {
+		t.Fatalf("failed to open templates/index.html: %v", err)
+	}
+	defer indexFile.Close()
+
+	htmlBytes, err := io.ReadAll(indexFile)
+	if err != nil {
+		t.Fatalf("failed to read templates/index.html: %v", err)
+	}
+	html := string(htmlBytes)
+
+	requiredElements := []string{
+		`id="desk-workspace"`,
+		`id="theme-select"`,
+		`id="suspect-count-select"`,
+		`id="forensic-loupe-modal"`,
+		`id="stamp-accuse-btn"`,
+		`desk-mat`,
+		`kraft-folder`,
+		`value="mansion"`,
+		`value="train"`,
+		`value="opera"`,
+		`value="casino"`,
+	}
+
+	for _, elem := range requiredElements {
+		if !strings.Contains(html, elem) {
+			t.Errorf("templates/index.html missing required tactile desk element: %s", elem)
+		}
+	}
+
+	// 2. Verify CSS styling for Tactile Desk, Mat, Kraft Tabs, Stamp Hit Animation & Loupe
+	cssFile, err := web.Assets.Open("static/css/style.css")
+	if err != nil {
+		t.Fatalf("failed to open static/css/style.css: %v", err)
+	}
+	defer cssFile.Close()
+
+	cssBytes, err := io.ReadAll(cssFile)
+	if err != nil {
+		t.Fatalf("failed to read static/css/style.css: %v", err)
+	}
+	css := string(cssBytes)
+
+	requiredCSS := []string{
+		".desk-mat",
+		".nav-tab-btn.kraft-folder",
+		"#stamp-accuse-btn",
+		"@keyframes stampHit",
+		".forensic-loupe-modal",
+	}
+
+	for _, elem := range requiredCSS {
+		if !strings.Contains(css, elem) {
+			t.Errorf("static/css/style.css missing required tactile desk style: %s", elem)
+		}
+	}
+
+	// 3. Verify JS integration: solo/start API, playStamp, playPaper, playClockTick, forensic loupe
+	jsFile, err := web.Assets.Open("static/js/app.js")
+	if err != nil {
+		t.Fatalf("failed to open static/js/app.js: %v", err)
+	}
+	defer jsFile.Close()
+
+	jsBytes, err := io.ReadAll(jsFile)
+	if err != nil {
+		t.Fatalf("failed to read static/js/app.js: %v", err)
+	}
+	js := string(jsBytes)
+
+	requiredJS := []string{
+		"/api/game/solo/start",
+		"openForensicLoupe",
+		"playStamp",
+		"playPaper",
+		"playClockTick",
+	}
+
+	for _, elem := range requiredJS {
+		if !strings.Contains(js, elem) {
+			t.Errorf("static/js/app.js missing required tactile desk JS logic: %s", elem)
+		}
+	}
+}
+
+
+

@@ -90,6 +90,10 @@
     suspectStressMeter: document.getElementById('suspect-stress-meter'),
     suspectStressLabel: document.getElementById('suspect-stress-label'),
 
+    // Theme & Suspects Configuration
+    themeSelect: document.getElementById('theme-select'),
+    suspectCountSelect: document.getElementById('suspect-count-select'),
+
     // Accusation
     accusationForm: document.getElementById('accusation-form'),
     accuseSuspect: document.getElementById('accuse-suspect'),
@@ -98,6 +102,16 @@
     accuseCluesContainer: document.getElementById('accuse-clues-container'),
     selectedCluesCount: document.getElementById('selected-clues-count'),
     verdictResult: document.getElementById('verdict-result'),
+    stampAccuseBtn: document.getElementById('stamp-accuse-btn'),
+
+    // Forensic Loupe
+    forensicLoupeModal: document.getElementById('forensic-loupe-modal'),
+    closeLoupeBtn: document.getElementById('close-loupe-btn'),
+    loupeTitle: document.getElementById('loupe-title'),
+    loupeItemName: document.getElementById('loupe-item-name'),
+    loupeItemCategory: document.getElementById('loupe-item-category'),
+    loupeItemDesc: document.getElementById('loupe-item-desc'),
+    loupeMedia: document.getElementById('loupe-media'),
 
     // Game Over
     gameOverModal: document.getElementById('game-over-modal'),
@@ -557,9 +571,40 @@
           try {
             await api(`/api/room/${state.currentRoom.code}/start`, { method: 'POST' });
           } catch (_) {}
+          showGameView();
+          loadCaseData();
+        } else {
+          const themeId = (el.themeSelect && el.themeSelect.value) || 'mansion';
+          const suspectCount = el.suspectCountSelect ? parseInt(el.suspectCountSelect.value, 10) : 4;
+          try {
+            const res = await api('/api/game/solo/start', {
+              method: 'POST',
+              body: JSON.stringify({
+                theme_id: themeId,
+                suspect_count: suspectCount
+              })
+            });
+            state.currentCase = res.case || res;
+            state.suspects = res.suspects || [];
+            state.clues = res.clues || [];
+            if (typeof res.time_remaining_minutes === 'number') {
+              updateNightClock(res.time_remaining_minutes);
+            }
+            if (typeof res.warrants_remaining === 'number') {
+              updateWarrantsBadge(res.warrants_remaining);
+            }
+            showGameView();
+            renderDossier();
+            renderSuspects();
+            renderClues();
+            renderAccusationCluesSelector();
+            populateAccusationOptions();
+          } catch (err) {
+            console.warn('[Game] Erro ao iniciar caso solo via API, fallback:', err);
+            showGameView();
+            loadCaseData();
+          }
         }
-        showGameView();
-        loadCaseData();
       });
     }
   }
@@ -571,8 +616,12 @@
   // Night Clock & Warrants (Sprint v0.3)
   // =========================================================================
   function updateNightClock(minutesRemaining) {
+    const prevMinutes = state.timeRemainingMinutes;
     if (typeof minutesRemaining === 'number') {
       state.timeRemainingMinutes = Math.max(0, minutesRemaining);
+      if (minutesRemaining < prevMinutes && window.NoirAudio) {
+        window.NoirAudio.playClockTick();
+      }
     }
     const totalMinutes = 420; // 21:00 to 04:00
     const currentMins = state.timeRemainingMinutes;
@@ -881,11 +930,53 @@
     });
   }
 
+  function openForensicLoupe(item) {
+    if (!el.forensicLoupeModal) return;
+    if (window.NoirAudio) window.NoirAudio.playPaper();
+
+    const name = item.name || 'Evidência Pericial';
+    const text = ((item.name || '') + ' ' + (item.description || '')).toLowerCase();
+    const isWeapon = text.includes('adaga') || text.includes('arma') || text.includes('lâmina') || text.includes('lamina') || text.includes('faca') || text.includes('punhal') || text.includes('cálice') || text.includes('calice') || text.includes('revólver') || text.includes('revolver') || text.includes('castiçal') || text.includes('veneno');
+
+    if (el.loupeItemName) el.loupeItemName.textContent = name;
+    if (el.loupeItemCategory) el.loupeItemCategory.textContent = item.location ? `Local: ${item.location}` : 'Laudo Forense';
+    if (el.loupeItemDesc) el.loupeItemDesc.textContent = item.description || 'Nenhum detalhe adicional registrado.';
+
+    if (el.loupeMedia) {
+      if (isWeapon) {
+        el.loupeMedia.innerHTML = `<img src="/static/assets/murder_weapon.webp" alt="${escapeHtml(name)}" class="loupe-img-inspect">`;
+      } else {
+        el.loupeMedia.innerHTML = `<img src="/static/assets/scene_noir.webp" alt="${escapeHtml(name)}" class="loupe-img-inspect">`;
+      }
+    }
+
+    el.forensicLoupeModal.classList.add('active');
+  }
+
+  function closeForensicLoupe() {
+    if (el.forensicLoupeModal) {
+      el.forensicLoupeModal.classList.remove('active');
+    }
+  }
+
+  function setupLoupeEvents() {
+    if (el.closeLoupeBtn) {
+      el.closeLoupeBtn.addEventListener('click', closeForensicLoupe);
+    }
+    if (el.forensicLoupeModal) {
+      el.forensicLoupeModal.addEventListener('click', (e) => {
+        if (e.target === el.forensicLoupeModal) {
+          closeForensicLoupe();
+        }
+      });
+    }
+  }
+
   function renderClues() {
     el.cluesList.innerHTML = '';
     state.clues.forEach((clue) => {
       const card = document.createElement('div');
-      card.className = 'card-noir';
+      card.className = 'card-noir clue-card-inspectable';
       const text = ((clue.name || '') + ' ' + (clue.description || '')).toLowerCase();
       const isWeaponClue = text.includes('adaga') || text.includes('arma') || text.includes('lâmina') || text.includes('lamina') || text.includes('faca') || text.includes('punhal');
       const weaponImg = isWeaponClue
@@ -904,8 +995,16 @@
           <div class="suspect-body">
             <p>${escapeHtml(clue.description)}</p>
           </div>
+          <button type="button" class="btn btn-secondary btn-inspect-clue" style="width: 100%; margin-top: 0.75rem; font-size: 0.8rem; padding: 0.4rem;">
+            🔍 Analisar com Lupa Pericial
+          </button>
         </div>
       `;
+
+      card.addEventListener('click', () => {
+        openForensicLoupe(clue);
+      });
+
       el.cluesList.appendChild(card);
     });
   }
@@ -1144,6 +1243,15 @@
   // Accusation & Verdict
   // =========================================================================
   function setupAccusationEvents() {
+    const stampBtn = document.getElementById('stamp-accuse-btn') || document.getElementById('submit-accusation-btn');
+    if (stampBtn) {
+      stampBtn.addEventListener('click', () => {
+        if (window.NoirAudio) window.NoirAudio.playStamp();
+        stampBtn.classList.add('stamp-pressed');
+        setTimeout(() => stampBtn.classList.remove('stamp-pressed'), 300);
+      });
+    }
+
     el.accusationForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       const suspectId = parseInt(el.accuseSuspect.value, 10);
@@ -1160,7 +1268,7 @@
         return;
       }
 
-      const submitBtn = document.getElementById('submit-accusation-btn');
+      const submitBtn = document.getElementById('stamp-accuse-btn') || document.getElementById('submit-accusation-btn');
       submitBtn.disabled = true;
       submitBtn.textContent = 'Enviando Mandado ao Tribunal...';
 
@@ -1244,6 +1352,7 @@
   function setupNavEvents() {
     el.navTabBtns.forEach((btn) => {
       btn.addEventListener('click', () => {
+        if (window.NoirAudio) window.NoirAudio.playPaper();
         const tab = btn.getAttribute('data-tab');
 
         el.navTabBtns.forEach((b) => b.classList.remove('active'));
@@ -1281,6 +1390,7 @@
     setupAuthEvents();
     setupLobbyEvents();
     setupNavEvents();
+    setupLoupeEvents();
     setupInterrogationEvents();
     setupAccusationEvents();
     setupGameOverEvents();
