@@ -67,45 +67,62 @@ func (s *Service) SeedInitialCase() (int64, error) {
 	}
 
 	suspects := []struct {
-		name        string
-		role        string
-		personality string
-		alibi       string
-		secret      string
-		isCulprit   bool
+		name           string
+		role           string
+		personality    string
+		alibi          string
+		secret         string
+		isCulprit      bool
+		tier1Alibi     string
+		tier2Petty     string
+		tier3Truth     string
+		crossSuspicion string
 	}{
 		{
-			name:        "Lorde Julian Vane",
-			role:        "Sobrinho & Herdeiro",
-			personality: "Elegante, arrogante e nervoso sob pressão financeira.",
-			alibi:       "Afirma que dedilhava o piano de cauda na sala de música tomando conhaque.",
-			secret:      "Falido por dívidas clandestinas de jogo, seria deserdado na manhã seguinte.",
-			isCulprit:   true,
+			name:           "Lorde Julian Vane",
+			role:           "Sobrinho & Herdeiro",
+			personality:    "Elegante, arrogante e nervoso sob pressão financeira.",
+			alibi:          "Afirma que dedilhava o piano de cauda na sala de música tomando conhaque.",
+			secret:         "Falido por dívidas clandestinas de jogo, seria deserdado na manhã seguinte.",
+			isCulprit:      true,
+			tier1Alibi:     "Dedilhava o piano de cauda na sala de música tomando conhaque.",
+			tier2Petty:     "Devo 50.000 francos a agiotas do submundo e penhorei joias da família.",
+			tier3Truth:     "Arthur descobriu tudo e ia me deserdar hoje de manhã! Eu perdi a cabeça quando ele puxou a carta de deserdação!",
+			crossSuspicion: "A Dra. Elena estava preparando venenos proibidos no laboratório e discutiu aos gritos com Arthur.",
 		},
 		{
-			name:        "Dra. Elena Rostov",
-			role:        "Médica Pessoal & Pesquisadora",
-			personality: "Fria, metódica e defensiva sobre dosagens e frascos de remédio.",
-			alibi:       "Afirma que estava no laboratório organizando medicamentos e amostras.",
-			secret:      "Desviava fundos da caridade de Arthur para pesquisas proibidas.",
-			isCulprit:   false,
+			name:           "Dra. Elena Rostov",
+			role:           "Médica Pessoal & Pesquisadora",
+			personality:    "Fria, metódica e defensiva sobre dosagens e frascos de remédio.",
+			alibi:          "Afirma que estava no laboratório organizando medicamentos e amostras.",
+			secret:         "Desviava fundos da caridade de Arthur para pesquisas proibidas.",
+			isCulprit:      false,
+			tier1Alibi:     "Estava no laboratório organizando medicamentos e amostras botânicas.",
+			tier2Petty:     "Desviava fundos da caridade de Arthur para pesquisas toxicológicas não autorizadas.",
+			tier3Truth:     "Eu estava no laboratório até meia-noite, mas vi Julian sair da biblioteca com as mãos trêmulas!",
+			crossSuspicion: "Lorde Julian é um dândi desesperado, ele implorava dinheiro a Arthur horas antes do assassinato.",
 		},
 		{
-			name:        "Barnaby Finch",
-			role:        "Mordomo & Guarda-livros",
-			personality: "Formal, taciturno e detalhista.",
-			alibi:       "Afirma que estava na adega conferindo safras raras de vinho.",
-			secret:      "Guardava correspondências comprometedoras de Arthur para evitar demissão.",
-			isCulprit:   false,
+			name:           "Barnaby Finch",
+			role:           "Mordomo & Guarda-livros",
+			personality:    "Formal, taciturno e detalhista.",
+			alibi:          "Afirma que estava na adega conferindo safras raras de vinho.",
+			secret:         "Guardava correspondências comprometedoras de Arthur para evitar demissão.",
+			isCulprit:      false,
+			tier1Alibi:     "Estava na adega conferindo safras raras de vinho e cristais.",
+			tier2Petty:     "Guardava correspondências comprometedoras de Arthur para me proteger de demissão arbitrária.",
+			tier3Truth:     "Servi a família por 40 anos e nunca ergueria a mão contra meu patrão.",
+			crossSuspicion: "Julian estava rondando a vitrine da adaga cerimonial durante o jantar.",
 		},
 	}
 
 	var culpritID int64
 	for _, susp := range suspects {
 		sRes, err := s.db.Exec(`
-			INSERT INTO suspects (case_id, name, role, personality, alibi, secret, is_culprit)
-			VALUES (?, ?, ?, ?, ?, ?, ?)
-		`, caseID, susp.name, susp.role, susp.personality, susp.alibi, susp.secret, susp.isCulprit)
+			INSERT INTO suspects (case_id, name, role, personality, alibi, secret, is_culprit, tier1_alibi, tier2_petty_crime, tier3_truth, cross_suspicion)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`, caseID, susp.name, susp.role, susp.personality, susp.alibi, susp.secret, susp.isCulprit,
+			susp.tier1Alibi, susp.tier2Petty, susp.tier3Truth, susp.crossSuspicion)
 		if err != nil {
 			return 0, fmt.Errorf("failed to insert suspect %s: %w", susp.name, err)
 		}
@@ -172,7 +189,8 @@ func (s *Service) GetCaseDetails(caseID int64) (*CaseDetails, error) {
 	}
 
 	suspectRows, err := s.db.Query(`
-		SELECT id, case_id, name, role, personality, alibi, secret, is_culprit
+		SELECT id, case_id, name, role, personality, alibi, secret, is_culprit,
+		       COALESCE(tier1_alibi, ''), COALESCE(tier2_petty_crime, ''), COALESCE(tier3_truth, ''), COALESCE(cross_suspicion, '')
 		FROM suspects WHERE case_id = ? ORDER BY id ASC
 	`, caseID)
 	if err != nil {
@@ -183,7 +201,8 @@ func (s *Service) GetCaseDetails(caseID int64) (*CaseDetails, error) {
 	var suspects []models.Suspect
 	for suspectRows.Next() {
 		var susp models.Suspect
-		if err := suspectRows.Scan(&susp.ID, &susp.CaseID, &susp.Name, &susp.Role, &susp.Personality, &susp.Alibi, &susp.Secret, &susp.IsCulprit); err != nil {
+		if err := suspectRows.Scan(&susp.ID, &susp.CaseID, &susp.Name, &susp.Role, &susp.Personality, &susp.Alibi, &susp.Secret, &susp.IsCulprit,
+			&susp.Tier1Alibi, &susp.Tier2PettyCrime, &susp.Tier3Truth, &susp.CrossSuspicion); err != nil {
 			return nil, err
 		}
 		suspects = append(suspects, susp)
@@ -216,6 +235,11 @@ func (s *Service) GetCaseDetails(caseID int64) (*CaseDetails, error) {
 
 // Interrogate asks a question to a suspect and returns their dynamic or fallback response.
 func (s *Service) Interrogate(sessionID string, suspectID int64, question string) (string, error) {
+	return s.InterrogateWithStress(sessionID, suspectID, question, 15)
+}
+
+// InterrogateWithStress asks a question to a suspect factoring in stress levels and 3-tier narrative secrets.
+func (s *Service) InterrogateWithStress(sessionID string, suspectID int64, question string, stress int) (string, error) {
 	question = strings.TrimSpace(question)
 	if question == "" {
 		return "", errors.New("question cannot be empty")
@@ -223,9 +247,11 @@ func (s *Service) Interrogate(sessionID string, suspectID int64, question string
 
 	var susp models.Suspect
 	err := s.db.QueryRow(`
-		SELECT id, case_id, name, role, personality, alibi, secret, is_culprit
+		SELECT id, case_id, name, role, personality, alibi, secret, is_culprit,
+		       COALESCE(tier1_alibi, ''), COALESCE(tier2_petty_crime, ''), COALESCE(tier3_truth, ''), COALESCE(cross_suspicion, '')
 		FROM suspects WHERE id = ?
-	`, suspectID).Scan(&susp.ID, &susp.CaseID, &susp.Name, &susp.Role, &susp.Personality, &susp.Alibi, &susp.Secret, &susp.IsCulprit)
+	`, suspectID).Scan(&susp.ID, &susp.CaseID, &susp.Name, &susp.Role, &susp.Personality, &susp.Alibi, &susp.Secret, &susp.IsCulprit,
+		&susp.Tier1Alibi, &susp.Tier2PettyCrime, &susp.Tier3Truth, &susp.CrossSuspicion)
 	if err != nil {
 		return "", fmt.Errorf("failed to find suspect: %w", err)
 	}
@@ -233,8 +259,8 @@ func (s *Service) Interrogate(sessionID string, suspectID int64, question string
 	var answer string
 	if s.aiClient != nil {
 		prompt := fmt.Sprintf(
-			"Você é %s (%s). Sua personalidade: %s. Seu álibi: %s. Seu segredo íntimo: %s. Você é o culpado? %v. Responda em Português como um personagem Noir à pergunta do Detetive: '%s'. Mantenha a resposta concisa, expressiva e misteriosa.",
-			susp.Name, susp.Role, susp.Personality, susp.Alibi, susp.Secret, susp.IsCulprit, question,
+			"Você é %s (%s). Personalidade: %s. Álibi (Tier 1): %s. Delito Secundário (Tier 2): %s. Verdade Íntima (Tier 3): %s. Suspeita sobre outro personagem: %s. Nível de estresse: %d/100. Responda em Português como um personagem Noir à pergunta do Detetive: '%s'. Mantenha a resposta concisa, expressiva e misteriosa. Se o estresse for <30%%, mantenha seu álibi. Se estiver entre 30%% e 70%%, admita com relutância seu delito secundário e lance suspeita sobre outro. Se estiver acima de 70%%, quebre e revele a verdade íntima.",
+			susp.Name, susp.Role, susp.Personality, susp.Tier1Alibi, susp.Tier2PettyCrime, susp.Tier3Truth, susp.CrossSuspicion, stress, question,
 		)
 		resp, err := s.aiClient.GenerateResponse(context.Background(), prompt)
 		if err == nil && len(strings.TrimSpace(resp)) > 0 {
@@ -243,7 +269,7 @@ func (s *Service) Interrogate(sessionID string, suspectID int64, question string
 	}
 
 	if answer == "" {
-		answer = GenerateFallbackResponse(&susp, question)
+		answer = GenerateFallbackResponseWithStress(&susp, question, stress)
 	}
 
 	// Persist dialogue exchange
@@ -288,7 +314,6 @@ func (s *Service) SubmitAccusation(userID int64, caseID int64, accusedSuspectID 
 	motiveMatch := strings.Contains(mLower, solMLower) || strings.Contains(solMLower, mLower) || containsAny(mLower, "herança", "heranca", "dívida", "divida", "dinheiro", "jogo", "cassino", "chantagem", "vingança", "vinganca", "desvio")
 
 	var verdict models.Verdict
-	var status string
 
 	if (accusedSuspectID == solSuspectID || isCulprit) && weaponMatch && motiveMatch {
 		verdict = models.Verdict{
@@ -299,7 +324,6 @@ func (s *Service) SubmitAccusation(userID int64, caseID int64, accusedSuspectID 
 			ActualWeapon:  solWeapon,
 			ActualMotive:  solMotive,
 		}
-		status = "solved"
 	} else if accusedSuspectID == solSuspectID || isCulprit {
 		verdict = models.Verdict{
 			Correct:       false,
@@ -309,7 +333,6 @@ func (s *Service) SubmitAccusation(userID int64, caseID int64, accusedSuspectID 
 			ActualWeapon:  solWeapon,
 			ActualMotive:  solMotive,
 		}
-		status = "failed"
 	} else {
 		verdict = models.Verdict{
 			Correct:       false,
@@ -319,15 +342,141 @@ func (s *Service) SubmitAccusation(userID int64, caseID int64, accusedSuspectID 
 			ActualWeapon:  "Não comprovada",
 			ActualMotive:  "Incógnita",
 		}
-		status = "failed"
 	}
 
-	if userID > 0 {
-		_, _ = s.db.Exec(`
-			INSERT INTO investigations (user_id, case_id, status, accused_suspect_id, accused_weapon, accused_motive, completed_at)
-			VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-		`, userID, caseID, status, accusedSuspectID, accusedWeapon, accusedMotive)
+	if userID > 0 && verdict.Correct {
+		var invID int64
+		_ = s.db.QueryRow(`SELECT id FROM investigations WHERE user_id = ? AND case_id = ? AND status = 'in_progress' ORDER BY id DESC LIMIT 1`, userID, caseID).Scan(&invID)
+		if invID > 0 {
+			_, _ = s.db.Exec(`
+				UPDATE investigations
+				SET status = 'solved', accused_suspect_id = ?, accused_weapon = ?, accused_motive = ?, completed_at = CURRENT_TIMESTAMP
+				WHERE id = ?
+			`, accusedSuspectID, accusedWeapon, accusedMotive, invID)
+		} else {
+			_, _ = s.db.Exec(`
+				INSERT INTO investigations (user_id, case_id, status, accused_suspect_id, accused_weapon, accused_motive, completed_at, time_remaining_minutes, warrants_remaining)
+				VALUES (?, ?, 'solved', ?, ?, ?, CURRENT_TIMESTAMP, 420, 2)
+			`, userID, caseID, accusedSuspectID, accusedWeapon, accusedMotive)
+		}
 	}
 
 	return &verdict, nil
+}
+
+// GetOrCreateInvestigation finds an active investigation for the given user and case, or creates a new one.
+func (s *Service) GetOrCreateInvestigation(userID int64, caseID int64) (*models.Investigation, error) {
+	var inv models.Investigation
+	var query string
+	var args []interface{}
+
+	if userID > 0 {
+		query = `SELECT id, user_id, case_id, status, time_remaining_minutes, warrants_remaining FROM investigations WHERE user_id = ? AND case_id = ? ORDER BY id DESC LIMIT 1`
+		args = []interface{}{userID, caseID}
+	} else {
+		query = `SELECT id, COALESCE(user_id, 0), case_id, status, time_remaining_minutes, warrants_remaining FROM investigations WHERE (user_id IS NULL OR user_id = 0) AND case_id = ? ORDER BY id DESC LIMIT 1`
+		args = []interface{}{caseID}
+	}
+
+	err := s.db.QueryRow(query, args...).Scan(&inv.ID, &inv.UserID, &inv.CaseID, &inv.Status, &inv.TimeRemainingMinutes, &inv.WarrantsRemaining)
+	if err == nil {
+		return &inv, nil
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("failed to query investigation: %w", err)
+	}
+
+	var userVal interface{} = userID
+	if userID <= 0 {
+		userVal = nil
+	}
+
+	// Insert new investigation with 420 minutes and 2 warrants
+	res, err := s.db.Exec(`
+		INSERT INTO investigations (user_id, case_id, status, time_remaining_minutes, warrants_remaining)
+		VALUES (?, ?, 'in_progress', 420, 2)
+	`, userVal, caseID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create investigation: %w", err)
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return nil, err
+	}
+
+	return &models.Investigation{
+		ID:                   id,
+		UserID:               userID,
+		CaseID:               caseID,
+		Status:               "in_progress",
+		TimeRemainingMinutes: 420,
+		WarrantsRemaining:    2,
+	}, nil
+}
+
+// GetInvestigation retrieves an investigation by ID.
+func (s *Service) GetInvestigation(investigationID int64) (*models.Investigation, error) {
+	var inv models.Investigation
+	err := s.db.QueryRow(`
+		SELECT id, COALESCE(user_id, 0), case_id, status, time_remaining_minutes, warrants_remaining
+		FROM investigations WHERE id = ?
+	`, investigationID).Scan(&inv.ID, &inv.UserID, &inv.CaseID, &inv.Status, &inv.TimeRemainingMinutes, &inv.WarrantsRemaining)
+	if err != nil {
+		return nil, fmt.Errorf("investigation not found: %w", err)
+	}
+	return &inv, nil
+}
+
+// DeductTime decreases time remaining on an investigation and marks it failed if time reaches zero.
+func (s *Service) DeductTime(investigationID int64, minutes int) (int, error) {
+	inv, err := s.GetInvestigation(investigationID)
+	if err != nil {
+		return 0, err
+	}
+
+	newTime := inv.TimeRemainingMinutes - minutes
+	status := inv.Status
+	if newTime <= 0 {
+		newTime = 0
+		status = "failed"
+	}
+
+	_, err = s.db.Exec(`
+		UPDATE investigations
+		SET time_remaining_minutes = ?, status = ?
+		WHERE id = ?
+	`, newTime, status, investigationID)
+	if err != nil {
+		return 0, fmt.Errorf("failed to update time remaining: %w", err)
+	}
+
+	return newTime, nil
+}
+
+// RecordWarrantStrike decrements warrants remaining by 1. If warrants reach zero, marks as failed and returns isGameOver=true.
+func (s *Service) RecordWarrantStrike(investigationID int64) (int, bool, error) {
+	inv, err := s.GetInvestigation(investigationID)
+	if err != nil {
+		return 0, false, err
+	}
+
+	warrantsLeft := inv.WarrantsRemaining - 1
+	isGameOver := false
+	status := inv.Status
+
+	if warrantsLeft <= 0 {
+		warrantsLeft = 0
+		isGameOver = true
+		status = "failed"
+	}
+
+	_, err = s.db.Exec(`
+		UPDATE investigations
+		SET warrants_remaining = ?, status = ?
+		WHERE id = ?
+	`, warrantsLeft, status, investigationID)
+	if err != nil {
+		return 0, false, fmt.Errorf("failed to update warrants remaining: %w", err)
+	}
+
+	return warrantsLeft, isGameOver, nil
 }

@@ -393,6 +393,11 @@ func TestRoomE2EInvestigationJourney(t *testing.T) {
 			t.Fatalf("falha ao consultar solução do caso gerado: %v", err)
 		}
 
+		var corroboratingClues []int64
+		if len(clues) >= 2 {
+			corroboratingClues = []int64{clues[0].ID, clues[1].ID}
+		}
+
 		// Acusação falsa
 		var innocentID int64
 		for _, s := range suspects {
@@ -410,6 +415,7 @@ func TestRoomE2EInvestigationJourney(t *testing.T) {
 			"suspect_id": innocentID,
 			"weapon":     "Arma Fictícia",
 			"motive":     "Motivo Sem Provas",
+			"clue_ids":   corroboratingClues,
 		})
 		respFalse, err := hostClient.Post(ts.URL+"/api/game/accuse", "application/json", bytes.NewReader(falseAccusePayload))
 		if err != nil {
@@ -431,6 +437,7 @@ func TestRoomE2EInvestigationJourney(t *testing.T) {
 			"suspect_id": solSuspectID,
 			"weapon":     solWeapon,
 			"motive":     solMotive,
+			"clue_ids":   corroboratingClues,
 		})
 		respCorrect, err := hostClient.Post(ts.URL+"/api/game/accuse", "application/json", bytes.NewReader(correctAccusePayload))
 		if err != nil {
@@ -438,11 +445,16 @@ func TestRoomE2EInvestigationJourney(t *testing.T) {
 		}
 		defer respCorrect.Body.Close()
 
+		correctBytes, _ := io.ReadAll(respCorrect.Body)
+		if respCorrect.StatusCode != http.StatusOK {
+			t.Fatalf("POST acusação correta retornou status %d: %s", respCorrect.StatusCode, string(correctBytes))
+		}
+
 		var correctVerdict struct {
 			IsCorrect bool `json:"is_correct"`
 			Score     int  `json:"score"`
 		}
-		if err := json.NewDecoder(respCorrect.Body).Decode(&correctVerdict); err != nil {
+		if err := json.Unmarshal(correctBytes, &correctVerdict); err != nil {
 			t.Fatalf("decode do veredito correto falhou: %v", err)
 		}
 

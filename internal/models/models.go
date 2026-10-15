@@ -31,14 +31,18 @@ type Case struct {
 
 // Suspect represents an interrogated character in a case.
 type Suspect struct {
-	ID          int64  `json:"id"`
-	CaseID      int64  `json:"case_id"`
-	Name        string `json:"name"`
-	Role        string `json:"role"`
-	Personality string `json:"personality"`
-	Alibi       string `json:"alibi"`
-	Secret      string `json:"secret,omitempty"`
-	IsCulprit   bool   `json:"is_culprit,omitempty"`
+	ID              int64  `json:"id"`
+	CaseID          int64  `json:"case_id"`
+	Name            string `json:"name"`
+	Role            string `json:"role"`
+	Personality     string `json:"personality"`
+	Alibi           string `json:"alibi"`
+	Secret          string `json:"secret,omitempty"`
+	IsCulprit       bool   `json:"is_culprit,omitempty"`
+	Tier1Alibi      string `json:"tier1_alibi,omitempty"`
+	Tier2PettyCrime string `json:"tier2_petty_crime,omitempty"`
+	Tier3Truth      string `json:"tier3_truth,omitempty"`
+	CrossSuspicion  string `json:"cross_suspicion,omitempty"`
 }
 
 // Clue represents physical evidence found at a crime scene.
@@ -62,14 +66,16 @@ type InterrogationMessage struct {
 
 // Investigation tracks the state and resolution of a case by a user.
 type Investigation struct {
-	ID               int64      `json:"id"`
-	UserID           int64      `json:"user_id"`
-	CaseID           int64      `json:"case_id"`
-	Status           string     `json:"status"` // in_progress, solved, failed
-	AccusedSuspectID *int64     `json:"accused_suspect_id,omitempty"`
-	AccusedWeapon    string     `json:"accused_weapon,omitempty"`
-	AccusedMotive    string     `json:"accused_motive,omitempty"`
-	CompletedAt      *time.Time `json:"completed_at,omitempty"`
+	ID                   int64      `json:"id"`
+	UserID               int64      `json:"user_id"`
+	CaseID               int64      `json:"case_id"`
+	Status               string     `json:"status"` // in_progress, solved, failed
+	TimeRemainingMinutes int        `json:"time_remaining_minutes"` // default 420 (21:00 to 04:00)
+	WarrantsRemaining    int        `json:"warrants_remaining"`     // default 2
+	AccusedSuspectID     *int64     `json:"accused_suspect_id,omitempty"`
+	AccusedWeapon        string     `json:"accused_weapon,omitempty"`
+	AccusedMotive        string     `json:"accused_motive,omitempty"`
+	CompletedAt          *time.Time `json:"completed_at,omitempty"`
 }
 
 // Verdict represents the outcome of an accusation.

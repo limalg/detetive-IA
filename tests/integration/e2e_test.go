@@ -179,6 +179,10 @@ func TestE2EInvestigationJourney(t *testing.T) {
 		ID   int64  `json:"id"`
 		Name string `json:"name"`
 	}
+	var clues []struct {
+		ID   int64  `json:"id"`
+		Name string `json:"name"`
+	}
 	t.Run("Exploração do Caso e Interrogatório", func(t *testing.T) {
 		respCase, err := client.Get(ts.URL + "/api/game/case")
 		if err != nil {
@@ -214,6 +218,7 @@ func TestE2EInvestigationJourney(t *testing.T) {
 			t.Fatal("nenhuma pista encontrada no caso")
 		}
 		suspects = caseRes.Suspects
+		clues = caseRes.Clues
 
 		// Interrogar primeiro suspeito
 		interPayload, _ := json.Marshal(map[string]interface{}{
@@ -240,12 +245,15 @@ func TestE2EInvestigationJourney(t *testing.T) {
 
 	// 5. Acusação e Veredito
 	t.Run("Dedução e Resolução do Mistério", func(t *testing.T) {
+		clueIDs := []int64{clues[0].ID, clues[1].ID}
+
 		// Acusação Falsa
 		fakePayload, _ := json.Marshal(map[string]interface{}{
 			"case_id":    caseID,
 			"suspect_id": suspects[0].ID,
 			"weapon":     "Arma Inexistente",
 			"motive":     "Motivo Incorreto",
+			"clue_ids":   clueIDs,
 		})
 		respFake, err := client.Post(ts.URL+"/api/game/accuse", "application/json", bytes.NewReader(fakePayload))
 		if err != nil {
@@ -264,9 +272,10 @@ func TestE2EInvestigationJourney(t *testing.T) {
 		// Acusação Correta
 		correctPayload, _ := json.Marshal(map[string]interface{}{
 			"case_id":    caseID,
-			"suspect_id": 1, // Dra. Helena Voss
+			"suspect_id": 1, // Julian Vane
 			"weapon":     "Adaga Cerimonial Veneziana",
 			"motive":     "Dívidas e herança",
+			"clue_ids":   clueIDs,
 		})
 		respCorrect, err := client.Post(ts.URL+"/api/game/accuse", "application/json", bytes.NewReader(correctPayload))
 		if err != nil {

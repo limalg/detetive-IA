@@ -100,6 +100,55 @@ func (g *GeminiClient) GenerateResponse(ctx context.Context, prompt string) (str
 	return "", errors.New("empty response from gemini api")
 }
 
+// GenerateFallbackResponseWithStress generates an in-character Noir response factoring in suspect stress levels and 3-tier secrets.
+func GenerateFallbackResponseWithStress(suspect *models.Suspect, question string, stress int) string {
+	q := strings.ToLower(question)
+
+	// High Stress (>70%): Breakdown and confession / desperate truth (Tier 3)
+	if stress > 70 {
+		truth := suspect.Tier3Truth
+		if truth == "" {
+			truth = "Eu perdi o controle! As coisas foram longe demais naquela sala!"
+		}
+		if suspect.IsCulprit {
+			return fmt.Sprintf("O suspeito empalidece em choque absoluto e desmorona com a voz trêmula: '%s'", truth)
+		}
+		return fmt.Sprintf("O suspeito entra em pânico perante o cerco policial: '%s %s'", truth, suspect.CrossSuspicion)
+	}
+
+	// Medium Stress (30%-70%): Defensive admission of secondary petty crime (Tier 2)
+	if stress >= 30 {
+		petty := suspect.Tier2PettyCrime
+		if petty == "" {
+			petty = suspect.Secret
+		}
+		if petty == "" {
+			petty = "Eu ocultava pequenos desvios contábeis e dívidas clandestinas."
+		}
+		cross := suspect.CrossSuspicion
+		if cross == "" {
+			cross = "Você deveria olhar com mais atenção para os outros presentes na casa!"
+		}
+		return fmt.Sprintf("O suspeito hesita sob pressão, cerra os dentes e admite: 'Tudo bem, detetive! Eu confesso que %s Mas não matei ninguém! %s'", petty, cross)
+	}
+
+	// Low Stress (<30%): Tier 1 Alibi and confident composure
+	if suspect.Tier1Alibi != "" {
+		if containsAny(q, "arma", "adaga", "punhal", "faca", "veneno", "sangue", "morte", "matou", "assassin") {
+			return GenerateFallbackResponse(suspect, question)
+		}
+		if containsAny(q, "motivo", "dinheiro", "testamento", "dívida", "herança", "fortuna", "segredo", "por que") {
+			return GenerateFallbackResponse(suspect, question)
+		}
+		if strings.TrimSpace(suspect.CrossSuspicion) != "" {
+			return fmt.Sprintf("%s Além disso, %s", suspect.Tier1Alibi, suspect.CrossSuspicion)
+		}
+		return suspect.Tier1Alibi
+	}
+
+	return GenerateFallbackResponse(suspect, question)
+}
+
 // GenerateFallbackResponse generates an in-character Noir response without external dependencies.
 func GenerateFallbackResponse(suspect *models.Suspect, question string) string {
 	q := strings.ToLower(question)
@@ -107,6 +156,9 @@ func GenerateFallbackResponse(suspect *models.Suspect, question string) string {
 	switch {
 	// Questions about alibi, whereabouts, night of the crime
 	case containsAny(q, "alibi", "álibi", "onde", "estava", "noite", "hora", "horário", "quando"):
+		if suspect.Tier1Alibi != "" {
+			return suspect.Tier1Alibi
+		}
 		if strings.Contains(suspect.Name, "Julian") {
 			return "Detetive, como já afirmei à polícia, passei a noite inteira na sala de música. Dedilhava o piano de cauda com uma taça de conhaque ao meu lado. Não saí de lá até ouvir a comoção."
 		} else if strings.Contains(suspect.Name, "Elena") {

@@ -42,6 +42,9 @@ type botArchetype struct {
 	personality string
 	alibi       string
 	secret      string
+	tier1Alibi  string
+	tier2Petty  string
+	tier3Truth  string
 }
 
 var noirBotPool = []botArchetype{
@@ -51,6 +54,9 @@ var noirBotPool = []botArchetype{
 		personality: "Metódica, cínica e fumante inveterada.",
 		alibi:       "Estava no laboratório temporário conferindo laudos toxicológicos.",
 		secret:      "Prescrevia morfina sob nomes falsos para aristocratas da cidade.",
+		tier1Alibi:  "Estava no laboratório temporário conferindo laudos toxicológicos e dosagens.",
+		tier2Petty:  "Prescrevia morfina e anestésicos sob nomes falsos para clientes ricos da alta sociedade.",
+		tier3Truth:  "Arthur me chantageava com o livro de receitas ilegais e ia cassar minha licença médica!",
 	},
 	{
 		name:        "Vincent Thorne",
@@ -58,6 +64,9 @@ var noirBotPool = []botArchetype{
 		personality: "Oportunista, sarcástico e atento a sussurros de bastidores.",
 		alibi:       "Fiquei no saguão datilografando notas sobre o baile beneficente.",
 		secret:      "Chantageava personalidades públicas com fotografias clandestinas.",
+		tier1Alibi:  "Fiquei no saguão datilografando notas sobre o baile beneficente até altas horas.",
+		tier2Petty:  "Chantageava personalidades públicas e políticos com fotografias clandestinas do submundo.",
+		tier3Truth:  "Arthur destruiu os negativos de fotos que garantiriam minha fortuna e reputação nacional!",
 	},
 	{
 		name:        "Barão Klaus von Berg",
@@ -65,6 +74,9 @@ var noirBotPool = []botArchetype{
 		personality: "Arrogante, implacável e impaciente com devedores.",
 		alibi:       "Estava na sala de conferências revisando contratos de hipotecas antigas.",
 		secret:      "Financiou contrabando no cais e a vítima ameaçou denunciar às autoridades.",
+		tier1Alibi:  "Estava na sala de conferências revisando contratos de hipotecas e títulos de crédito.",
+		tier2Petty:  "Financiei carregamentos clandestinos no cais e opero uma mesa ilegal de câmbio negro.",
+		tier3Truth:  "Arthur ameaçou entregar meus livros contábeis à receita federal e arruinar meu império!",
 	},
 	{
 		name:        "Clarice Dubois",
@@ -72,6 +84,9 @@ var noirBotPool = []botArchetype{
 		personality: "Sedutora, melancólica e ardilosa.",
 		alibi:       "Permaneci no camarim ensaiando arranjos de voz ao violino até a madrugada.",
 		secret:      "Possuía cartas de amor escandalosas enviadas pela vítima anos atrás.",
+		tier1Alibi:  "Permaneci no camarim ensaiando arranjos de voz ao violino até a madrugada.",
+		tier2Petty:  "Extorquia amantes e guardava joias furtadas de mecenas desavisados em meu camarim.",
+		tier3Truth:  "Arthur ameaçou me expulsar da cidade sem um tostão se eu não lhe devolvesse as cartas íntimas!",
 	},
 	{
 		name:        "Barnaby Finch",
@@ -79,6 +94,9 @@ var noirBotPool = []botArchetype{
 		personality: "Formal, impassível e rigorosamente detalhista.",
 		alibi:       "Conferia o inventário de garrafas e cristais na adega subterrânea.",
 		secret:      "Ocultava recibos contábeis comprometedores da família no forro do teto.",
+		tier1Alibi:  "Conferia o inventário de garrafas e cristais na adega subterrânea da mansão.",
+		tier2Petty:  "Ocultava recibos contábeis comprometedores e desviava pequenos montantes da despensa.",
+		tier3Truth:  "Arthur pretendia me demitir sem pensão após quarenta anos de servidão silenciosa!",
 	},
 }
 
@@ -144,13 +162,19 @@ func (w *Weaver) WeaveCase(players []room.Player) (*WeaverResult, error) {
 		if role == "" {
 			role = "Investigador Convidado"
 		}
+		alibi := "Afirma que permaneceu na galeria de arte admirando os quadros na hora fatídica."
+		petty := "Ocultava transações financeiras irregulares e dívidas nos bastidores da alta sociedade."
+		truth := "Eu estava apenas tentando salvar minhas economias de uma ruína iminente!"
 		suspectPool = append(suspectPool, WeaverSuspect{
 			Suspect: models.Suspect{
-				Name:        persona,
-				Role:        role,
-				Personality: "Observador, reservado e misterioso.",
-				Alibi:       "Afirma que permaneceu na galeria de arte admirando os quadros na hora fatídica.",
-				Secret:      p.Secret,
+				Name:            persona,
+				Role:            role,
+				Personality:     "Observador, reservado e misterioso.",
+				Alibi:           alibi,
+				Secret:          p.Secret,
+				Tier1Alibi:      alibi,
+				Tier2PettyCrime: petty,
+				Tier3Truth:      truth,
 			},
 			IsBot: p.IsBot,
 		})
@@ -161,11 +185,14 @@ func (w *Weaver) WeaveCase(players []room.Player) (*WeaverResult, error) {
 		bot := noirBotPool[botIdx]
 		suspectPool = append(suspectPool, WeaverSuspect{
 			Suspect: models.Suspect{
-				Name:        bot.name,
-				Role:        bot.role,
-				Personality: bot.personality,
-				Alibi:       bot.alibi,
-				Secret:      bot.secret,
+				Name:            bot.name,
+				Role:            bot.role,
+				Personality:     bot.personality,
+				Alibi:           bot.tier1Alibi,
+				Secret:          bot.secret,
+				Tier1Alibi:      bot.tier1Alibi,
+				Tier2PettyCrime: bot.tier2Petty,
+				Tier3Truth:      bot.tier3Truth,
 			},
 			IsBot: true,
 		})
@@ -183,8 +210,25 @@ func (w *Weaver) WeaveCase(players []room.Player) (*WeaverResult, error) {
 	weapon := weaponPool[cryptoRandInt(len(weaponPool))]
 	motive := motivePool[cryptoRandInt(len(motivePool))]
 
-	// 4. Construct Contradiction for Culprit's Alibi
-	culprit.Alibi = "Afirma que passou a noite inteira lendo no salão de música com uma taça de vinho ao lado da lareira."
+	// 4. Construct Contradiction for Culprit's Alibi and Narrative Tiers
+	culprit.Tier1Alibi = "Afirma que passou a noite inteira lendo no salão de música com uma taça de vinho ao lado da lareira."
+	culprit.Alibi = culprit.Tier1Alibi
+	culprit.Tier3Truth = fmt.Sprintf("Arthur descobriu tudo sobre %s e ia me arruinar perante a sociedade! Quando ele me ameaçou, perdi a cabeça e usei a %s!", motive.name, weapon.name)
+
+	// Ensure all innocents have coherent Tier 3 truth
+	for i := range suspectPool {
+		if !suspectPool[i].IsCulprit {
+			suspectPool[i].Tier3Truth = "Posso ter meus pecados e segredos menores, mas sou inocente deste crime horrendo! Jamais assassinaria Sir Arthur!"
+		}
+	}
+
+	// Cross-dialogue social matrix: each suspect suspects another suspect by name
+	for i := range suspectPool {
+		otherIdx := (i + 1) % len(suspectPool)
+		other := suspectPool[otherIdx]
+		suspectPool[i].CrossSuspicion = fmt.Sprintf("Desconfio de %s; vi passos apressados perto do gabinete e discussões tensas a portas fechadas.", other.Name)
+	}
+
 	contradictionText := fmt.Sprintf("Registro de Manutenção e Testemunho: Todo o salão de música e sua ala estiveram trancados para reparo emergencial de vazamento de gás das 21h às 04h. O álibi alegado por %s contém contradição fatal e é falso.", culprit.Name)
 
 	// Victim profile
@@ -215,9 +259,9 @@ func (w *Weaver) WeaveCase(players []room.Player) (*WeaverResult, error) {
 	for i, s := range suspectPool {
 		if w.db != nil {
 			sRes, err := w.db.Exec(`
-				INSERT INTO suspects (case_id, name, role, personality, alibi, secret, is_culprit)
-				VALUES (?, ?, ?, ?, ?, ?, ?)
-			`, caseID, s.Name, s.Role, s.Personality, s.Alibi, s.Secret, s.IsCulprit)
+				INSERT INTO suspects (case_id, name, role, personality, alibi, secret, is_culprit, tier1_alibi, tier2_petty_crime, tier3_truth, cross_suspicion)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			`, caseID, s.Name, s.Role, s.Personality, s.Alibi, s.Secret, s.IsCulprit, s.Tier1Alibi, s.Tier2PettyCrime, s.Tier3Truth, s.CrossSuspicion)
 			if err != nil {
 				return nil, fmt.Errorf("failed to insert suspect %s: %w", s.Name, err)
 			}

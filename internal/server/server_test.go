@@ -226,6 +226,7 @@ func TestGameEndpoints(t *testing.T) {
 		"suspect_id": suspectID,
 		"weapon":     "Adaga Cerimonial Veneziana",
 		"motive":     "Dívidas e herança",
+		"clue_ids":   []int64{caseRes.Clues[0].ID, caseRes.Clues[1].ID},
 	}
 	accBytes, _ := json.Marshal(accuseBody)
 
@@ -417,4 +418,187 @@ func TestInterrogateWithClueConfrontation(t *testing.T) {
 		t.Errorf("expected elevated stress_level (>=40), got %d", res.StressLevel)
 	}
 }
+
+func TestAccuseRequiresTwoClues(t *testing.T) {
+	router, gameService, caseID := setupTestServer(t)
+
+	details, err := gameService.GetCaseDetails(caseID)
+	if err != nil {
+		t.Fatalf("GetCaseDetails failed: %v", err)
+	}
+
+	innocentID := details.Suspects[0].ID
+	for _, s := range details.Suspects {
+		if !s.IsCulprit {
+			innocentID = s.ID
+			break
+		}
+	}
+
+	clue1 := details.Clues[0].ID
+	clue2 := details.Clues[1].ID
+
+	// 1. Accuse without clues -> 400 Bad Request
+	accuseNoClues := map[string]interface{}{
+		"case_id":    caseID,
+		"suspect_id": innocentID,
+		"weapon":     "Revólver",
+		"motive":     "Vingança",
+	}
+	body, _ := json.Marshal(accuseNoClues)
+	req := httptest.NewRequest(http.MethodPost, "/api/game/accuse", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for accusation without clues, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "anexe duas pistas") {
+		t.Errorf("expected error to mention 'anexe duas pistas', got %s", rec.Body.String())
+	}
+
+	// 2. Accuse with 1 clue -> 400 Bad Request
+	accuseOneClue := map[string]interface{}{
+		"case_id":    caseID,
+		"suspect_id": innocentID,
+		"weapon":     "Revólver",
+		"motive":     "Vingança",
+		"clue_ids":   []int64{clue1},
+	}
+	body, _ = json.Marshal(accuseOneClue)
+	req = httptest.NewRequest(http.MethodPost, "/api/game/accuse", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for accusation with 1 clue, got %d", rec.Code)
+	}
+
+	// 3. First wrong accusation with 2 clues: Strike 1 (-1 warrant, -30 min)
+	accuseWrong1 := map[string]interface{}{
+		"case_id":    caseID,
+		"suspect_id": innocentID,
+		"weapon":     "Cálice",
+		"motive":     "Chantagem",
+		"clue_ids":   []int64{clue1, clue2},
+	}
+	body, _ = json.Marshal(accuseWrong1)
+	req = httptest.NewRequest(http.MethodPost, "/api/game/accuse", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for accusation evaluation, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var res1 struct {
+		IsCorrect            bool `json:"is_correct"`
+		WarrantsRemaining    int  `json:"warrants_remaining"`
+		TimeRemainingMinutes int  `json:"time_remaining_minutes"`
+		GameOver             bool `json:"game_over"`
+	}
+	_ = json.NewDecoder(rec.Body).Decode(&res1)
+
+	if res1.IsCorrect {
+		t.Error("expected is_correct=false for wrong accusation")
+	}
+	if res1.WarrantsRemaining != 1 {
+		t.Errorf("expected 1 warrant remaining after strike 1, got %d", res1.WarrantsRemaining)
+	}
+	if res1.TimeRemainingMinutes != 390 {
+		t.Errorf("expected 390 minutes remaining (420 - 30), got %d", res1.TimeRemainingMinutes)
+	}
+	if res1.GameOver {
+		t.Error("expected gameOver=false after first strike")
+	}
+
+	// 4. Second wrong accusation: Strike 2 (-1 warrant -> 0 warrants, game_over=true)
+	req = httptest.NewRequest(http.MethodPost, "/api/game/accuse", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for strike 2 evaluation, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var res2 struct {
+		WarrantsRemaining int  `json:"warrants_remaining"`
+		GameOver          bool `json:"game_over"`
+	}
+	_ = json.NewDecoder(rec.Body).Decode(&res2)
+	if res2.WarrantsRemaining != 0 || !res2.GameOver {
+		t.Errorf("expected warrants=0 and gameOver=true after strike 2, got warrants=%d, gameOver=%v", res2.WarrantsRemaining, res2.GameOver)
+	}
+
+	// 5. Subsequent action after strike exhaustion -> 400 Game Over
+	req = httptest.NewRequest(http.MethodPost, "/api/game/accuse", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for action when warrants exhausted, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestInterrogationTimeDeductions(t *testing.T) {
+	router, gameService, caseID := setupTestServer(t)
+
+	details, err := gameService.GetCaseDetails(caseID)
+	if err != nil {
+		t.Fatalf("GetCaseDetails failed: %v", err)
+	}
+
+	suspectID := details.Suspects[0].ID
+	clueID := details.Clues[0].ID
+
+	// 1. Normal question: deducts 15 min (420 -> 405)
+	q1 := map[string]interface{}{
+		"suspect_id": suspectID,
+		"question":   "Onde você estava?",
+	}
+	body, _ := json.Marshal(q1)
+	req := httptest.NewRequest(http.MethodPost, "/api/game/interrogate", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for normal interrogation, got %d", rec.Code)
+	}
+	var res1 struct {
+		TimeRemainingMinutes int `json:"time_remaining_minutes"`
+	}
+	_ = json.NewDecoder(rec.Body).Decode(&res1)
+	if res1.TimeRemainingMinutes != 405 {
+		t.Errorf("expected 405 minutes remaining after 15 min question, got %d", res1.TimeRemainingMinutes)
+	}
+
+	// 2. Confrontation question: deducts 20 min (405 -> 385)
+	q2 := map[string]interface{}{
+		"suspect_id":       suspectID,
+		"question":         "Como explica isto?",
+		"confront_clue_id": clueID,
+	}
+	body, _ = json.Marshal(q2)
+	req = httptest.NewRequest(http.MethodPost, "/api/game/interrogate", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for confrontation, got %d", rec.Code)
+	}
+	var res2 struct {
+		TimeRemainingMinutes int `json:"time_remaining_minutes"`
+	}
+	_ = json.NewDecoder(rec.Body).Decode(&res2)
+	if res2.TimeRemainingMinutes != 385 {
+		t.Errorf("expected 385 minutes remaining after 20 min confrontation, got %d", res2.TimeRemainingMinutes)
+	}
+}
+
 

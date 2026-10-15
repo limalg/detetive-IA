@@ -38,7 +38,11 @@ CREATE TABLE IF NOT EXISTS suspects (
     personality TEXT NOT NULL,
     alibi TEXT NOT NULL,
     secret TEXT NOT NULL,
-    is_culprit BOOLEAN NOT NULL DEFAULT 0
+    is_culprit BOOLEAN NOT NULL DEFAULT 0,
+    tier1_alibi TEXT DEFAULT '',
+    tier2_petty_crime TEXT DEFAULT '',
+    tier3_truth TEXT DEFAULT '',
+    cross_suspicion TEXT DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS clues (
@@ -60,9 +64,11 @@ CREATE TABLE IF NOT EXISTS interrogation_messages (
 
 CREATE TABLE IF NOT EXISTS investigations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
     case_id INTEGER NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
     status TEXT NOT NULL DEFAULT 'in_progress',
+    time_remaining_minutes INTEGER NOT NULL DEFAULT 420,
+    warrants_remaining INTEGER NOT NULL DEFAULT 2,
     accused_suspect_id INTEGER REFERENCES suspects(id),
     accused_weapon TEXT,
     accused_motive TEXT,
@@ -78,6 +84,19 @@ CREATE INDEX IF NOT EXISTS idx_investigations_user_case ON investigations(user_i
 
 // RunMigrations executes all DDL statements to ensure all tables and indexes exist.
 func RunMigrations(database *sql.DB) error {
-	_, err := database.Exec(Schema)
-	return err
+	if _, err := database.Exec(Schema); err != nil {
+		return err
+	}
+	alterQueries := []string{
+		"ALTER TABLE investigations ADD COLUMN time_remaining_minutes INTEGER NOT NULL DEFAULT 420;",
+		"ALTER TABLE investigations ADD COLUMN warrants_remaining INTEGER NOT NULL DEFAULT 2;",
+		"ALTER TABLE suspects ADD COLUMN tier1_alibi TEXT DEFAULT '';",
+		"ALTER TABLE suspects ADD COLUMN tier2_petty_crime TEXT DEFAULT '';",
+		"ALTER TABLE suspects ADD COLUMN tier3_truth TEXT DEFAULT '';",
+		"ALTER TABLE suspects ADD COLUMN cross_suspicion TEXT DEFAULT '';",
+	}
+	for _, q := range alterQueries {
+		_, _ = database.Exec(q)
+	}
+	return nil
 }

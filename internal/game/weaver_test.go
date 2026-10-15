@@ -175,3 +175,77 @@ func TestWeaver_DatabasePersistenceAndAccusation(t *testing.T) {
 		t.Errorf("expected score 100, got %d", verdict.Score)
 	}
 }
+
+func TestLayeredSecretsAndSocialWeb(t *testing.T) {
+	service, weaver := setupWeaverTest(t)
+
+	players := []room.Player{
+		{ID: 1, UserID: 101, Username: "det1", PersonaName: "Philip Marlowe", Role: "Investigador"},
+		{ID: 2, UserID: 102, Username: "det2", PersonaName: "Helena Voss", Role: "Herdeira"},
+	}
+
+	result, err := weaver.WeaveCase(players)
+	if err != nil {
+		t.Fatalf("WeaveCase failed: %v", err)
+	}
+
+	details, err := service.GetCaseDetails(result.CaseID)
+	if err != nil {
+		t.Fatalf("GetCaseDetails failed: %v", err)
+	}
+
+	for _, s := range details.Suspects {
+		if strings.TrimSpace(s.Tier1Alibi) == "" {
+			t.Errorf("suspect %s missing Tier1Alibi", s.Name)
+		}
+		if strings.TrimSpace(s.Tier2PettyCrime) == "" {
+			t.Errorf("suspect %s missing Tier2PettyCrime", s.Name)
+		}
+		if strings.TrimSpace(s.Tier3Truth) == "" {
+			t.Errorf("suspect %s missing Tier3Truth", s.Name)
+		}
+		if strings.TrimSpace(s.CrossSuspicion) == "" {
+			t.Errorf("suspect %s missing CrossSuspicion", s.Name)
+		}
+
+		// At least one cross-suspicion must mention another suspect's name
+		hasMention := false
+		for _, other := range details.Suspects {
+			if other.ID != s.ID && strings.Contains(s.CrossSuspicion, strings.Fields(other.Name)[0]) {
+				hasMention = true
+				break
+			}
+		}
+		if !hasMention {
+			t.Errorf("suspect %s cross-suspicion %q does not mention any other suspect", s.Name, s.CrossSuspicion)
+		}
+	}
+
+	// Test stress-based fallback interrogation responses:
+	// <30% stress: Tier 1 (Alibi)
+	// 30%-70% stress: Tier 2 (Petty Crime)
+	// >70% stress: Tier 3 (Truth/Breakdown)
+	culprit := details.Suspects[0]
+	for _, s := range details.Suspects {
+		if s.IsCulprit {
+			culprit = s
+			break
+		}
+	}
+
+	respTier1 := game.GenerateFallbackResponseWithStress(&culprit, "O que aconteceu?", 20)
+	if !strings.Contains(respTier1, culprit.Tier1Alibi) && !strings.Contains(respTier1, culprit.Alibi) {
+		t.Errorf("expected Tier 1 alibi in low stress response (<30%%), got: %s", respTier1)
+	}
+
+	respTier2 := game.GenerateFallbackResponseWithStress(&culprit, "O que você tem a esconder?", 50)
+	if !strings.Contains(respTier2, culprit.Tier2PettyCrime) {
+		t.Errorf("expected Tier 2 petty crime in medium stress response (30-70%%), got: %s", respTier2)
+	}
+
+	respTier3 := game.GenerateFallbackResponseWithStress(&culprit, "Confesse!", 85)
+	if !strings.Contains(respTier3, culprit.Tier3Truth) {
+		t.Errorf("expected Tier 3 truth in high stress response (>70%%), got: %s", respTier3)
+	}
+}
+

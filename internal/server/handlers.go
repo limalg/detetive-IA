@@ -263,10 +263,25 @@ func (h *Handler) HandleGetCase(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
+	timeRemaining := 420
+	warrantsRemaining := 2
+	if h.cfg.GameService != nil {
+		var userID int64
+		if user, err := h.getAuthenticatedUser(r); err == nil && user != nil {
+			userID = user.ID
+		}
+		if inv, err := h.cfg.GameService.GetOrCreateInvestigation(userID, caseID); err == nil && inv != nil {
+			timeRemaining = inv.TimeRemainingMinutes
+			warrantsRemaining = inv.WarrantsRemaining
+		}
+	}
+
 	h.json(w, http.StatusOK, map[string]interface{}{
-		"case":     publicCase,
-		"suspects": publicSuspects,
-		"clues":    details.Clues,
+		"case":                   publicCase,
+		"suspects":               publicSuspects,
+		"clues":                  details.Clues,
+		"time_remaining_minutes": timeRemaining,
+		"warrants_remaining":     warrantsRemaining,
 	})
 }
 
@@ -295,6 +310,34 @@ func (h *Handler) HandleInterrogate(w http.ResponseWriter, r *http.Request) {
 	sessionID := h.getSessionToken(r)
 	if sessionID == "" {
 		sessionID = "guest_session"
+	}
+
+	var userID int64
+	if user, err := h.getAuthenticatedUser(r); err == nil && user != nil {
+		userID = user.ID
+	}
+
+	var caseID int64
+	if h.cfg.DB != nil {
+		_ = h.cfg.DB.QueryRow(`SELECT case_id FROM suspects WHERE id = ?`, req.SuspectID).Scan(&caseID)
+	}
+	if caseID == 0 {
+		caseID = 1
+	}
+
+	var inv *models.Investigation
+	if h.cfg.GameService != nil {
+		inv, _ = h.cfg.GameService.GetOrCreateInvestigation(userID, caseID)
+	}
+
+	if inv != nil && (inv.Status == "failed" || inv.TimeRemainingMinutes <= 0 || inv.WarrantsRemaining <= 0) {
+		h.json(w, http.StatusBadRequest, map[string]interface{}{
+			"error":                  "investigação encerrada: tempo esgotado ou mandados revogados",
+			"game_over":              true,
+			"time_remaining_minutes": inv.TimeRemainingMinutes,
+			"warrants_remaining":     inv.WarrantsRemaining,
+		})
+		return
 	}
 
 	stressLevel := 15
@@ -343,18 +386,41 @@ func (h *Handler) HandleInterrogate(w http.ResponseWriter, r *http.Request) {
 
 	if !confronted {
 		var err error
-		reply, err = h.cfg.GameService.Interrogate(sessionID, req.SuspectID, req.Question)
+		reply, err = h.cfg.GameService.InterrogateWithStress(sessionID, req.SuspectID, req.Question, stressLevel)
 		if err != nil {
 			h.error(w, http.StatusInternalServerError, "interrogation failed: "+err.Error())
 			return
 		}
 	}
 
+	// Deduct time: 15 min for normal question, 20 min for confrontation
+	deduction := 15
+	if confronted {
+		deduction = 20
+	}
+
+	timeRemaining := 420
+	warrantsRemaining := 2
+	gameOver := false
+	if inv != nil && h.cfg.GameService != nil {
+		rem, err := h.cfg.GameService.DeductTime(inv.ID, deduction)
+		if err == nil {
+			timeRemaining = rem
+		}
+		warrantsRemaining = inv.WarrantsRemaining
+		if timeRemaining <= 0 {
+			gameOver = true
+		}
+	}
+
 	h.json(w, http.StatusOK, map[string]interface{}{
-		"reply":        reply,
-		"message":      reply,
-		"stress_level": stressLevel,
-		"confronted":   confronted,
+		"reply":                  reply,
+		"message":                reply,
+		"stress_level":           stressLevel,
+		"confronted":             confronted,
+		"time_remaining_minutes": timeRemaining,
+		"warrants_remaining":     warrantsRemaining,
+		"game_over":              gameOver,
 	})
 }
 
@@ -366,10 +432,11 @@ func (h *Handler) HandleAccuse(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		CaseID    int64  `json:"case_id"`
-		SuspectID int64  `json:"suspect_id"`
-		Weapon    string `json:"weapon"`
-		Motive    string `json:"motive"`
+		CaseID    int64   `json:"case_id"`
+		SuspectID int64   `json:"suspect_id"`
+		Weapon    string  `json:"weapon"`
+		Motive    string  `json:"motive"`
+		ClueIDs   []int64 `json:"clue_ids"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		h.error(w, http.StatusBadRequest, "invalid json body")
@@ -380,9 +447,29 @@ func (h *Handler) HandleAccuse(w http.ResponseWriter, r *http.Request) {
 		req.CaseID = 1
 	}
 
+	if len(req.ClueIDs) != 2 {
+		h.error(w, http.StatusBadRequest, "anexe duas pistas para fundamentar o mandado")
+		return
+	}
+
 	var userID int64
 	if user, err := h.getAuthenticatedUser(r); err == nil && user != nil {
 		userID = user.ID
+	}
+
+	var inv *models.Investigation
+	if h.cfg.GameService != nil {
+		inv, _ = h.cfg.GameService.GetOrCreateInvestigation(userID, req.CaseID)
+	}
+
+	if inv != nil && (inv.Status == "failed" || inv.TimeRemainingMinutes <= 0 || inv.WarrantsRemaining <= 0) {
+		h.json(w, http.StatusBadRequest, map[string]interface{}{
+			"error":                  "investigação encerrada: mandados esgotados ou tempo expirado",
+			"game_over":              true,
+			"time_remaining_minutes": inv.TimeRemainingMinutes,
+			"warrants_remaining":     inv.WarrantsRemaining,
+		})
+		return
 	}
 
 	verdict, err := h.cfg.GameService.SubmitAccusation(userID, req.CaseID, req.SuspectID, req.Weapon, req.Motive)
@@ -391,13 +478,51 @@ func (h *Handler) HandleAccuse(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	timeRemaining := 420
+	warrantsLeft := 2
+	gameOver := false
+	if inv != nil {
+		timeRemaining = inv.TimeRemainingMinutes
+		warrantsLeft = inv.WarrantsRemaining
+	}
+
+	if verdict.Correct {
+		if inv != nil && h.cfg.DB != nil {
+			_, _ = h.cfg.DB.Exec(`
+				UPDATE investigations
+				SET status = 'solved', accused_suspect_id = ?, accused_weapon = ?, accused_motive = ?, completed_at = CURRENT_TIMESTAMP
+				WHERE id = ?
+			`, req.SuspectID, req.Weapon, req.Motive, inv.ID)
+		}
+	} else if inv != nil && h.cfg.GameService != nil {
+		// Deduct 30 min on wrong guess
+		rem, err := h.cfg.GameService.DeductTime(inv.ID, 30)
+		if err == nil {
+			timeRemaining = rem
+		}
+		// Deduct 1 warrant strike
+		wLeft, isOver, err := h.cfg.GameService.RecordWarrantStrike(inv.ID)
+		if err == nil {
+			warrantsLeft = wLeft
+			if isOver {
+				gameOver = true
+			}
+		}
+		if timeRemaining <= 0 {
+			gameOver = true
+		}
+	}
+
 	h.json(w, http.StatusOK, map[string]interface{}{
-		"is_correct": verdict.Correct,
-		"correct":    verdict.Correct,
-		"score":      verdict.Score,
-		"message":    verdict.Feedback,
-		"verdict":    verdict.Feedback,
-		"details":    verdict,
+		"is_correct":             verdict.Correct,
+		"correct":                verdict.Correct,
+		"score":                  verdict.Score,
+		"message":                verdict.Feedback,
+		"verdict":                verdict.Feedback,
+		"details":                verdict,
+		"time_remaining_minutes": timeRemaining,
+		"warrants_remaining":     warrantsLeft,
+		"game_over":              gameOver,
 	})
 }
 

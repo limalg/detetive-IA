@@ -226,3 +226,78 @@ func TestSubmitAccusation_WrongWeapon(t *testing.T) {
 		t.Error("expected accusation to fail due to wrong weapon")
 	}
 }
+
+func TestInvestigationTimeAndWarrants(t *testing.T) {
+	service, caseID, userID := setupTestGame(t)
+
+	// 1. New investigation initializes with 420 min and 2 warrants
+	inv, err := service.GetOrCreateInvestigation(userID, caseID)
+	if err != nil {
+		t.Fatalf("GetOrCreateInvestigation failed: %v", err)
+	}
+	if inv.TimeRemainingMinutes != 420 {
+		t.Errorf("expected 420 minutes initially, got %d", inv.TimeRemainingMinutes)
+	}
+	if inv.WarrantsRemaining != 2 {
+		t.Errorf("expected 2 warrants initially, got %d", inv.WarrantsRemaining)
+	}
+	if inv.Status != "in_progress" {
+		t.Errorf("expected status 'in_progress', got %q", inv.Status)
+	}
+
+	// 2. Deduct time
+	remaining, err := service.DeductTime(inv.ID, 15)
+	if err != nil {
+		t.Fatalf("DeductTime failed: %v", err)
+	}
+	if remaining != 405 {
+		t.Errorf("expected 405 minutes remaining, got %d", remaining)
+	}
+
+	// 3. Warrant strikes
+	warrantsLeft, isGameOver, err := service.RecordWarrantStrike(inv.ID)
+	if err != nil {
+		t.Fatalf("RecordWarrantStrike strike 1 failed: %v", err)
+	}
+	if warrantsLeft != 1 || isGameOver {
+		t.Errorf("expected 1 warrant remaining and isGameOver=false, got warrants=%d, isGameOver=%v", warrantsLeft, isGameOver)
+	}
+
+	// Strike 2 causes game over and marks as FAILED
+	warrantsLeft, isGameOver, err = service.RecordWarrantStrike(inv.ID)
+	if err != nil {
+		t.Fatalf("RecordWarrantStrike strike 2 failed: %v", err)
+	}
+	if warrantsLeft != 0 || !isGameOver {
+		t.Errorf("expected 0 warrants remaining and isGameOver=true, got warrants=%d, isGameOver=%v", warrantsLeft, isGameOver)
+	}
+
+	updatedInv, err := service.GetInvestigation(inv.ID)
+	if err != nil {
+		t.Fatalf("GetInvestigation failed: %v", err)
+	}
+	if updatedInv.Status != "failed" {
+		t.Errorf("expected status 'failed' after 2 strikes, got %q", updatedInv.Status)
+	}
+
+	// 4. Time exhaustion causes game over and marks as FAILED (guest investigation with userID=0)
+	inv2, err := service.GetOrCreateInvestigation(0, caseID)
+	if err != nil {
+		t.Fatalf("guest GetOrCreateInvestigation failed: %v", err)
+	}
+	remaining, err = service.DeductTime(inv2.ID, 420)
+	if err != nil {
+		t.Fatalf("DeductTime 420 failed: %v", err)
+	}
+	if remaining != 0 {
+		t.Errorf("expected 0 minutes remaining, got %d", remaining)
+	}
+	updatedInv2, err := service.GetInvestigation(inv2.ID)
+	if err != nil {
+		t.Fatalf("GetInvestigation failed: %v", err)
+	}
+	if updatedInv2.Status != "failed" {
+		t.Errorf("expected status 'failed' after time exhaustion, got %q", updatedInv2.Status)
+	}
+}
+
