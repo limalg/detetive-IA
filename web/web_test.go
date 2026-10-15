@@ -361,3 +361,71 @@ func TestEmbeddedVisualAssets(t *testing.T) {
 		}
 	}
 }
+
+func TestAudioEngineAsset(t *testing.T) {
+	// 1. Verify index.html references audio.js and contains sound-toggle button
+	indexFile, err := web.Assets.Open("templates/index.html")
+	if err != nil {
+		t.Fatalf("failed to open templates/index.html: %v", err)
+	}
+	defer indexFile.Close()
+
+	htmlBytes, err := io.ReadAll(indexFile)
+	if err != nil {
+		t.Fatalf("failed to read templates/index.html: %v", err)
+	}
+	html := string(htmlBytes)
+
+	if !strings.Contains(html, `<script src="/static/js/audio.js"></script>`) {
+		t.Errorf("templates/index.html missing script tag for /static/js/audio.js")
+	}
+	if !strings.Contains(html, `id="sound-toggle"`) {
+		t.Errorf("templates/index.html missing #sound-toggle button")
+	}
+
+	// 2. Verify static/js/audio.js exists in embedded FS and contains expected NoirAudio API
+	jsFile, err := web.Assets.Open("static/js/audio.js")
+	if err != nil {
+		t.Fatalf("failed to open static/js/audio.js from embed.FS: %v", err)
+	}
+	defer jsFile.Close()
+
+	jsBytes, err := io.ReadAll(jsFile)
+	if err != nil {
+		t.Fatalf("failed to read static/js/audio.js: %v", err)
+	}
+	js := string(jsBytes)
+
+	expectedSnippets := []string{
+		"window.NoirAudio",
+		"init",
+		"playTypewriter",
+		"playClockTick",
+		"playStamp",
+		"playPaper",
+		"toggleMute",
+		"isMuted",
+	}
+
+	for _, snippet := range expectedSnippets {
+		if !strings.Contains(js, snippet) {
+			t.Errorf("static/js/audio.js missing required API/snippet: %q", snippet)
+		}
+	}
+
+	// 3. Verify HTTP 200 via web.FileServer()
+	handler := web.FileServer()
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	resp, err := http.Get(server.URL + "/static/js/audio.js")
+	if err != nil {
+		t.Fatalf("failed to GET /static/js/audio.js: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected 200 OK for /static/js/audio.js, got %d", resp.StatusCode)
+	}
+}
+

@@ -44,6 +44,9 @@
           <span class="badge-label">Mandados</span>
         </div>
 
+        <!-- Controle de Áudio Diegético -->
+        <button id="sound-toggle" class="btn btn-secondary" style="padding: 0.35rem 0.6rem; font-size: 0.8rem;" title="Alternar Som">🔊 Som: Ativo</button>
+
         <button id="pwa-install-btn" class="btn-pwa-install">📲 Instalar App</button>
         <div class="agent-status">
           <span id="network-status" class="status-dot" title="Status da Conexão"></span>
@@ -362,6 +365,8 @@
     </div>
   </div>
 
+  <!-- Diegetic Audio Engine -->
+  <script src="/static/js/audio.js"></script>
   <!-- Application Logic -->
   <script src="/static/js/app.js"></script>
 </body>
