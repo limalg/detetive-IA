@@ -314,24 +314,41 @@
 
     <!-- Interrogation Modal -->
     <div id="interrogation-modal" class="modal-overlay">
-      <div class="modal-card">
+      <div class="modal-card modal-card-interrogate">
         <div class="modal-header">
           <h3 id="interrogate-modal-title" class="modal-title">Sala de Interrogatório</h3>
           <button id="close-interrogation-btn" class="modal-close">&times;</button>
         </div>
         <div class="modal-body">
-          <div id="interrogate-suspect-profile" style="margin-bottom: 0.75rem; font-size: 0.9rem; color: var(--text-muted);">
-            <!-- Suspect context -->
-          </div>
-
-          <!-- Stress Meter -->
-          <div id="suspect-stress-container" class="stress-container" style="margin-bottom: 0.75rem;">
-            <div style="display: flex; justify-content: space-between; font-size: 0.8rem; font-family: var(--font-typewriter); margin-bottom: 0.25rem;">
-              <span style="color: var(--text-muted);">Nível de Estresse do Suspeito:</span>
-              <span id="suspect-stress-label" style="color: var(--accent-amber); font-weight: bold;">0% (Calmo)</span>
+          <!-- Centralized Interrogation Stage with Layered Noir Portrait -->
+          <div class="interrogate-stage">
+            <div class="suspect-spotlight"></div>
+            <div class="suspect-portrait-frame">
+              <img id="interrogate-portrait-img" class="suspect-portrait-img" src="/static/assets/suspect_magnate.webp" alt="Suspeito Sob Interrogatório">
+              <div class="smoke-particles"></div>
+              <div id="interrogate-sweat-drops" class="sweat-drops" style="display: none;">💦</div>
             </div>
-            <div class="stress-bar-bg" style="width: 100%; height: 8px; background: rgba(255,255,255,0.08); border-radius: 4px; overflow: hidden; border: 1px solid var(--border-noir);">
-              <div id="suspect-stress-meter" class="stress-bar-fill" style="width: 0%; height: 100%; background: linear-gradient(90deg, var(--accent-green), var(--accent-amber)); transition: width 0.4s ease;"></div>
+
+            <div id="interrogate-suspect-name" class="suspect-stage-name">Suspeito</div>
+            <div id="interrogate-suspect-profile" class="suspect-stage-profile">
+              <!-- Suspect context -->
+            </div>
+
+            <!-- Stress Meter -->
+            <div id="suspect-stress-container" class="stress-container" style="margin-bottom: 0.75rem; width: 100%; max-width: 420px;">
+              <div style="display: flex; justify-content: space-between; font-size: 0.8rem; font-family: var(--font-typewriter); margin-bottom: 0.25rem;">
+                <span style="color: var(--text-muted);">Nível de Estresse do Suspeito:</span>
+                <span id="suspect-stress-label" style="color: var(--accent-amber); font-weight: bold;">0% (Calmo)</span>
+              </div>
+              <div class="stress-bar-bg" style="width: 100%; height: 8px; background: rgba(255,255,255,0.08); border-radius: 4px; overflow: hidden; border: 1px solid var(--border-noir);">
+                <div id="suspect-stress-meter" class="stress-bar-fill" style="width: 0%; height: 100%; background: linear-gradient(90deg, var(--accent-green), var(--accent-amber)); transition: width 0.4s ease;"></div>
+              </div>
+            </div>
+
+            <!-- Centered Speech Balloon for Suspect's latest reaction/quote -->
+            <div id="interrogate-speech-balloon" class="interrogate-speech-balloon">
+              <div class="speech-balloon-tail"></div>
+              <div id="interrogate-speech-text" class="speech-balloon-text">"O que você quer de mim, detetive? Não tenho nada a esconder."</div>
             </div>
           </div>
 

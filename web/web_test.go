@@ -518,5 +518,92 @@ func TestTactileDeskElements(t *testing.T) {
 	}
 }
 
+func TestCentralizedInterrogationStage(t *testing.T) {
+	// 1. Verify index.html centralized interrogation stage structure
+	indexFile, err := web.Assets.Open("templates/index.html")
+	if err != nil {
+		t.Fatalf("failed to open templates/index.html: %v", err)
+	}
+	defer indexFile.Close()
+
+	htmlBytes, err := io.ReadAll(indexFile)
+	if err != nil {
+		t.Fatalf("failed to read templates/index.html: %v", err)
+	}
+	html := string(htmlBytes)
+
+	requiredHTMLElements := []string{
+		"interrogate-stage",
+		"suspect-spotlight",
+		"suspect-portrait-frame",
+		`id="interrogate-portrait-img"`,
+		"smoke-particles",
+		`id="interrogate-sweat-drops"`,
+		`id="interrogate-suspect-name"`,
+		`id="interrogate-speech-balloon"`,
+		`id="suspect-stress-container"`,
+	}
+
+	for _, elem := range requiredHTMLElements {
+		if !strings.Contains(html, elem) {
+			t.Errorf("templates/index.html missing required interrogation stage element: %s", elem)
+		}
+	}
+
+	// 2. Verify style.css rules and keyframes
+	cssFile, err := web.Assets.Open("static/css/style.css")
+	if err != nil {
+		t.Fatalf("failed to open static/css/style.css: %v", err)
+	}
+	defer cssFile.Close()
+
+	cssBytes, err := io.ReadAll(cssFile)
+	if err != nil {
+		t.Fatalf("failed to read static/css/style.css: %v", err)
+	}
+	css := string(cssBytes)
+
+	requiredCSSRules := []string{
+		".interrogate-stage",
+		".suspect-spotlight",
+		".suspect-portrait-frame",
+		"@keyframes smokeDrift",
+		"@keyframes nervousBreath",
+		"@keyframes stressPulse",
+	}
+
+	for _, elem := range requiredCSSRules {
+		if !strings.Contains(css, elem) {
+			t.Errorf("static/css/style.css missing required interrogation stage rule: %s", elem)
+		}
+	}
+
+	// 3. Verify app.js dynamic suspect portrait, stress reaction, and typewriter audio
+	jsFile, err := web.Assets.Open("static/js/app.js")
+	if err != nil {
+		t.Fatalf("failed to open static/js/app.js: %v", err)
+	}
+	defer jsFile.Close()
+
+	jsBytes, err := io.ReadAll(jsFile)
+	if err != nil {
+		t.Fatalf("failed to read static/js/app.js: %v", err)
+	}
+	js := string(jsBytes)
+
+	requiredJSSnippets := []string{
+		"interrogate-portrait-img",
+		"interrogate-sweat-drops",
+		"high-stress",
+		"playTypewriter",
+	}
+
+	for _, snippet := range requiredJSSnippets {
+		if !strings.Contains(js, snippet) {
+			t.Errorf("static/js/app.js missing required interrogation stage JS snippet: %s", snippet)
+		}
+	}
+}
+
 
 

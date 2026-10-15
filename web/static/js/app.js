@@ -82,6 +82,12 @@
     closeInterrogationBtn: document.getElementById('close-interrogation-btn'),
     interrogateModalTitle: document.getElementById('interrogate-modal-title'),
     interrogateSuspectProfile: document.getElementById('interrogate-suspect-profile'),
+    interrogatePortraitImg: document.getElementById('interrogate-portrait-img'),
+    interrogateSweatDrops: document.getElementById('interrogate-sweat-drops'),
+    interrogateSuspectName: document.getElementById('interrogate-suspect-name'),
+    interrogateSpeechBalloon: document.getElementById('interrogate-speech-balloon'),
+    interrogateSpeechText: document.getElementById('interrogate-speech-text'),
+    suspectPortraitFrame: document.querySelector('.suspect-portrait-frame'),
     chatTranscript: document.getElementById('chat-transcript'),
     interrogationForm: document.getElementById('interrogation-form'),
     interrogationInput: document.getElementById('interrogation-input'),
@@ -1044,15 +1050,24 @@
     el.suspectStressMeter.style.width = `${clamped}%`;
     el.suspectStressMeter.className = 'stress-bar-fill';
 
+    const portraitFrame = el.suspectPortraitFrame || document.querySelector('.suspect-portrait-frame');
+    const sweatDrops = el.interrogateSweatDrops || document.getElementById('interrogate-sweat-drops');
+
     let label = `${clamped}% (Calmo / Calculista)`;
-    if (clamped > 75) {
+    if (clamped > 70) {
       el.suspectStressMeter.classList.add('panic');
       label = `${clamped}% (EM PÂNICO / ÁLIBI QUEBRADO!)`;
+      if (portraitFrame) portraitFrame.classList.add('high-stress');
+      if (sweatDrops) sweatDrops.style.display = 'block';
     } else if (clamped > 35) {
       el.suspectStressMeter.classList.add('nervous');
       label = `${clamped}% (Nervoso / Inseguro)`;
+      if (portraitFrame) portraitFrame.classList.remove('high-stress');
+      if (sweatDrops) sweatDrops.style.display = 'none';
     } else {
       el.suspectStressMeter.classList.add('calm');
+      if (portraitFrame) portraitFrame.classList.remove('high-stress');
+      if (sweatDrops) sweatDrops.style.display = 'none';
     }
     el.suspectStressLabel.textContent = label;
   }
@@ -1071,11 +1086,48 @@
   // =========================================================================
   // Interrogation Room
   // =========================================================================
+  let speechBalloonTimer = null;
+
+  function typeSpeechBalloon(text) {
+    if (!el.interrogateSpeechText) return;
+    if (speechBalloonTimer) {
+      clearInterval(speechBalloonTimer);
+      speechBalloonTimer = null;
+    }
+    if (window.NoirAudio) {
+      window.NoirAudio.playTypewriter();
+    }
+    el.interrogateSpeechText.textContent = '';
+    let idx = 0;
+    const clean = text || '';
+    const intervalMs = Math.max(12, Math.min(28, Math.floor(600 / (clean.length || 1))));
+    speechBalloonTimer = setInterval(() => {
+      if (idx < clean.length) {
+        el.interrogateSpeechText.textContent += clean.charAt(idx);
+        idx++;
+        if (idx % 7 === 0 && window.NoirAudio) {
+          window.NoirAudio.playTypewriter();
+        }
+      } else {
+        clearInterval(speechBalloonTimer);
+        speechBalloonTimer = null;
+      }
+    }, intervalMs);
+  }
+
   function openInterrogation(suspect) {
     state.activeSuspect = suspect;
     el.interrogateModalTitle.textContent = `Interrogatório: ${suspect.name}`;
+
+    // Set centralized stage suspect portrait & name
+    if (el.interrogatePortraitImg) {
+      el.interrogatePortraitImg.src = getSuspectPhotoUrl(suspect);
+      el.interrogatePortraitImg.alt = suspect.name;
+    }
+    if (el.interrogateSuspectName) {
+      el.interrogateSuspectName.textContent = `${suspect.name} (${suspect.role})`;
+    }
     el.interrogateSuspectProfile.innerHTML = `
-      <strong>Cargo:</strong> ${escapeHtml(suspect.role)} &bull; 
       <strong>Temperamento:</strong> ${escapeHtml(suspect.personality || 'Reservado')} &bull;
       <em>${escapeHtml(suspect.alibi)}</em>
     `;
@@ -1083,14 +1135,18 @@
     updateConfrontClueOptions();
     updateStressMeter(suspect.id, state.suspectStress[suspect.id] || 0);
 
+    const initialGreeting = `O que você quer de mim, detetive? Eu já disse aos seus guardas tudo o que sei. Não tenho nada a esconder.`;
     if (!state.chatHistories[suspect.id]) {
       state.chatHistories[suspect.id] = [
         {
           sender: 'suspect',
-          message: `O que você quer de mim, detetive? Eu já disse aos seus guardas tudo o que sei. Não tenho nada a esconder.`
+          message: initialGreeting
         }
       ];
     }
+
+    const latestSuspectMsg = [...(state.chatHistories[suspect.id] || [])].reverse().find(m => m.sender === 'suspect');
+    typeSpeechBalloon(latestSuspectMsg ? `"${latestSuspectMsg.message}"` : `"${initialGreeting}"`);
 
     renderChatTranscript();
     el.interrogationModal.classList.add('active');
@@ -1098,6 +1154,10 @@
   }
 
   function closeInterrogation() {
+    if (speechBalloonTimer) {
+      clearInterval(speechBalloonTimer);
+      speechBalloonTimer = null;
+    }
     el.interrogationModal.classList.remove('active');
     state.activeSuspect = null;
   }
@@ -1192,6 +1252,8 @@
           message: reply
         });
         renderChatTranscript();
+        typeSpeechBalloon(`"${reply}"`);
+        if (window.NoirAudio) window.NoirAudio.playTypewriter();
 
         const currentStress = state.suspectStress[suspectId] || 0;
         const newStress = typeof res.stress_level === 'number'
@@ -1207,6 +1269,8 @@
           message: fallbackReply
         });
         renderChatTranscript();
+        typeSpeechBalloon(`"${fallbackReply}"`);
+        if (window.NoirAudio) window.NoirAudio.playTypewriter();
         const currentStress = state.suspectStress[suspectId] || 0;
         const newStress = currentStress + (confrontClueId ? 40 : 10);
         updateStressMeter(suspectId, newStress);
