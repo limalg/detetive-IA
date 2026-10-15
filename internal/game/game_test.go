@@ -301,3 +301,131 @@ func TestInvestigationTimeAndWarrants(t *testing.T) {
 	}
 }
 
+func TestInvestigationResetOnNewGame(t *testing.T) {
+	service, caseID, userID := setupTestGame(t)
+
+	// 1. Initial investigation is in_progress
+	inv1, err := service.GetOrCreateInvestigation(userID, caseID)
+	if err != nil {
+		t.Fatalf("first GetOrCreateInvestigation failed: %v", err)
+	}
+	if inv1.Status != "in_progress" || inv1.WarrantsRemaining != 2 || inv1.TimeRemainingMinutes != 420 {
+		t.Fatalf("unexpected initial investigation: %+v", inv1)
+	}
+
+	// 2. Fail the investigation by exhausting warrants (strike 1 and strike 2)
+	_, _, err = service.RecordWarrantStrike(inv1.ID)
+	if err != nil {
+		t.Fatalf("strike 1 failed: %v", err)
+	}
+	_, isGameOver, err := service.RecordWarrantStrike(inv1.ID)
+	if err != nil {
+		t.Fatalf("strike 2 failed: %v", err)
+	}
+	if !isGameOver {
+		t.Fatalf("expected game over after 2 strikes")
+	}
+
+	failedInv, err := service.GetInvestigation(inv1.ID)
+	if err != nil {
+		t.Fatalf("GetInvestigation failed: %v", err)
+	}
+	if failedInv.Status != "failed" || failedInv.WarrantsRemaining != 0 {
+		t.Fatalf("expected failed investigation, got %+v", failedInv)
+	}
+
+	// 3. Requesting an investigation for the same user and case should create a fresh one
+	inv2, err := service.GetOrCreateInvestigation(userID, caseID)
+	if err != nil {
+		t.Fatalf("second GetOrCreateInvestigation failed: %v", err)
+	}
+	if inv2.ID == inv1.ID {
+		t.Errorf("expected new investigation ID, but got same ID %d", inv2.ID)
+	}
+	if inv2.Status != "in_progress" {
+		t.Errorf("expected status 'in_progress', got %q", inv2.Status)
+	}
+	if inv2.WarrantsRemaining != 2 {
+		t.Errorf("expected 2 warrants remaining, got %d", inv2.WarrantsRemaining)
+	}
+	if inv2.TimeRemainingMinutes != 420 {
+		t.Errorf("expected 420 minutes remaining, got %d", inv2.TimeRemainingMinutes)
+	}
+
+	// 4. Test guest user reset (userID = 0)
+	guestInv1, err := service.GetOrCreateInvestigation(0, caseID)
+	if err != nil {
+		t.Fatalf("guest GetOrCreateInvestigation failed: %v", err)
+	}
+	// Deduct all time to fail guest investigation
+	_, err = service.DeductTime(guestInv1.ID, 420)
+	if err != nil {
+		t.Fatalf("DeductTime failed: %v", err)
+	}
+	guestFailed, err := service.GetInvestigation(guestInv1.ID)
+	if err != nil {
+		t.Fatalf("GetInvestigation guest failed: %v", err)
+	}
+	if guestFailed.Status != "failed" {
+		t.Fatalf("expected guest investigation status 'failed', got %q", guestFailed.Status)
+	}
+
+	guestInv2, err := service.GetOrCreateInvestigation(0, caseID)
+	if err != nil {
+		t.Fatalf("guest second GetOrCreateInvestigation failed: %v", err)
+	}
+	if guestInv2.ID == guestInv1.ID {
+		t.Errorf("expected new guest investigation ID, got same %d", guestInv2.ID)
+	}
+	if guestInv2.Status != "in_progress" {
+		t.Errorf("expected guest status 'in_progress', got %q", guestInv2.Status)
+	}
+	if guestInv2.WarrantsRemaining != 2 {
+		t.Errorf("expected 2 warrants for new guest investigation, got %d", guestInv2.WarrantsRemaining)
+	}
+	if guestInv2.TimeRemainingMinutes != 420 {
+		t.Errorf("expected 420 minutes for new guest investigation, got %d", guestInv2.TimeRemainingMinutes)
+	}
+}
+
+func TestStartSoloGame(t *testing.T) {
+	service, _, userID := setupTestGame(t)
+
+	details, inv, err := service.StartSoloGame(userID, "mansion", 4)
+	if err != nil {
+		t.Fatalf("StartSoloGame failed: %v", err)
+	}
+	if details == nil || inv == nil {
+		t.Fatalf("expected non-nil details and inv")
+	}
+	if inv.Status != "in_progress" {
+		t.Errorf("expected status 'in_progress', got %q", inv.Status)
+	}
+	if inv.WarrantsRemaining != 2 {
+		t.Errorf("expected 2 warrants, got %d", inv.WarrantsRemaining)
+	}
+	if inv.TimeRemainingMinutes != 420 {
+		t.Errorf("expected 420 minutes, got %d", inv.TimeRemainingMinutes)
+	}
+	if len(details.Suspects) != 4 {
+		t.Errorf("expected 4 suspects, got %d", len(details.Suspects))
+	}
+	if len(details.Clues) < 4 {
+		t.Errorf("expected at least 4 clues, got %d", len(details.Clues))
+	}
+
+	// Test default parameters (empty theme, 0 suspects)
+	details2, inv2, err := service.StartSoloGame(userID, "", 0)
+	if err != nil {
+		t.Fatalf("StartSoloGame with defaults failed: %v", err)
+	}
+	if inv2.ID == inv.ID {
+		t.Errorf("expected new investigation ID for second solo game, got same %d", inv2.ID)
+	}
+	if len(details2.Suspects) != 4 {
+		t.Errorf("expected 4 suspects by default, got %d", len(details2.Suspects))
+	}
+}
+
+
+

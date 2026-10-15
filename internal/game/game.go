@@ -11,11 +11,8 @@ import (
 )
 
 // CaseDetails aggregates the crime case data, including suspects and discovered clues.
-type CaseDetails struct {
-	Case     models.Case      `json:"case"`
-	Suspects []models.Suspect `json:"suspects"`
-	Clues    []models.Clue    `json:"clues"`
-}
+type CaseDetails = models.CaseDetails
+
 
 // Service handles mystery progression, suspect interrogation, and verdict evaluation.
 type Service struct {
@@ -370,33 +367,13 @@ func (s *Service) SubmitAccusation(userID int64, caseID int64, accusedSuspectID 
 	return &verdict, nil
 }
 
-// GetOrCreateInvestigation finds an active investigation for the given user and case, or creates a new one.
-func (s *Service) GetOrCreateInvestigation(userID int64, caseID int64) (*models.Investigation, error) {
-	var inv models.Investigation
-	var query string
-	var args []interface{}
-
-	if userID > 0 {
-		query = `SELECT id, user_id, case_id, status, time_remaining_minutes, warrants_remaining FROM investigations WHERE user_id = ? AND case_id = ? ORDER BY id DESC LIMIT 1`
-		args = []interface{}{userID, caseID}
-	} else {
-		query = `SELECT id, COALESCE(user_id, 0), case_id, status, time_remaining_minutes, warrants_remaining FROM investigations WHERE (user_id IS NULL OR user_id = 0) AND case_id = ? ORDER BY id DESC LIMIT 1`
-		args = []interface{}{caseID}
-	}
-
-	err := s.db.QueryRow(query, args...).Scan(&inv.ID, &inv.UserID, &inv.CaseID, &inv.Status, &inv.TimeRemainingMinutes, &inv.WarrantsRemaining)
-	if err == nil {
-		return &inv, nil
-	} else if !errors.Is(err, sql.ErrNoRows) {
-		return nil, fmt.Errorf("failed to query investigation: %w", err)
-	}
-
+// CreateInvestigationForCase creates a fresh in-progress investigation with 420 minutes and 2 warrants for the given user and case.
+func (s *Service) CreateInvestigationForCase(userID int64, caseID int64) (*models.Investigation, error) {
 	var userVal interface{} = userID
 	if userID <= 0 {
 		userVal = nil
 	}
 
-	// Insert new investigation with 420 minutes and 2 warrants
 	res, err := s.db.Exec(`
 		INSERT INTO investigations (user_id, case_id, status, time_remaining_minutes, warrants_remaining)
 		VALUES (?, ?, 'in_progress', 420, 2)
@@ -418,6 +395,81 @@ func (s *Service) GetOrCreateInvestigation(userID int64, caseID int64) (*models.
 		WarrantsRemaining:    2,
 	}, nil
 }
+
+// GetOrCreateInvestigation finds an active in-progress investigation for the given user and case, or creates a new one.
+func (s *Service) GetOrCreateInvestigation(userID int64, caseID int64) (*models.Investigation, error) {
+	var inv models.Investigation
+	var query string
+	var args []interface{}
+
+	if userID > 0 {
+		query = `SELECT id, user_id, case_id, status, time_remaining_minutes, warrants_remaining FROM investigations WHERE user_id = ? AND case_id = ? AND status = 'in_progress' ORDER BY id DESC LIMIT 1`
+		args = []interface{}{userID, caseID}
+	} else {
+		query = `SELECT id, COALESCE(user_id, 0), case_id, status, time_remaining_minutes, warrants_remaining FROM investigations WHERE (user_id IS NULL OR user_id = 0) AND case_id = ? AND status = 'in_progress' ORDER BY id DESC LIMIT 1`
+		args = []interface{}{caseID}
+	}
+
+	err := s.db.QueryRow(query, args...).Scan(&inv.ID, &inv.UserID, &inv.CaseID, &inv.Status, &inv.TimeRemainingMinutes, &inv.WarrantsRemaining)
+	if err == nil {
+		return &inv, nil
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("failed to query investigation: %w", err)
+	}
+
+	return s.CreateInvestigationForCase(userID, caseID)
+}
+
+// GetLatestInvestigation retrieves the most recent investigation for a user and case, regardless of status.
+func (s *Service) GetLatestInvestigation(userID int64, caseID int64) (*models.Investigation, error) {
+	var inv models.Investigation
+	var query string
+	var args []interface{}
+
+	if userID > 0 {
+		query = `SELECT id, user_id, case_id, status, time_remaining_minutes, warrants_remaining FROM investigations WHERE user_id = ? AND case_id = ? ORDER BY id DESC LIMIT 1`
+		args = []interface{}{userID, caseID}
+	} else {
+		query = `SELECT id, COALESCE(user_id, 0), case_id, status, time_remaining_minutes, warrants_remaining FROM investigations WHERE (user_id IS NULL OR user_id = 0) AND case_id = ? ORDER BY id DESC LIMIT 1`
+		args = []interface{}{caseID}
+	}
+
+	err := s.db.QueryRow(query, args...).Scan(&inv.ID, &inv.UserID, &inv.CaseID, &inv.Status, &inv.TimeRemainingMinutes, &inv.WarrantsRemaining)
+	if err != nil {
+		return nil, err
+	}
+	return &inv, nil
+}
+
+
+// StartSoloGame starts a new solo procedural game with clean investigation metrics (420 min / 2 warrants).
+func (s *Service) StartSoloGame(userID int64, themeID string, suspectCount int) (*models.CaseDetails, *models.Investigation, error) {
+	if themeID == "" {
+		themeID = "mansion"
+	}
+	if suspectCount <= 0 {
+		suspectCount = 4
+	}
+
+	weaver := NewWeaver(s.db)
+	res, err := weaver.WeaveCase(nil)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to weave solo case: %w", err)
+	}
+
+	details, err := s.GetCaseDetails(res.CaseID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get case details: %w", err)
+	}
+
+	inv, err := s.CreateInvestigationForCase(userID, res.CaseID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create investigation: %w", err)
+	}
+
+	return details, inv, nil
+}
+
 
 // GetInvestigation retrieves an investigation by ID.
 func (s *Service) GetInvestigation(investigationID int64) (*models.Investigation, error) {

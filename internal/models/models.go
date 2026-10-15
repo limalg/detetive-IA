@@ -29,6 +29,14 @@ type Case struct {
 	SolutionMotive    string `json:"solution_motive,omitempty"`
 }
 
+// CaseDetails aggregates the crime case data, including suspects and discovered clues.
+type CaseDetails struct {
+	Case     Case      `json:"case"`
+	Suspects []Suspect `json:"suspects"`
+	Clues    []Clue    `json:"clues"`
+}
+
+
 // Suspect represents an interrogated character in a case.
 type Suspect struct {
 	ID              int64  `json:"id"`

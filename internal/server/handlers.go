@@ -285,6 +285,66 @@ func (h *Handler) HandleGetCase(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// HandleStartSoloGame generates a new procedural case and clean investigation for solo play.
+func (h *Handler) HandleStartSoloGame(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		h.error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	if h.cfg.GameService == nil {
+		h.error(w, http.StatusInternalServerError, "game service not available")
+		return
+	}
+
+	var req struct {
+		ThemeID      string `json:"theme_id"`
+		SuspectCount int    `json:"suspect_count"`
+	}
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&req)
+	}
+
+	var userID int64
+	if user, err := h.getAuthenticatedUser(r); err == nil && user != nil {
+		userID = user.ID
+	}
+
+	details, inv, err := h.cfg.GameService.StartSoloGame(userID, req.ThemeID, req.SuspectCount)
+	if err != nil {
+		h.error(w, http.StatusInternalServerError, "failed to start solo game: "+err.Error())
+		return
+	}
+
+	// Sanitize output so players cannot cheat via inspector
+	publicCase := map[string]interface{}{
+		"id":          details.Case.ID,
+		"title":       details.Case.Title,
+		"description": details.Case.Description,
+		"victim":      details.Case.Victim,
+	}
+
+	var publicSuspects []map[string]interface{}
+	for _, s := range details.Suspects {
+		publicSuspects = append(publicSuspects, map[string]interface{}{
+			"id":          s.ID,
+			"name":        s.Name,
+			"role":        s.Role,
+			"personality": s.Personality,
+			"alibi":       s.Alibi,
+		})
+	}
+
+	h.json(w, http.StatusOK, map[string]interface{}{
+		"case":                   publicCase,
+		"suspects":               publicSuspects,
+		"clues":                  details.Clues,
+		"time_remaining_minutes": inv.TimeRemainingMinutes,
+		"warrants_remaining":     inv.WarrantsRemaining,
+	})
+}
+
+
 // HandleInterrogate processes interrogation questions with clue confrontation and suspect stress calculation.
 func (h *Handler) HandleInterrogate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -327,8 +387,12 @@ func (h *Handler) HandleInterrogate(w http.ResponseWriter, r *http.Request) {
 
 	var inv *models.Investigation
 	if h.cfg.GameService != nil {
-		inv, _ = h.cfg.GameService.GetOrCreateInvestigation(userID, caseID)
+		inv, _ = h.cfg.GameService.GetLatestInvestigation(userID, caseID)
+		if inv == nil {
+			inv, _ = h.cfg.GameService.GetOrCreateInvestigation(userID, caseID)
+		}
 	}
+
 
 	if inv != nil && (inv.Status == "failed" || inv.TimeRemainingMinutes <= 0 || inv.WarrantsRemaining <= 0) {
 		h.json(w, http.StatusBadRequest, map[string]interface{}{
@@ -468,8 +532,12 @@ func (h *Handler) HandleAccuse(w http.ResponseWriter, r *http.Request) {
 
 	var inv *models.Investigation
 	if h.cfg.GameService != nil {
-		inv, _ = h.cfg.GameService.GetOrCreateInvestigation(userID, req.CaseID)
+		inv, _ = h.cfg.GameService.GetLatestInvestigation(userID, req.CaseID)
+		if inv == nil {
+			inv, _ = h.cfg.GameService.GetOrCreateInvestigation(userID, req.CaseID)
+		}
 	}
+
 
 	if inv != nil && (inv.Status == "failed" || inv.TimeRemainingMinutes <= 0 || inv.WarrantsRemaining <= 0) {
 		h.json(w, http.StatusBadRequest, map[string]interface{}{

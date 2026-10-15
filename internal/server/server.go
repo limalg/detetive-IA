@@ -56,6 +56,7 @@ func NewRouter(cfg Config) http.Handler {
 
 	// Game logic endpoints
 	mux.HandleFunc("/api/game/case", h.HandleGetCase)
+	mux.HandleFunc("/api/game/solo/start", h.HandleStartSoloGame)
 	mux.HandleFunc("/api/game/interrogate", h.HandleInterrogate)
 	mux.HandleFunc("/api/game/accuse", h.HandleAccuse)
 

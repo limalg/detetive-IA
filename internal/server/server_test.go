@@ -601,4 +601,46 @@ func TestInterrogationTimeDeductions(t *testing.T) {
 	}
 }
 
+func TestInvestigationResetOnNewGame_API(t *testing.T) {
+	router, _, _ := setupTestServer(t)
+
+	body := `{"theme_id": "mansion", "suspect_count": 4}`
+	req := httptest.NewRequest(http.MethodPost, "/api/game/solo/start", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var res struct {
+		Case                 map[string]interface{}   `json:"case"`
+		Suspects             []map[string]interface{} `json:"suspects"`
+		Clues                []map[string]interface{} `json:"clues"`
+		TimeRemainingMinutes int                      `json:"time_remaining_minutes"`
+		WarrantsRemaining    int                      `json:"warrants_remaining"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&res); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if res.TimeRemainingMinutes != 420 {
+		t.Errorf("expected 420 time_remaining_minutes, got %d", res.TimeRemainingMinutes)
+	}
+	if res.WarrantsRemaining != 2 {
+		t.Errorf("expected 2 warrants_remaining, got %d", res.WarrantsRemaining)
+	}
+	if len(res.Suspects) != 4 {
+		t.Errorf("expected 4 suspects, got %d", len(res.Suspects))
+	}
+	if len(res.Clues) < 4 {
+		t.Errorf("expected at least 4 clues, got %d", len(res.Clues))
+	}
+	if res.Case["id"] == nil {
+		t.Errorf("expected non-nil case id")
+	}
+}
+
+
 
