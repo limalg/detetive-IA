@@ -331,6 +331,33 @@ func TestDiegeticNoirDeskAndNightClockUI(t *testing.T) {
 	}
 }
 
+func TestEmbeddedVisualAssets(t *testing.T) {
+	assets := []string{
+		"static/assets/scene_noir.webp",
+		"static/assets/suspect_femme.webp",
+		"static/assets/suspect_magnate.webp",
+		"static/assets/suspect_butler.webp",
+		"static/assets/murder_weapon.webp",
+	}
 
+	handler := web.FileServer()
 
+	for _, a := range assets {
+		file, err := web.Assets.Open(a)
+		if err != nil {
+			t.Fatalf("failed to open %s from embed.FS: %v", a, err)
+		}
+		data, err := io.ReadAll(file)
+		file.Close()
+		if err != nil || len(data) == 0 {
+			t.Errorf("asset %s is empty or unreadable: %v", a, err)
+		}
 
+		req := httptest.NewRequest(http.MethodGet, "/"+a, nil)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Errorf("GET /%s returned status %d, expected 200", a, rec.Code)
+		}
+	}
+}

@@ -832,16 +832,17 @@
   function getSuspectPhotoUrl(suspect) {
     const name = (suspect.name || '').toLowerCase();
     const role = (suspect.role || '').toLowerCase();
-    if (name.includes('julian') || role.includes('herdeiro') || role.includes('magnata')) {
+    if (name.includes('julian') || role.includes('herdeiro') || role.includes('magnata') || role.includes('victor') || name.includes('arthur') || role.includes('tycoon')) {
       return '/static/assets/suspect_magnate.webp';
     }
-    if (name.includes('elena') || role.includes('médica') || role.includes('medica') || role.includes('doutora') || role.includes('femme')) {
+    if (name.includes('elena') || name.includes('helena') || role.includes('médica') || role.includes('medica') || role.includes('doutora') || role.includes('femme') || role.includes('cantora') || role.includes('governanta') || name.includes('clarice') || name.includes('vivian')) {
       return '/static/assets/suspect_femme.webp';
     }
-    if (name.includes('barnaby') || role.includes('mordomo') || role.includes('butler')) {
+    if (name.includes('barnaby') || role.includes('mordomo') || role.includes('butler') || role.includes('advogado') || role.includes('guarda') || role.includes('inspetor')) {
       return '/static/assets/suspect_butler.webp';
     }
-    return '';
+    const pool = ['/static/assets/suspect_femme.webp', '/static/assets/suspect_magnate.webp', '/static/assets/suspect_butler.webp'];
+    return pool[(suspect.id || 0) % pool.length];
   }
 
   function renderSuspects() {

@@ -34,7 +34,7 @@ func New(db *sql.DB) *Service {
 // Register creates a new user account with a bcrypt-hashed password.
 func (s *Service) Register(username, password string) (*models.User, error) {
 	username = strings.TrimSpace(username)
-	if len(username) < 3 || len(password) < 4 {
+	if len(username) < 3 || len(password) < 4 || len(password) > 72 {
 		return nil, ErrInvalidInput
 	}
 

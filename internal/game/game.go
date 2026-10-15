@@ -305,13 +305,19 @@ func (s *Service) SubmitAccusation(userID int64, caseID int64, accusedSuspectID 
 		return nil, fmt.Errorf("suspect not found: %w", err)
 	}
 
-	wLower := strings.ToLower(accusedWeapon)
-	solWLower := strings.ToLower(solWeapon)
-	weaponMatch := strings.Contains(wLower, "adaga") || strings.Contains(wLower, solWLower) || strings.Contains(solWLower, wLower)
+	wLower := strings.TrimSpace(strings.ToLower(accusedWeapon))
+	solWLower := strings.TrimSpace(strings.ToLower(solWeapon))
+	weaponMatch := false
+	if wLower != "" && solWLower != "" {
+		weaponMatch = strings.Contains(wLower, "adaga") || strings.Contains(wLower, solWLower) || strings.Contains(solWLower, wLower)
+	}
 
-	mLower := strings.ToLower(accusedMotive)
-	solMLower := strings.ToLower(solMotive)
-	motiveMatch := strings.Contains(mLower, solMLower) || strings.Contains(solMLower, mLower) || containsAny(mLower, "herança", "heranca", "dívida", "divida", "dinheiro", "jogo", "cassino", "chantagem", "vingança", "vinganca", "desvio")
+	mLower := strings.TrimSpace(strings.ToLower(accusedMotive))
+	solMLower := strings.TrimSpace(strings.ToLower(solMotive))
+	motiveMatch := false
+	if mLower != "" && solMLower != "" {
+		motiveMatch = strings.Contains(mLower, solMLower) || strings.Contains(solMLower, mLower) || containsAny(mLower, "herança", "heranca", "dívida", "divida", "dinheiro", "jogo", "cassino", "chantagem", "vingança", "vinganca", "desvio")
+	}
 
 	var verdict models.Verdict
 

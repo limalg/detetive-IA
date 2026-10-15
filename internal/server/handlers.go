@@ -388,6 +388,10 @@ func (h *Handler) HandleInterrogate(w http.ResponseWriter, r *http.Request) {
 		var err error
 		reply, err = h.cfg.GameService.InterrogateWithStress(sessionID, req.SuspectID, req.Question, stressLevel)
 		if err != nil {
+			if strings.Contains(err.Error(), "no rows") {
+				h.error(w, http.StatusBadRequest, "suspect not found: "+err.Error())
+				return
+			}
 			h.error(w, http.StatusInternalServerError, "interrogation failed: "+err.Error())
 			return
 		}
@@ -443,6 +447,11 @@ func (h *Handler) HandleAccuse(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.SuspectID <= 0 || strings.TrimSpace(req.Weapon) == "" || strings.TrimSpace(req.Motive) == "" {
+		h.error(w, http.StatusBadRequest, "suspect_id, weapon and motive are required")
+		return
+	}
+
 	if req.CaseID <= 0 {
 		req.CaseID = 1
 	}
@@ -474,6 +483,10 @@ func (h *Handler) HandleAccuse(w http.ResponseWriter, r *http.Request) {
 
 	verdict, err := h.cfg.GameService.SubmitAccusation(userID, req.CaseID, req.SuspectID, req.Weapon, req.Motive)
 	if err != nil {
+		if strings.Contains(err.Error(), "no rows") {
+			h.error(w, http.StatusBadRequest, "suspect not found: "+err.Error())
+			return
+		}
 		h.error(w, http.StatusInternalServerError, "failed to submit accusation: "+err.Error())
 		return
 	}
@@ -689,6 +702,11 @@ func (h *Handler) handleStartRoom(w http.ResponseWriter, r *http.Request, code s
 	roomObj, err := h.cfg.RoomManager.GetRoom(code)
 	if err != nil {
 		h.error(w, http.StatusNotFound, "room not found")
+		return
+	}
+
+	if roomObj.Status != "waiting" && roomObj.Status != "lobby" {
+		h.error(w, http.StatusBadRequest, "room is already active or finished")
 		return
 	}
 
