@@ -998,6 +998,11 @@
         }
       });
     }
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && el.forensicLoupeModal && el.forensicLoupeModal.classList.contains('active')) {
+        closeForensicLoupe();
+      }
+    });
   }
 
   function renderClues() {
@@ -1276,7 +1281,6 @@
         });
         renderChatTranscript();
         typeSpeechBalloon(`"${reply}"`);
-        if (window.NoirAudio) window.NoirAudio.playTypewriter();
 
         const currentStress = state.suspectStress[suspectId] || 0;
         const newStress = typeof res.stress_level === 'number'
@@ -1293,7 +1297,6 @@
         });
         renderChatTranscript();
         typeSpeechBalloon(`"${fallbackReply}"`);
-        if (window.NoirAudio) window.NoirAudio.playTypewriter();
         const currentStress = state.suspectStress[suspectId] || 0;
         const newStress = currentStress + (confrontClueId ? 40 : 10);
         updateStressMeter(suspectId, newStress);

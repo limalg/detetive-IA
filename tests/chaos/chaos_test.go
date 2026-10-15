@@ -155,6 +155,25 @@ func TestInterrogateAndRegisterResilience(t *testing.T) {
 	checkServerAvailable(t, baseURL)
 	client := &http.Client{Timeout: 10 * time.Second}
 
+	// Criar uma partida solo fresca para isolamento e garantia de mandados e tempo intactos
+	var freshSuspectID int64 = 1
+	soloPayload := `{"theme_id": "mansion", "suspect_count": 4}`
+	soloResp, err := client.Post(baseURL+"/api/game/solo/start", "application/json", strings.NewReader(soloPayload))
+	if err != nil {
+		t.Fatalf("Erro ao iniciar partida solo para isolamento: %v", err)
+	}
+	defer soloResp.Body.Close()
+
+	var soloData struct {
+		Suspects []struct {
+			ID int64 `json:"id"`
+		} `json:"suspects"`
+	}
+	if err := json.NewDecoder(soloResp.Body).Decode(&soloData); err != nil || len(soloData.Suspects) == 0 {
+		t.Fatalf("Falha ao obter suspeitos da partida solo: %v", err)
+	}
+	freshSuspectID = soloData.Suspects[0].ID
+
 	t.Run("Interrogar: SuspectID Inexistente (999999)", func(t *testing.T) {
 		payload := `{"suspect_id": 999999, "question": "Onde você estava?"}`
 		resp, err := client.Post(baseURL+"/api/game/interrogate", "application/json", strings.NewReader(payload))
@@ -174,7 +193,7 @@ func TestInterrogateAndRegisterResilience(t *testing.T) {
 	t.Run("Interrogar: Pergunta com 50.000 Caracteres (Stress Test)", func(t *testing.T) {
 		hugeQuestion := strings.Repeat("A", 50000)
 		payloadMap := map[string]interface{}{
-			"suspect_id": 1,
+			"suspect_id": freshSuspectID,
 			"question":   hugeQuestion,
 		}
 		jsonBytes, _ := json.Marshal(payloadMap)
@@ -203,7 +222,7 @@ func TestInterrogateAndRegisterResilience(t *testing.T) {
 
 		for _, q := range specialQuestions {
 			payloadMap := map[string]interface{}{
-				"suspect_id": 1,
+				"suspect_id": freshSuspectID,
 				"question":   q,
 			}
 			jsonBytes, _ := json.Marshal(payloadMap)
@@ -276,7 +295,7 @@ func TestInterrogateAndRegisterResilience(t *testing.T) {
 	})
 
 	t.Run("Registro: Caracteres Especiais e Acentuação", func(t *testing.T) {
-		uniqueUser := fmt.Sprintf("detetive_açúcar_%d", time.Now().UnixNano()%100000)
+		uniqueUser := fmt.Sprintf("detetive_açúcar_%d", time.Now().UnixNano())
 		payloadMap := map[string]string{
 			"username": uniqueUser,
 			"password": "senha_com_açúcar_e_café_1940",
