@@ -3,8 +3,10 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -212,15 +214,33 @@ func (h *Handler) HandleGetCase(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	caseID, err := h.cfg.GameService.SeedInitialCase()
-	if err != nil {
-		h.error(w, http.StatusInternalServerError, "failed to load case")
-		return
+	var caseID int64
+	if caseIDStr := r.URL.Query().Get("case_id"); caseIDStr != "" {
+		if id, err := strconv.ParseInt(caseIDStr, 10, 64); err == nil && id > 0 {
+			caseID = id
+		}
+	}
+
+	if caseID == 0 {
+		if roomCode := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("room"))); roomCode != "" && h.cfg.RoomManager != nil {
+			if roomObj, err := h.cfg.RoomManager.GetRoom(roomCode); err == nil && roomObj.CaseID != nil {
+				caseID = *roomObj.CaseID
+			}
+		}
+	}
+
+	if caseID == 0 {
+		var err error
+		caseID, err = h.cfg.GameService.SeedInitialCase()
+		if err != nil {
+			h.error(w, http.StatusInternalServerError, "failed to load case")
+			return
+		}
 	}
 
 	details, err := h.cfg.GameService.GetCaseDetails(caseID)
 	if err != nil {
-		h.error(w, http.StatusInternalServerError, "failed to load case details")
+		h.error(w, http.StatusInternalServerError, "failed to load case details: "+err.Error())
 		return
 	}
 
@@ -250,7 +270,7 @@ func (h *Handler) HandleGetCase(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// HandleInterrogate processes interrogation questions with dynamic LLM or fallback.
+// HandleInterrogate processes interrogation questions with clue confrontation and suspect stress calculation.
 func (h *Handler) HandleInterrogate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		h.error(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -258,8 +278,9 @@ func (h *Handler) HandleInterrogate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		SuspectID int64  `json:"suspect_id"`
-		Question  string `json:"question"`
+		SuspectID      int64  `json:"suspect_id"`
+		Question       string `json:"question"`
+		ConfrontClueID int64  `json:"confront_clue_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		h.error(w, http.StatusBadRequest, "invalid json body")
@@ -276,15 +297,64 @@ func (h *Handler) HandleInterrogate(w http.ResponseWriter, r *http.Request) {
 		sessionID = "guest_session"
 	}
 
-	reply, err := h.cfg.GameService.Interrogate(sessionID, req.SuspectID, req.Question)
-	if err != nil {
-		h.error(w, http.StatusInternalServerError, "interrogation failed: "+err.Error())
-		return
+	stressLevel := 15
+	confronted := false
+	var reply string
+
+	// Handle clue confrontation mechanics if confront_clue_id is provided
+	if req.ConfrontClueID > 0 && h.cfg.DB != nil {
+		var clueName, clueDesc string
+		err := h.cfg.DB.QueryRow(`SELECT name, description FROM clues WHERE id = ?`, req.ConfrontClueID).Scan(&clueName, &clueDesc)
+		if err == nil {
+			confronted = true
+			var suspName, suspAlibi string
+			var isCulprit bool
+			_ = h.cfg.DB.QueryRow(`SELECT name, alibi, is_culprit FROM suspects WHERE id = ?`, req.SuspectID).Scan(&suspName, &suspAlibi, &isCulprit)
+
+			clueLower := strings.ToLower(clueName + " " + clueDesc)
+			// Check if this clue contradicts the suspect or catches them red-handed
+			if isCulprit && (strings.Contains(clueLower, "álibi") || strings.Contains(clueLower, "alibi") ||
+				strings.Contains(clueLower, "falso") || strings.Contains(clueLower, "contradição") ||
+				strings.Contains(clueLower, "registro") || strings.Contains(clueLower, "adaga") ||
+				strings.Contains(clueLower, "veneno") || strings.Contains(clueLower, "cálice") ||
+				strings.Contains(clueLower, "sangue") || strings.Contains(clueLower, strings.ToLower(suspName))) {
+				stressLevel = 85
+				reply = fmt.Sprintf("O suspeito empalidece em choque absoluto, os olhos cravados na evidência (%s) e a voz desmorona em pânico: 'Como... onde você conseguiu isso?! Isso... isso não podia estar com a polícia!'", clueName)
+			} else if isCulprit {
+				stressLevel = 50
+				reply = fmt.Sprintf("O suspeito semicerra os olhos, visivelmente tenso ao encarar a evidência (%s): 'Você está blefando, detetive. Essa pista não me coloca no local do crime!'", clueName)
+			} else {
+				stressLevel = 35
+				reply = fmt.Sprintf("O suspeito analisa a evidência (%s) com sobrancelhas erguidas e desdém frio: 'Uma peça intrigante, detetive, mas absolutamente inútil contra mim. Meu álibi é de ferro.'", clueName)
+			}
+
+			// Persist dialogue exchange
+			_, _ = h.cfg.DB.Exec(`
+				INSERT INTO interrogation_messages (session_id, suspect_id, sender, message)
+				VALUES (?, ?, 'detective', ?)
+			`, sessionID, req.SuspectID, fmt.Sprintf("[CONFRONTANDO COM: %s] %s", clueName, req.Question))
+
+			_, _ = h.cfg.DB.Exec(`
+				INSERT INTO interrogation_messages (session_id, suspect_id, sender, message)
+				VALUES (?, ?, 'suspect', ?)
+			`, sessionID, req.SuspectID, reply)
+		}
+	}
+
+	if !confronted {
+		var err error
+		reply, err = h.cfg.GameService.Interrogate(sessionID, req.SuspectID, req.Question)
+		if err != nil {
+			h.error(w, http.StatusInternalServerError, "interrogation failed: "+err.Error())
+			return
+		}
 	}
 
 	h.json(w, http.StatusOK, map[string]interface{}{
-		"reply":   reply,
-		"message": reply,
+		"reply":        reply,
+		"message":      reply,
+		"stress_level": stressLevel,
+		"confronted":   confronted,
 	})
 }
 
@@ -328,5 +398,204 @@ func (h *Handler) HandleAccuse(w http.ResponseWriter, r *http.Request) {
 		"message":    verdict.Feedback,
 		"verdict":    verdict.Feedback,
 		"details":    verdict,
+	})
+}
+
+// HandleRooms handles POST /api/rooms (create room) or redirects.
+func (h *Handler) HandleRooms(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodPost {
+		h.HandleCreateRoom(w, r)
+		return
+	}
+	h.error(w, http.StatusMethodNotAllowed, "method not allowed")
+}
+
+// HandleCreateRoom handles room creation (POST /api/room/create or POST /api/rooms).
+func (h *Handler) HandleCreateRoom(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		h.error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if h.cfg.RoomManager == nil {
+		h.error(w, http.StatusInternalServerError, "room manager not available")
+		return
+	}
+
+	var req struct {
+		PersonaName string `json:"persona_name"`
+		Role        string `json:"role"`
+		Secret      string `json:"secret"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+
+	user, _ := h.getAuthenticatedUser(r)
+	hostID := int64(1)
+	hostUsername := "Detetive Host"
+	if user != nil {
+		hostID = user.ID
+		hostUsername = user.Username
+	}
+
+	personaName := strings.TrimSpace(req.PersonaName)
+	if personaName == "" {
+		personaName = hostUsername
+	}
+	role := strings.TrimSpace(req.Role)
+	if role == "" {
+		role = "Detetive Líder"
+	}
+
+	newRoom, err := h.cfg.RoomManager.CreateRoom(hostID, hostUsername, personaName, role)
+	if err != nil {
+		h.error(w, http.StatusInternalServerError, "failed to create room: "+err.Error())
+		return
+	}
+
+	h.json(w, http.StatusCreated, map[string]interface{}{
+		"code":    newRoom.Code,
+		"room":    newRoom,
+		"players": newRoom.Players,
+	})
+}
+
+// HandleJoinRoom handles player joining an existing room (POST /api/rooms/join or /api/room/join).
+func (h *Handler) HandleJoinRoom(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		h.error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if h.cfg.RoomManager == nil {
+		h.error(w, http.StatusInternalServerError, "room manager not available")
+		return
+	}
+
+	var req struct {
+		Code        string `json:"code"`
+		PersonaName string `json:"persona_name"`
+		Role        string `json:"role"`
+		Secret      string `json:"secret"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.error(w, http.StatusBadRequest, "invalid json body")
+		return
+	}
+
+	code := strings.ToUpper(strings.TrimSpace(req.Code))
+	if len(code) != 4 {
+		h.error(w, http.StatusBadRequest, "invalid room code")
+		return
+	}
+
+	user, _ := h.getAuthenticatedUser(r)
+	userID := int64(2)
+	username := "Investigador"
+	if user != nil {
+		userID = user.ID
+		username = user.Username
+	}
+
+	personaName := strings.TrimSpace(req.PersonaName)
+	if personaName == "" {
+		personaName = username
+	}
+	role := strings.TrimSpace(req.Role)
+	if role == "" {
+		role = "Investigador"
+	}
+
+	joinedRoom, err := h.cfg.RoomManager.JoinRoom(code, userID, username, personaName, role)
+	if err != nil {
+		h.error(w, http.StatusBadRequest, "failed to join room: "+err.Error())
+		return
+	}
+
+	h.json(w, http.StatusOK, map[string]interface{}{
+		"code":    joinedRoom.Code,
+		"room":    joinedRoom,
+		"players": joinedRoom.Players,
+	})
+}
+
+// HandleRoomOperations handles GET /api/rooms/{code} and POST /api/rooms/{code}/start (also supports /api/room/).
+func (h *Handler) HandleRoomOperations(w http.ResponseWriter, r *http.Request) {
+	path := strings.Trim(r.URL.Path, "/")
+	parts := strings.Split(path, "/")
+	// e.g. api, rooms, NOIR or api, rooms, NOIR, start
+	if len(parts) < 3 {
+		h.error(w, http.StatusBadRequest, "missing room code")
+		return
+	}
+
+	if parts[len(parts)-1] == "start" && r.Method == http.MethodPost {
+		code := strings.ToUpper(parts[len(parts)-2])
+		h.handleStartRoom(w, r, code)
+		return
+	}
+
+	if r.Method == http.MethodGet {
+		code := strings.ToUpper(parts[len(parts)-1])
+		if h.cfg.RoomManager == nil {
+			h.error(w, http.StatusInternalServerError, "room manager not available")
+			return
+		}
+		roomObj, err := h.cfg.RoomManager.GetRoom(code)
+		if err != nil {
+			h.error(w, http.StatusNotFound, "room not found")
+			return
+		}
+		h.json(w, http.StatusOK, map[string]interface{}{
+			"code":    roomObj.Code,
+			"status":  roomObj.Status,
+			"room":    roomObj,
+			"players": roomObj.Players,
+		})
+		return
+	}
+
+	h.error(w, http.StatusMethodNotAllowed, "method not allowed")
+}
+
+func (h *Handler) handleStartRoom(w http.ResponseWriter, r *http.Request, code string) {
+	if h.cfg.RoomManager == nil {
+		h.error(w, http.StatusInternalServerError, "room manager not available")
+		return
+	}
+
+	roomObj, err := h.cfg.RoomManager.GetRoom(code)
+	if err != nil {
+		h.error(w, http.StatusNotFound, "room not found")
+		return
+	}
+
+	var caseID int64
+	if h.cfg.Weaver != nil {
+		wResult, err := h.cfg.Weaver.WeaveCase(roomObj.Players)
+		if err != nil {
+			h.error(w, http.StatusInternalServerError, "failed to weave mystery case: "+err.Error())
+			return
+		}
+		caseID = wResult.CaseID
+	} else if h.cfg.GameService != nil {
+		caseID, _ = h.cfg.GameService.SeedInitialCase()
+	}
+
+	startedRoom, err := h.cfg.RoomManager.StartRoom(code, roomObj.HostID)
+	if err != nil {
+		h.error(w, http.StatusBadRequest, "failed to start room: "+err.Error())
+		return
+	}
+
+	if caseID > 0 {
+		startedRoom.CaseID = &caseID
+		if h.cfg.DB != nil {
+			_, _ = h.cfg.DB.Exec("UPDATE rooms SET case_id = ? WHERE code = ?", caseID, code)
+		}
+	}
+
+	h.json(w, http.StatusOK, map[string]interface{}{
+		"code":    startedRoom.Code,
+		"room":    startedRoom,
+		"case_id": caseID,
+		"players": startedRoom.Players,
 	})
 }

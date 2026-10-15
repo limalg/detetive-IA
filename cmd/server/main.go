@@ -12,6 +12,7 @@ import (
 	"detetive-ia/internal/auth"
 	"detetive-ia/internal/db"
 	"detetive-ia/internal/game"
+	"detetive-ia/internal/room"
 	"detetive-ia/internal/server"
 	"detetive-ia/web"
 )
@@ -50,11 +51,19 @@ func main() {
 		log.Printf("Aviso: falha ao semear caso inicial: %v", err)
 	}
 
+	roomManager, err := room.NewManager(database)
+	if err != nil {
+		log.Printf("Aviso: falha ao inicializar Room Manager: %v", err)
+	}
+	weaver := game.NewWeaver(database)
+
 	cfg := server.Config{
 		Addr:        ":" + port,
 		DB:          database,
 		AuthService: authService,
 		GameService: gameService,
+		RoomManager: roomManager,
+		Weaver:      weaver,
 		StaticFS:    web.FileServer(),
 	}
 

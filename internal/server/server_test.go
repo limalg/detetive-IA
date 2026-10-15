@@ -3,6 +3,7 @@ package server_test
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -259,3 +260,161 @@ func TestStaticAssetsServing(t *testing.T) {
 		t.Error("expected html document on root endpoint")
 	}
 }
+
+func TestRoomEndpoints(t *testing.T) {
+	router, _, _ := setupTestServer(t)
+
+	// 1. Create Room (POST /api/rooms)
+	createBody := `{"persona_name": "Philip Marlowe", "role": "Detetive Particular"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/rooms", strings.NewReader(createBody))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated && rec.Code != http.StatusOK {
+		t.Fatalf("expected 201 or 200 for create room, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var createRes struct {
+		Code    string `json:"code"`
+		Players []struct {
+			PersonaName string `json:"persona_name"`
+			Role        string `json:"role"`
+			IsHost      bool   `json:"is_host"`
+		} `json:"players"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&createRes); err != nil {
+		t.Fatalf("failed to decode create room response: %v", err)
+	}
+
+	if len(createRes.Code) != 4 {
+		t.Fatalf("expected 4-letter room code, got %q", createRes.Code)
+	}
+	if len(createRes.Players) != 1 || !createRes.Players[0].IsHost {
+		t.Fatalf("expected host player in room, got %+v", createRes.Players)
+	}
+
+	roomCode := createRes.Code
+
+	// 2. Join Room (POST /api/rooms/join)
+	joinBody := fmt.Sprintf(`{"code": %q, "persona_name": "Clara Vance", "role": "Repórter"}`, roomCode)
+	req = httptest.NewRequest(http.MethodPost, "/api/rooms/join", strings.NewReader(joinBody))
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for join room, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var joinRes struct {
+		Players []struct {
+			PersonaName string `json:"persona_name"`
+		} `json:"players"`
+	}
+	_ = json.NewDecoder(rec.Body).Decode(&joinRes)
+	if len(joinRes.Players) != 2 {
+		t.Fatalf("expected 2 players after join, got %d", len(joinRes.Players))
+	}
+
+	// 3. Get Room Details (GET /api/rooms/{code})
+	req = httptest.NewRequest(http.MethodGet, "/api/rooms/"+roomCode, nil)
+	rec = httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for get room, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// 4. Start Room (POST /api/rooms/{code}/start)
+	req = httptest.NewRequest(http.MethodPost, "/api/rooms/"+roomCode+"/start", nil)
+	rec = httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for start room, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var startRes struct {
+		CaseID int64 `json:"case_id"`
+		Room   struct {
+			Status  string `json:"status"`
+			Players []struct {
+				IsBot bool `json:"is_bot"`
+			} `json:"players"`
+		} `json:"room"`
+	}
+	_ = json.NewDecoder(rec.Body).Decode(&startRes)
+	if startRes.CaseID == 0 {
+		t.Error("expected non-zero case_id upon starting room")
+	}
+	if startRes.Room.Status != "active" {
+		t.Errorf("expected room status 'active', got %q", startRes.Room.Status)
+	}
+}
+
+func TestInterrogateWithClueConfrontation(t *testing.T) {
+	router, gameService, caseID := setupTestServer(t)
+
+	details, err := gameService.GetCaseDetails(caseID)
+	if err != nil {
+		t.Fatalf("GetCaseDetails failed: %v", err)
+	}
+
+	// Find suspect and a clue
+	var culpritID int64
+	for _, s := range details.Suspects {
+		if strings.Contains(s.Name, "Julian") {
+			culpritID = s.ID
+			break
+		}
+	}
+	if culpritID == 0 {
+		culpritID = details.Suspects[0].ID
+	}
+
+	var clueID int64
+	for _, c := range details.Clues {
+		if strings.Contains(strings.ToLower(c.Name), "adaga") || strings.Contains(strings.ToLower(c.Description), "sangue") {
+			clueID = c.ID
+			break
+		}
+	}
+	if clueID == 0 && len(details.Clues) > 0 {
+		clueID = details.Clues[0].ID
+	}
+
+	// Interrogate with confrontation
+	reqBody := map[string]interface{}{
+		"suspect_id":       culpritID,
+		"question":         "Como explica esta evidência?",
+		"confront_clue_id": clueID,
+	}
+	bodyBytes, _ := json.Marshal(reqBody)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/game/interrogate", bytes.NewReader(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for confrontation interrogation, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var res struct {
+		Reply       string `json:"reply"`
+		StressLevel int    `json:"stress_level"`
+		Confronted  bool   `json:"confronted"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&res); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if !res.Confronted {
+		t.Error("expected confronted=true in response")
+	}
+	if res.StressLevel < 40 {
+		t.Errorf("expected elevated stress_level (>=40), got %d", res.StressLevel)
+	}
+}
+

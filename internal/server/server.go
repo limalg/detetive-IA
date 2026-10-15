@@ -7,6 +7,7 @@ import (
 
 	"detetive-ia/internal/auth"
 	"detetive-ia/internal/game"
+	"detetive-ia/internal/room"
 )
 
 // Config holds server dependencies and configuration.
@@ -15,6 +16,8 @@ type Config struct {
 	DB          *sql.DB
 	AuthService *auth.Service
 	GameService *game.Service
+	RoomManager *room.Manager
+	Weaver      *game.Weaver
 	StaticFS    http.Handler
 }
 
@@ -32,6 +35,13 @@ func NewServer(cfg Config) *http.Server {
 
 // NewRouter registers API routes and mounts static asset serving.
 func NewRouter(cfg Config) http.Handler {
+	if cfg.RoomManager == nil && cfg.DB != nil {
+		cfg.RoomManager, _ = room.NewManager(cfg.DB)
+	}
+	if cfg.Weaver == nil && cfg.DB != nil {
+		cfg.Weaver = game.NewWeaver(cfg.DB)
+	}
+
 	mux := http.NewServeMux()
 	h := NewHandler(cfg)
 
@@ -48,6 +58,16 @@ func NewRouter(cfg Config) http.Handler {
 	mux.HandleFunc("/api/game/case", h.HandleGetCase)
 	mux.HandleFunc("/api/game/interrogate", h.HandleInterrogate)
 	mux.HandleFunc("/api/game/accuse", h.HandleAccuse)
+
+	// Room & Lobby endpoints (plural REST standard)
+	mux.HandleFunc("/api/rooms", h.HandleRooms)
+	mux.HandleFunc("/api/rooms/join", h.HandleJoinRoom)
+	mux.HandleFunc("/api/rooms/", h.HandleRoomOperations)
+
+	// Room & Lobby endpoints (singular compatibility for frontend)
+	mux.HandleFunc("/api/room/create", h.HandleCreateRoom)
+	mux.HandleFunc("/api/room/join", h.HandleJoinRoom)
+	mux.HandleFunc("/api/room/", h.HandleRoomOperations)
 
 	// Static assets & PWA fallback
 	if cfg.StaticFS != nil {
