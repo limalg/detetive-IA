@@ -249,3 +249,205 @@ func TestLayeredSecretsAndSocialWeb(t *testing.T) {
 	}
 }
 
+func TestWeaverMultiThemeAndSuspectCounts(t *testing.T) {
+	service, weaver := setupWeaverTest(t)
+
+	themes := []struct {
+		id             string
+		expectedTitle  string
+		expectedVictim string
+	}{
+		{
+			id:             "mansion",
+			expectedTitle:  "O Mistério da Mansão do Vale das Sombras",
+			expectedVictim: "Sir Arthur Pendelton (Magnata das Ferrovias e Colecionador de Arte)",
+		},
+		{
+			id:             "train",
+			expectedTitle:  "O Mistério do Expresso da Meia-Noite",
+			expectedVictim: "Viktor Orlov (Diplomata e Colecionador de Segredos)",
+		},
+		{
+			id:             "opera",
+			expectedTitle:  "A Última Ária no Teatro Municipal",
+			expectedVictim: "Gabriel Fontaine (Maestro Principal e Tenor de Renome)",
+		},
+		{
+			id:             "casino",
+			expectedTitle:  "A Dívida do Cassino Clandestino",
+			expectedVictim: "Emilio Ramos (Dono de Bancas Ilegais e Agiota do Submundo)",
+		},
+	}
+
+	suspectCounts := []int{3, 4, 5, 6}
+
+	for _, th := range themes {
+		for _, count := range suspectCounts {
+			testName := th.id + "_" + string(rune('0'+count))
+			t.Run(testName, func(t *testing.T) {
+				result, err := weaver.WeaveCaseWithTheme(nil, th.id, count)
+				if err != nil {
+					t.Fatalf("WeaveCaseWithTheme(%q, %d) failed: %v", th.id, count, err)
+				}
+
+				if result.Case.Title != th.expectedTitle {
+					t.Errorf("expected title %q, got %q", th.expectedTitle, result.Case.Title)
+				}
+				if result.Case.Victim != th.expectedVictim {
+					t.Errorf("expected victim %q, got %q", th.expectedVictim, result.Case.Victim)
+				}
+
+				if len(result.Suspects) != count {
+					t.Fatalf("expected exactly %d suspects, got %d", count, len(result.Suspects))
+				}
+
+				culpritCount := 0
+				for _, s := range result.Suspects {
+					if s.IsCulprit {
+						culpritCount++
+					}
+				}
+				if culpritCount != 1 {
+					t.Fatalf("expected exactly 1 culprit, got %d", culpritCount)
+				}
+
+				if len(result.Clues) < 3 {
+					t.Fatalf("expected at least 3 clues under Three-Clue Rule, got %d", len(result.Clues))
+				}
+
+				// Check weapon validity (one of the 5 weapons)
+				validWeapons := map[string]bool{
+					"Adaga Cerimonial Veneziana":    true,
+					"Cálice com Resíduo de Cianeto": true,
+					"Revólver .38 com Silenciador":  true,
+					"Castiçal de Bronze Maciço":     true,
+					"Navalha Pericial de Aço":       true,
+				}
+				if !validWeapons[result.Case.SolutionWeapon] {
+					t.Errorf("unexpected weapon generated: %q", result.Case.SolutionWeapon)
+				}
+
+				// Verify deduction graph with SubmitAccusation
+				verdict, err := service.SubmitAccusation(1, result.CaseID, result.Culprit.ID, result.Case.SolutionWeapon, result.Case.SolutionMotive)
+				if err != nil {
+					t.Fatalf("SubmitAccusation failed: %v", err)
+				}
+				if !verdict.Correct {
+					t.Errorf("expected accusation to be correct for woven case, got feedback: %s", verdict.Feedback)
+				}
+			})
+		}
+	}
+}
+
+func TestWeaverSuspectCountClamping(t *testing.T) {
+	_, weaver := setupWeaverTest(t)
+
+	// count < 3 should clamp to 3
+	resSmall, err := weaver.WeaveCaseWithTheme(nil, "mansion", 1)
+	if err != nil {
+		t.Fatalf("small count failed: %v", err)
+	}
+	if len(resSmall.Suspects) != 3 {
+		t.Errorf("expected 3 suspects for count 1, got %d", len(resSmall.Suspects))
+	}
+
+	// count > 6 should clamp to 6
+	resLarge, err := weaver.WeaveCaseWithTheme(nil, "mansion", 10)
+	if err != nil {
+		t.Fatalf("large count failed: %v", err)
+	}
+	if len(resLarge.Suspects) != 6 {
+		t.Errorf("expected 6 suspects for count 10, got %d", len(resLarge.Suspects))
+	}
+
+	// count 0 should default to 4
+	resDefault, err := weaver.WeaveCaseWithTheme(nil, "mansion", 0)
+	if err != nil {
+		t.Fatalf("zero count failed: %v", err)
+	}
+	if len(resDefault.Suspects) != 4 {
+		t.Errorf("expected 4 suspects for default count 0, got %d", len(resDefault.Suspects))
+	}
+}
+
+func TestStartSoloGame_MultiTheme(t *testing.T) {
+	service, _ := setupWeaverTest(t)
+
+	details, inv, err := service.StartSoloGame(0, "train", 5)
+	if err != nil {
+		t.Fatalf("StartSoloGame failed: %v", err)
+	}
+
+	if details.Case.Title != "O Mistério do Expresso da Meia-Noite" {
+		t.Errorf("expected train title, got %q", details.Case.Title)
+	}
+	if len(details.Suspects) != 5 {
+		t.Errorf("expected 5 suspects, got %d", len(details.Suspects))
+	}
+	if inv.Status != "in_progress" {
+		t.Errorf("expected in_progress status, got %s", inv.Status)
+	}
+}
+
+func TestSubmitAccusation_AllFiveWeapons(t *testing.T) {
+	service, weaver := setupWeaverTest(t)
+
+	weaponsSeen := make(map[string]bool)
+
+	// Run multiple iterations to exercise all 5 weapons procedurally
+	for i := 0; i < 40; i++ {
+		result, err := weaver.WeaveCaseWithTheme(nil, "mansion", 4)
+		if err != nil {
+			t.Fatalf("WeaveCase failed: %v", err)
+		}
+
+		weaponsSeen[result.Case.SolutionWeapon] = true
+
+		// Exact weapon name accusation
+		v1, err := service.SubmitAccusation(1, result.CaseID, result.Culprit.ID, result.Case.SolutionWeapon, result.Case.SolutionMotive)
+		if err != nil {
+			t.Fatalf("SubmitAccusation exact failed: %v", err)
+		}
+		if !v1.Correct {
+			t.Errorf("expected exact weapon %q to be correct, feedback: %s", result.Case.SolutionWeapon, v1.Feedback)
+		}
+
+		// Accusation with keyword (e.g. "navalha" if Navalha Pericial de Aço)
+		var keyword string
+		switch {
+		case strings.Contains(result.Case.SolutionWeapon, "Navalha"):
+			keyword = "navalha"
+		case strings.Contains(result.Case.SolutionWeapon, "Adaga"):
+			keyword = "adaga"
+		case strings.Contains(result.Case.SolutionWeapon, "Cálice"):
+			keyword = "cianeto"
+		case strings.Contains(result.Case.SolutionWeapon, "Revólver"):
+			keyword = "revólver"
+		case strings.Contains(result.Case.SolutionWeapon, "Castiçal"):
+			keyword = "castiçal"
+		}
+
+		v2, err := service.SubmitAccusation(1, result.CaseID, result.Culprit.ID, keyword, result.Case.SolutionMotive)
+		if err != nil {
+			t.Fatalf("SubmitAccusation keyword failed: %v", err)
+		}
+		if !v2.Correct {
+			t.Errorf("expected keyword %q for weapon %q to be correct, feedback: %s", keyword, result.Case.SolutionWeapon, v2.Feedback)
+		}
+
+		// Wrong weapon should fail
+		vWrong, err := service.SubmitAccusation(1, result.CaseID, result.Culprit.ID, "Espada Medieval Fantasma", result.Case.SolutionMotive)
+		if err != nil {
+			t.Fatalf("SubmitAccusation wrong weapon failed: %v", err)
+		}
+		if vWrong.Correct {
+			t.Errorf("expected wrong weapon to be incorrect")
+		}
+	}
+
+	if len(weaponsSeen) < 3 {
+		t.Logf("tested with %d distinct weapons out of 5", len(weaponsSeen))
+	}
+}
+

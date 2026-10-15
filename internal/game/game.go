@@ -304,10 +304,7 @@ func (s *Service) SubmitAccusation(userID int64, caseID int64, accusedSuspectID 
 
 	wLower := strings.TrimSpace(strings.ToLower(accusedWeapon))
 	solWLower := strings.TrimSpace(strings.ToLower(solWeapon))
-	weaponMatch := false
-	if wLower != "" && solWLower != "" {
-		weaponMatch = strings.Contains(wLower, "adaga") || strings.Contains(wLower, solWLower) || strings.Contains(solWLower, wLower)
-	}
+	weaponMatch := matchWeapon(wLower, solWLower)
 
 	mLower := strings.TrimSpace(strings.ToLower(accusedMotive))
 	solMLower := strings.TrimSpace(strings.ToLower(solMotive))
@@ -452,7 +449,7 @@ func (s *Service) StartSoloGame(userID int64, themeID string, suspectCount int) 
 	}
 
 	weaver := NewWeaver(s.db)
-	res, err := weaver.WeaveCase(nil)
+	res, err := weaver.WeaveCaseWithTheme(nil, themeID, suspectCount)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to weave solo case: %w", err)
 	}
@@ -537,4 +534,42 @@ func (s *Service) RecordWarrantStrike(investigationID int64) (int, bool, error) 
 	}
 
 	return warrantsLeft, isGameOver, nil
+}
+
+func matchWeapon(accused, solution string) bool {
+	acc := strings.ToLower(strings.TrimSpace(accused))
+	sol := strings.ToLower(strings.TrimSpace(solution))
+	if acc == "" || sol == "" {
+		return false
+	}
+	if strings.Contains(acc, sol) || strings.Contains(sol, acc) {
+		return true
+	}
+	weapons := []struct {
+		solKeywords []string
+		accKeywords []string
+	}{
+		{[]string{"adaga"}, []string{"adaga"}},
+		{[]string{"cianeto", "cálice", "calice"}, []string{"cianeto", "cálice", "calice", "veneno"}},
+		{[]string{"revólver", "revolver", ".38"}, []string{"revólver", "revolver", ".38", "arma"}},
+		{[]string{"castiçal", "castical"}, []string{"castiçal", "castical", "bronze"}},
+		{[]string{"navalha"}, []string{"navalha", "lâmina", "lamina"}},
+	}
+	for _, w := range weapons {
+		solMatches := false
+		for _, s := range w.solKeywords {
+			if strings.Contains(sol, s) {
+				solMatches = true
+				break
+			}
+		}
+		if solMatches {
+			for _, a := range w.accKeywords {
+				if strings.Contains(acc, a) {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
