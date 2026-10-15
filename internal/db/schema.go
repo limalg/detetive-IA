@@ -42,7 +42,9 @@ CREATE TABLE IF NOT EXISTS suspects (
     tier1_alibi TEXT DEFAULT '',
     tier2_petty_crime TEXT DEFAULT '',
     tier3_truth TEXT DEFAULT '',
-    cross_suspicion TEXT DEFAULT ''
+    cross_suspicion TEXT DEFAULT '',
+    gender TEXT DEFAULT '',
+    avatar TEXT DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS clues (
@@ -112,6 +114,8 @@ func RunMigrations(database *sql.DB) error {
 		"ALTER TABLE suspects ADD COLUMN tier3_truth TEXT DEFAULT '';",
 		"ALTER TABLE suspects ADD COLUMN cross_suspicion TEXT DEFAULT '';",
 		"ALTER TABLE cases ADD COLUMN category TEXT DEFAULT 'detective_night';",
+		"ALTER TABLE suspects ADD COLUMN gender TEXT DEFAULT '';",
+		"ALTER TABLE suspects ADD COLUMN avatar TEXT DEFAULT '';",
 	}
 	for _, q := range alterQueries {
 		_, _ = database.Exec(q)

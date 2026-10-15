@@ -71,6 +71,8 @@ type Suspect struct {
 	Tier2PettyCrime string `json:"tier2_petty_crime,omitempty"`
 	Tier3Truth      string `json:"tier3_truth,omitempty"`
 	CrossSuspicion  string `json:"cross_suspicion,omitempty"`
+	Gender          string `json:"gender,omitempty"`
+	Avatar          string `json:"avatar,omitempty"`
 }
 
 // Clue represents physical evidence found at a crime scene.

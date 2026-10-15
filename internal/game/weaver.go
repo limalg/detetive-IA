@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"math/big"
+	"strings"
 
 	"detetive-ia/internal/models"
 	"detetive-ia/internal/room"
@@ -38,6 +39,8 @@ func NewWeaver(db *sql.DB) *Weaver {
 
 type botArchetype struct {
 	name        string
+	gender      string
+	avatar      string
 	role        string
 	personality string
 	alibi       string
@@ -50,6 +53,8 @@ type botArchetype struct {
 var noirBotPool = []botArchetype{
 	{
 		name:        "Dra. Nicole Moreau",
+		gender:      "female",
+		avatar:      "/static/assets/char_nicole.webp",
 		role:        "Médica Patologista",
 		personality: "Metódica, cínica e fumante inveterada.",
 		alibi:       "Estava no laboratório temporário conferindo laudos toxicológicos.",
@@ -60,6 +65,8 @@ var noirBotPool = []botArchetype{
 	},
 	{
 		name:        "Vincent Thorne",
+		gender:      "male",
+		avatar:      "/static/assets/char_vincent.webp",
 		role:        "Jornalista Investigativo",
 		personality: "Oportunista, sarcástico e atento a sussurros de bastidores.",
 		alibi:       "Fiquei no saguão datilografando notas sobre o baile beneficente.",
@@ -70,6 +77,8 @@ var noirBotPool = []botArchetype{
 	},
 	{
 		name:        "Barão Klaus von Berg",
+		gender:      "male",
+		avatar:      "/static/assets/char_klaus.webp",
 		role:        "Magnata & Agiota",
 		personality: "Arrogante, implacável e impaciente com devedores.",
 		alibi:       "Estava na sala de conferências revisando contratos de hipotecas antigas.",
@@ -80,6 +89,8 @@ var noirBotPool = []botArchetype{
 	},
 	{
 		name:        "Clarice Dubois",
+		gender:      "female",
+		avatar:      "/static/assets/char_clarice.webp",
 		role:        "Cantora de Cabaré",
 		personality: "Sedutora, melancólica e ardilosa.",
 		alibi:       "Permaneci no camarim ensaiando arranjos de voz ao violino até a madrugada.",
@@ -90,6 +101,8 @@ var noirBotPool = []botArchetype{
 	},
 	{
 		name:        "Barnaby Finch",
+		gender:      "male",
+		avatar:      "/static/assets/char_barnaby.webp",
 		role:        "Mordomo & Guarda-livros",
 		personality: "Formal, impassível e rigorosamente detalhista.",
 		alibi:       "Conferia o inventário de garrafas e cristais na adega subterrânea.",
@@ -100,6 +113,8 @@ var noirBotPool = []botArchetype{
 	},
 	{
 		name:        "Coronel Hector Vance",
+		gender:      "male",
+		avatar:      "/static/assets/char_hector.webp",
 		role:        "Veterano de Guerra & Colecionador de Armas",
 		personality: "Rígido, taciturno e observador com olhar penetrante.",
 		alibi:       "Estava no salão de jogos polindo peças de xadrez e fumando cachimbo.",
@@ -110,6 +125,8 @@ var noirBotPool = []botArchetype{
 	},
 	{
 		name:        "Madame Genevieve Leclair",
+		gender:      "female",
+		avatar:      "/static/assets/char_genevieve.webp",
 		role:        "Antiquária & Falsificadora",
 		personality: "Refinada, enigmática e atenta a detalhes materiais.",
 		alibi:       "Estava na biblioteca catalogando manuscritos raros e iluminuras antigas.",
@@ -298,6 +315,13 @@ func (w *Weaver) WeaveCaseWithTheme(players []room.Player, themeID string, suspe
 		alibi := "Afirma que permaneceu nos corredores admirando as instalações na hora fatídica."
 		petty := "Ocultava transações financeiras irregulares e dívidas nos bastidores da alta sociedade."
 		truth := "Eu estava apenas tentando salvar minhas economias de uma ruína iminente!"
+		gender := "male"
+		avatar := "/static/assets/char_vincent.webp"
+		lowerName := strings.ToLower(persona + " " + role)
+		if strings.Contains(lowerName, "dra") || strings.Contains(lowerName, "madame") || strings.Contains(lowerName, "senhora") || strings.Contains(lowerName, "mulher") || strings.Contains(lowerName, "dona") || strings.Contains(lowerName, "cantora") || strings.Contains(lowerName, "garçonete") || strings.Contains(lowerName, "atriz") || strings.Contains(lowerName, "elena") || strings.Contains(lowerName, "clarice") || strings.Contains(lowerName, "genevieve") || strings.Contains(lowerName, "nicole") {
+			gender = "female"
+			avatar = "/static/assets/char_nicole.webp"
+		}
 		suspectPool = append(suspectPool, WeaverSuspect{
 			Suspect: models.Suspect{
 				Name:            persona,
@@ -308,6 +332,8 @@ func (w *Weaver) WeaveCaseWithTheme(players []room.Player, themeID string, suspe
 				Tier1Alibi:      alibi,
 				Tier2PettyCrime: petty,
 				Tier3Truth:      truth,
+				Gender:          gender,
+				Avatar:          avatar,
 			},
 			IsBot: p.IsBot,
 		})
@@ -326,6 +352,8 @@ func (w *Weaver) WeaveCaseWithTheme(players []room.Player, themeID string, suspe
 				Tier1Alibi:      bot.tier1Alibi,
 				Tier2PettyCrime: bot.tier2Petty,
 				Tier3Truth:      bot.tier3Truth,
+				Gender:          bot.gender,
+				Avatar:          bot.avatar,
 			},
 			IsBot: true,
 		})
@@ -391,9 +419,9 @@ func (w *Weaver) WeaveCaseWithTheme(players []room.Player, themeID string, suspe
 	for i, s := range suspectPool {
 		if w.db != nil {
 			sRes, err := w.db.Exec(`
-				INSERT INTO suspects (case_id, name, role, personality, alibi, secret, is_culprit, tier1_alibi, tier2_petty_crime, tier3_truth, cross_suspicion)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-			`, caseID, s.Name, s.Role, s.Personality, s.Alibi, s.Secret, s.IsCulprit, s.Tier1Alibi, s.Tier2PettyCrime, s.Tier3Truth, s.CrossSuspicion)
+				INSERT INTO suspects (case_id, name, role, personality, alibi, secret, is_culprit, tier1_alibi, tier2_petty_crime, tier3_truth, cross_suspicion, gender, avatar)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			`, caseID, s.Name, s.Role, s.Personality, s.Alibi, s.Secret, s.IsCulprit, s.Tier1Alibi, s.Tier2PettyCrime, s.Tier3Truth, s.CrossSuspicion, s.Gender, s.Avatar)
 			if err != nil {
 				return nil, fmt.Errorf("failed to insert suspect %s: %w", s.Name, err)
 			}

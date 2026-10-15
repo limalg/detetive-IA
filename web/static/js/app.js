@@ -869,24 +869,30 @@
     state.suspects = [
       {
         id: 1,
-        name: 'Dra. Helena Voss',
-        role: 'Médica da Família',
-        personality: 'Fria, analítica e calculista',
-        alibi: 'Afirma que estava no laboratório organizando prescrições médicas na hora do crime.'
+        name: 'Dra. Nicole Moreau',
+        gender: 'female',
+        avatar: '/static/assets/char_nicole.webp',
+        role: 'Médica Patologista',
+        personality: 'Metódica, cínica e fumante inveterada.',
+        alibi: 'Estava no laboratório temporário conferindo laudos toxicológicos.'
       },
       {
         id: 2,
-        name: 'Victor Vance',
-        role: 'Sobrinho e Herdeiro',
-        personality: 'Ansioso, extravagante e afundado em dívidas de apostas',
-        alibi: 'Disse que estava na adega degustando vinhos raros.'
+        name: 'Vincent Thorne',
+        gender: 'male',
+        avatar: '/static/assets/char_vincent.webp',
+        role: 'Jornalista Investigativo',
+        personality: 'Oportunista, sarcástico e atento a sussurros de bastidores.',
+        alibi: 'Fiquei no saguão datilografando notas sobre o baile beneficente.'
       },
       {
         id: 3,
         name: 'Clarice Dubois',
-        role: 'Governanta & Confidente',
-        personality: 'Discreta, leal na aparência e observadora atenta',
-        alibi: 'Alega que recolhia a louça no piso térreo quando ouviu um estrondo.'
+        gender: 'female',
+        avatar: '/static/assets/char_clarice.webp',
+        role: 'Cantora de Cabaré',
+        personality: 'Sedutora, melancólica e ardilosa.',
+        alibi: 'Permaneci no camarim ensaiando arranjos de voz ao violino até a madrugada.'
       }
     ];
 
@@ -978,20 +984,64 @@
   }
 
   function getSuspectPhotoUrl(suspect) {
+    if (!suspect) return '/static/assets/scene_noir.webp';
+
+    // 1. Backend-assigned avatar
+    if (suspect.avatar && suspect.avatar.startsWith('/static/assets/')) {
+      return suspect.avatar;
+    }
+
     const name = (suspect.name || '').toLowerCase();
     const role = (suspect.role || '').toLowerCase();
-    if (name.includes('julian') || role.includes('herdeiro') || role.includes('magnata') || role.includes('victor') || name.includes('arthur') || role.includes('tycoon')) {
-      return '/static/assets/suspect_magnate.webp';
+    const gender = (suspect.gender || '').toLowerCase();
+
+    // 2. Archetype matching
+    if (name.includes('nicole') || name.includes('moreau') || role.includes('patologista')) {
+      return '/static/assets/char_nicole.webp';
     }
-    if (name.includes('elena') || name.includes('helena') || role.includes('médica') || role.includes('medica') || role.includes('doutora') || role.includes('femme') || role.includes('cantora') || role.includes('governanta') || name.includes('clarice') || name.includes('vivian')) {
-      return '/static/assets/suspect_femme.webp';
+    if (name.includes('vincent') || name.includes('thorne') || role.includes('jornalista')) {
+      return '/static/assets/char_vincent.webp';
     }
-    if (name.includes('barnaby') || role.includes('mordomo') || role.includes('butler') || role.includes('advogado') || role.includes('guarda') || role.includes('inspetor')) {
-      return '/static/assets/suspect_butler.webp';
+    if (name.includes('klaus') || name.includes('berg') || role.includes('magnata') || role.includes('agiota')) {
+      return '/static/assets/char_klaus.webp';
     }
-    const pool = ['/static/assets/suspect_femme.webp', '/static/assets/suspect_magnate.webp', '/static/assets/suspect_butler.webp'];
-    return pool[(suspect.id || 0) % pool.length];
+    if (name.includes('clarice') || name.includes('dubois') || role.includes('cabaré') || role.includes('cabare') || role.includes('cantora')) {
+      return '/static/assets/char_clarice.webp';
+    }
+    if (name.includes('barnaby') || name.includes('finch') || role.includes('mordomo') || role.includes('guarda-livros')) {
+      return '/static/assets/char_barnaby.webp';
+    }
+    if (name.includes('hector') || name.includes('vance') || role.includes('coronel') || role.includes('veterano')) {
+      return '/static/assets/char_hector.webp';
+    }
+    if (name.includes('genevieve') || name.includes('leclair') || role.includes('antiquária') || role.includes('antiquaria') || role.includes('falsificadora')) {
+      return '/static/assets/char_genevieve.webp';
+    }
+
+    // 3. Strict gender fallback pools
+    const malePool = [
+      '/static/assets/char_vincent.webp',
+      '/static/assets/char_klaus.webp',
+      '/static/assets/char_barnaby.webp',
+      '/static/assets/char_hector.webp'
+    ];
+    const femalePool = [
+      '/static/assets/char_nicole.webp',
+      '/static/assets/char_clarice.webp',
+      '/static/assets/char_genevieve.webp'
+    ];
+
+    const isFemale = gender === 'female' ||
+      role.includes('médica') || role.includes('medica') || role.includes('doutora') ||
+      role.includes('cantora') || role.includes('governanta') || role.includes('antiquária') ||
+      role.includes('antiquaria') || role.includes('atriz') || role.includes('dançarina') ||
+      name.includes('helena') || name.includes('elena') || name.includes('vivian') || name.includes('madame');
+
+    const pool = isFemale ? femalePool : malePool;
+    const idx = Math.abs(suspect.id || 0) % pool.length;
+    return pool[idx];
   }
+  window.getSuspectPhotoUrl = getSuspectPhotoUrl;
 
   function renderSuspects() {
     el.suspectsList.innerHTML = '';
@@ -1000,7 +1050,7 @@
       card.className = 'polaroid-card';
       const photoUrl = getSuspectPhotoUrl(suspect);
       const photoHtml = photoUrl
-        ? `<img src="${photoUrl}" alt="${escapeHtml(suspect.name)}" style="width: 100%; height: 100%; object-fit: cover; filter: grayscale(35%) sepia(20%) contrast(1.15);">`
+        ? `<img src="${photoUrl}" alt="${escapeHtml(suspect.name)}" class="polaroid-photo-img">`
         : `<span>🕵️</span>`;
 
       card.innerHTML = `
@@ -1032,19 +1082,19 @@
   function getWeaponPhotoUrl(weaponName) {
     if (!weaponName) return null;
     const text = weaponName.toLowerCase();
-    if (text.includes('cianeto') || text.includes('veneno') || text.includes('cálice') || text.includes('calice') || text.includes('estricnina')) {
+    if (text.includes('cianeto') || text.includes('veneno') || text.includes('cálice') || text.includes('calice') || text.includes('estricnina') || text.includes('taça') || text.includes('taca') || text.includes('whisky')) {
       return '/static/assets/weapon_poison.webp';
     }
-    if (text.includes('adaga') || text.includes('punhal') || text.includes('faca')) {
-      return '/static/assets/weapon_dagger.webp';
-    }
-    if (text.includes('castiçal') || text.includes('castical') || text.includes('bronze')) {
-      return '/static/assets/weapon_candlestick.webp';
-    }
-    if (text.includes('navalha') || text.includes('lâmina') || text.includes('lamina') || text.includes('cirúrgic') || text.includes('cirurgic')) {
+    if (text.includes('navalha') || text.includes('lâmina cirúrgic') || text.includes('lamina cirurgic') || text.includes('bisturi') || text.includes('navalhete')) {
       return '/static/assets/weapon_razor.webp';
     }
-    if (text.includes('revólver') || text.includes('revolver') || text.includes('arma') || text.includes('tiro') || text.includes('.38') || text.includes('silenciador')) {
+    if (text.includes('adaga') || text.includes('punhal') || text.includes('faca') || text.includes('estilete') || text.includes('lâmina') || text.includes('lamina')) {
+      return '/static/assets/weapon_dagger.webp';
+    }
+    if (text.includes('castiçal') || text.includes('castical') || text.includes('bronze') || text.includes('candelabro') || text.includes('contundente')) {
+      return '/static/assets/weapon_candlestick.webp';
+    }
+    if (text.includes('revólver') || text.includes('revolver') || text.includes('arma') || text.includes('tiro') || text.includes('.38') || text.includes('silenciador') || text.includes('pistola') || text.includes('bala') || text.includes('projétil') || text.includes('projetil')) {
       return '/static/assets/murder_weapon.webp';
     }
     return null;
@@ -1104,16 +1154,20 @@
       const card = document.createElement('div');
       card.className = 'card-noir clue-card-inspectable';
       const text = ((clue.name || '') + ' ' + (clue.description || '')).toLowerCase();
-      const weaponPhoto = getWeaponPhotoUrl(text);
-      const weaponImg = weaponPhoto
-        ? `<div style="margin-bottom: 0.75rem; border-radius: 4px; overflow: hidden; border: 1px solid var(--border-dim); max-height: 140px;">
-             <img src="${weaponPhoto}" alt="Arma do Crime Pericial" style="width: 100%; height: 140px; object-fit: cover; filter: grayscale(20%) sepia(20%) contrast(1.15);">
-           </div>`
-        : '';
+      let photoUrl = getWeaponPhotoUrl(text);
+      if (!photoUrl) {
+        photoUrl = '/static/assets/scene_noir.webp';
+      }
+
+      const imgHtml = `
+        <div style="margin-bottom: 0.75rem; border-radius: 4px; overflow: hidden; border: 1px solid var(--border-dim); height: 140px; background: #0c0b0e;">
+          <img src="${photoUrl}" alt="${escapeHtml(clue.name)}" style="width: 100%; height: 100%; object-fit: cover; object-position: center 25%; filter: contrast(1.15) sepia(10%);">
+        </div>
+      `;
 
       card.innerHTML = `
         <div>
-          ${weaponImg}
+          ${imgHtml}
           <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem;">
             <div class="suspect-title" style="font-size: 1.05rem;">${escapeHtml(clue.name)}</div>
             <span class="clue-badge">${escapeHtml(clue.location)}</span>
@@ -1145,22 +1199,61 @@
       el.accuseSuspect.appendChild(opt);
     });
 
-    // Populate weapons dropdown
+    // Populate weapons dropdown and visual selector cards
     el.accuseWeapon.innerHTML = '<option value="">Selecione a arma...</option>';
     const weapons = [
-      'Cálice com Resíduo de Cianeto',
-      'Adaga Cerimonial de Prata',
-      'Revólver Calibre .38 com Silenciador',
-      'Castiçal Pesado de Bronze',
-      'Navalha Pericial de Aço',
-      'Veneno Estricnina no Whisky'
+      { name: 'Cálice com Resíduo de Cianeto', file: '/static/assets/weapon_poison.webp', label: 'Cálice de Cianeto' },
+      { name: 'Adaga Cerimonial Veneziana', file: '/static/assets/weapon_dagger.webp', label: 'Adaga Veneziana' },
+      { name: 'Revólver Calibre .38 com Silenciador', file: '/static/assets/murder_weapon.webp', label: 'Revólver .38' },
+      { name: 'Castiçal Pesado de Bronze', file: '/static/assets/weapon_candlestick.webp', label: 'Castiçal de Bronze' },
+      { name: 'Navalha Pericial de Aço', file: '/static/assets/weapon_razor.webp', label: 'Navalha Pericial' }
     ];
+
     weapons.forEach((w) => {
       const opt = document.createElement('option');
-      opt.value = w;
-      opt.textContent = w;
+      opt.value = w.name;
+      opt.textContent = w.name;
       el.accuseWeapon.appendChild(opt);
     });
+
+    const grid = document.getElementById('accuse-weapons-visual-grid');
+    if (grid) {
+      grid.innerHTML = '';
+      weapons.forEach((w) => {
+        const item = document.createElement('div');
+        item.className = 'weapon-card-item';
+        item.dataset.weaponName = w.name;
+        item.innerHTML = `
+          <div class="weapon-card-thumb">
+            <img src="${w.file}" alt="${escapeHtml(w.name)}">
+          </div>
+          <div class="weapon-card-label">${escapeHtml(w.label)}</div>
+        `;
+        item.addEventListener('click', () => {
+          if (window.NoirAudio) window.NoirAudio.playPaper();
+          el.accuseWeapon.value = w.name;
+          grid.querySelectorAll('.weapon-card-item').forEach(c => c.classList.remove('selected'));
+          item.classList.add('selected');
+        });
+        grid.appendChild(item);
+      });
+    }
+
+    if (el.accuseWeapon) {
+      el.accuseWeapon.addEventListener('change', () => {
+        const val = el.accuseWeapon.value;
+        const grid = document.getElementById('accuse-weapons-visual-grid');
+        if (grid) {
+          grid.querySelectorAll('.weapon-card-item').forEach(c => {
+            if (c.dataset.weaponName === val) {
+              c.classList.add('selected');
+            } else {
+              c.classList.remove('selected');
+            }
+          });
+        }
+      });
+    }
   }
 
   function updateStressMeter(suspectId, stress) {
@@ -1287,8 +1380,20 @@
     if (!state.activeSuspect) return;
     const history = state.chatHistories[state.activeSuspect.id] || [];
     el.chatTranscript.innerHTML = '';
+    const suspectPhoto = getSuspectPhotoUrl(state.activeSuspect);
 
     history.forEach((item) => {
+      const row = document.createElement('div');
+      row.className = `chat-row ${item.sender}`;
+
+      const avatarWrapper = document.createElement('div');
+      avatarWrapper.className = 'chat-avatar-wrapper';
+      if (item.sender === 'detective') {
+        avatarWrapper.innerHTML = `<span class="chat-avatar-icon">🕵️</span>`;
+      } else {
+        avatarWrapper.innerHTML = `<img src="${suspectPhoto}" alt="${escapeHtml(state.activeSuspect.name)}" class="chat-avatar-img">`;
+      }
+
       const bubble = document.createElement('div');
       bubble.className = `chat-bubble ${item.sender}`;
       const senderLabel = item.sender === 'detective' ? `Det. ${state.persona.name || (state.currentUser ? state.currentUser.username : 'Detetive')}` : state.activeSuspect.name;
@@ -1296,7 +1401,10 @@
         <div class="bubble-sender">${escapeHtml(senderLabel)}</div>
         <div class="bubble-text">${escapeHtml(item.message)}</div>
       `;
-      el.chatTranscript.appendChild(bubble);
+
+      row.appendChild(avatarWrapper);
+      row.appendChild(bubble);
+      el.chatTranscript.appendChild(row);
     });
 
     el.chatTranscript.scrollTop = el.chatTranscript.scrollHeight;
@@ -1345,11 +1453,20 @@
       el.interrogationInput.value = '';
 
       // Typing indicator
-      const typingBubble = document.createElement('div');
-      typingBubble.className = 'chat-bubble suspect';
-      typingBubble.id = 'typing-indicator';
-      typingBubble.innerHTML = `<div class="bubble-sender">${escapeHtml(state.activeSuspect.name)}</div><em>Digitando depoimento...</em>`;
-      el.chatTranscript.appendChild(typingBubble);
+      const typingRow = document.createElement('div');
+      typingRow.className = 'chat-row suspect';
+      typingRow.id = 'typing-indicator';
+      const suspectPhoto = getSuspectPhotoUrl(state.activeSuspect);
+      typingRow.innerHTML = `
+        <div class="chat-avatar-wrapper">
+          <img src="${suspectPhoto}" alt="${escapeHtml(state.activeSuspect.name)}" class="chat-avatar-img">
+        </div>
+        <div class="chat-bubble suspect">
+          <div class="bubble-sender">${escapeHtml(state.activeSuspect.name)}</div>
+          <em>Digitando depoimento...</em>
+        </div>
+      `;
+      el.chatTranscript.appendChild(typingRow);
       el.chatTranscript.scrollTop = el.chatTranscript.scrollHeight;
 
       const reqBody = {

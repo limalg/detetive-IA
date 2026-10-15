@@ -334,6 +334,13 @@ func TestDiegeticNoirDeskAndNightClockUI(t *testing.T) {
 func TestEmbeddedVisualAssets(t *testing.T) {
 	assets := []string{
 		"static/assets/scene_noir.webp",
+		"static/assets/char_nicole.webp",
+		"static/assets/char_vincent.webp",
+		"static/assets/char_klaus.webp",
+		"static/assets/char_clarice.webp",
+		"static/assets/char_barnaby.webp",
+		"static/assets/char_hector.webp",
+		"static/assets/char_genevieve.webp",
 		"static/assets/suspect_femme.webp",
 		"static/assets/suspect_magnate.webp",
 		"static/assets/suspect_butler.webp",

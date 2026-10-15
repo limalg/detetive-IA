@@ -192,7 +192,8 @@ func (s *Service) GetCaseDetails(caseID int64) (*CaseDetails, error) {
 
 	suspectRows, err := s.db.Query(`
 		SELECT id, case_id, name, role, personality, alibi, secret, is_culprit,
-		       COALESCE(tier1_alibi, ''), COALESCE(tier2_petty_crime, ''), COALESCE(tier3_truth, ''), COALESCE(cross_suspicion, '')
+		       COALESCE(tier1_alibi, ''), COALESCE(tier2_petty_crime, ''), COALESCE(tier3_truth, ''), COALESCE(cross_suspicion, ''),
+		       COALESCE(gender, ''), COALESCE(avatar, '')
 		FROM suspects WHERE case_id = ? ORDER BY id ASC
 	`, caseID)
 	if err != nil {
@@ -204,7 +205,7 @@ func (s *Service) GetCaseDetails(caseID int64) (*CaseDetails, error) {
 	for suspectRows.Next() {
 		var susp models.Suspect
 		if err := suspectRows.Scan(&susp.ID, &susp.CaseID, &susp.Name, &susp.Role, &susp.Personality, &susp.Alibi, &susp.Secret, &susp.IsCulprit,
-			&susp.Tier1Alibi, &susp.Tier2PettyCrime, &susp.Tier3Truth, &susp.CrossSuspicion); err != nil {
+			&susp.Tier1Alibi, &susp.Tier2PettyCrime, &susp.Tier3Truth, &susp.CrossSuspicion, &susp.Gender, &susp.Avatar); err != nil {
 			return nil, err
 		}
 		suspects = append(suspects, susp)
@@ -250,10 +251,11 @@ func (s *Service) InterrogateWithStress(sessionID string, suspectID int64, quest
 	var susp models.Suspect
 	err := s.db.QueryRow(`
 		SELECT id, case_id, name, role, personality, alibi, secret, is_culprit,
-		       COALESCE(tier1_alibi, ''), COALESCE(tier2_petty_crime, ''), COALESCE(tier3_truth, ''), COALESCE(cross_suspicion, '')
+		       COALESCE(tier1_alibi, ''), COALESCE(tier2_petty_crime, ''), COALESCE(tier3_truth, ''), COALESCE(cross_suspicion, ''),
+		       COALESCE(gender, ''), COALESCE(avatar, '')
 		FROM suspects WHERE id = ?
 	`, suspectID).Scan(&susp.ID, &susp.CaseID, &susp.Name, &susp.Role, &susp.Personality, &susp.Alibi, &susp.Secret, &susp.IsCulprit,
-		&susp.Tier1Alibi, &susp.Tier2PettyCrime, &susp.Tier3Truth, &susp.CrossSuspicion)
+		&susp.Tier1Alibi, &susp.Tier2PettyCrime, &susp.Tier3Truth, &susp.CrossSuspicion, &susp.Gender, &susp.Avatar)
 	if err != nil {
 		return "", fmt.Errorf("failed to find suspect: %w", err)
 	}
