@@ -67,8 +67,20 @@ func NewRouter(cfg Config) http.Handler {
 
 	// Room & Lobby endpoints (singular compatibility for frontend)
 	mux.HandleFunc("/api/room/create", h.HandleCreateRoom)
+	mux.HandleFunc("/api/room/create-with-case", h.HandleCreateRoomWithCase)
 	mux.HandleFunc("/api/room/join", h.HandleJoinRoom)
 	mux.HandleFunc("/api/room/", h.HandleRoomOperations)
+
+	// Detective Night digital cases & envelopes
+	mux.HandleFunc("/api/game/cases/detective-night", h.HandleDetectiveNightCatalog)
+	mux.HandleFunc("/api/game/case/", h.HandleDetectiveNightCaseEnvelopes)
+
+	// Admin & OpenTelemetry endpoints
+	mux.HandleFunc("/admin", h.HandleAdminPage)
+	mux.HandleFunc("/api/admin/settings", h.HandleAdminSettings)
+	mux.HandleFunc("/api/admin/logs", h.HandleAdminLogs)
+	mux.HandleFunc("/api/admin/telemetry", h.HandleAdminTelemetry)
+	mux.HandleFunc("/api/admin/test-ai", h.HandleAdminTestAI)
 
 	// Static assets & PWA fallback
 	if cfg.StaticFS != nil {

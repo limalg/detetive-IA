@@ -115,12 +115,12 @@ func (s *Service) ValidateSession(token string) (*models.User, error) {
 	var createdAtStr, expiresAtStr string
 
 	query := `
-		SELECT u.id, u.username, u.created_at, s.expires_at
+		SELECT u.id, u.username, COALESCE(u.is_admin, 0), u.created_at, s.expires_at
 		FROM sessions s
 		JOIN users u ON s.user_id = u.id
 		WHERE s.token = ?
 	`
-	err := s.db.QueryRow(query, token).Scan(&user.ID, &user.Username, &createdAtStr, &expiresAtStr)
+	err := s.db.QueryRow(query, token).Scan(&user.ID, &user.Username, &user.IsAdmin, &createdAtStr, &expiresAtStr)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrSessionNotFound
@@ -138,8 +138,39 @@ func (s *Service) ValidateSession(token string) (*models.User, error) {
 		return nil, ErrSessionNotFound
 	}
 
-	user.CreatedAt, _ = parseDBTime(createdAtStr)
+	createdAt, _ := parseDBTime(createdAtStr)
+	user.CreatedAt = createdAt
+
 	return &user, nil
+}
+
+// EnsureAdminUser checks if an admin exists; if not, creates one.
+func (s *Service) EnsureAdminUser(username, password string) (*models.User, error) {
+	var count int
+	_ = s.db.QueryRow("SELECT COUNT(*) FROM users WHERE is_admin = 1").Scan(&count)
+	if count > 0 {
+		return nil, nil
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, err
+	}
+
+	now := time.Now().UTC()
+	query := `INSERT OR REPLACE INTO users (username, password_hash, is_admin, created_at) VALUES (?, ?, 1, ?)`
+	res, err := s.db.Exec(query, username, string(hash), now.Format(time.RFC3339))
+	if err != nil {
+		return nil, err
+	}
+
+	id, _ := res.LastInsertId()
+	return &models.User{
+		ID:        id,
+		Username:  username,
+		IsAdmin:   true,
+		CreatedAt: now,
+	}, nil
 }
 
 // Logout removes the session token, invalidating subsequent requests.

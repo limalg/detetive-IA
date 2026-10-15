@@ -7,7 +7,27 @@ type User struct {
 	ID           int64     `json:"id"`
 	Username     string    `json:"username"`
 	PasswordHash string    `json:"-"`
+	IsAdmin      bool      `json:"is_admin"`
 	CreatedAt    time.Time `json:"created_at"`
+}
+
+// CaseEnvelope represents one of the three confidential envelopes in a Detective Night case.
+type CaseEnvelope struct {
+	ID             int64                  `json:"id"`
+	CaseID         int64                  `json:"case_id"`
+	EnvelopeNumber int                    `json:"envelope_number"` // 1 = O Caso, 2 = Vozes Suspeitas, 3 = Evidencias
+	Title          string                 `json:"title"`
+	Description    string                 `json:"description"`
+	ContentJSON    string                 `json:"content_json"`
+	Items          map[string]interface{} `json:"items,omitempty"`
+}
+
+// CustomCharacter represents a character uploaded by the user to be cast by AI.
+type CustomCharacter struct {
+	Name      string `json:"name"`
+	AvatarURL string `json:"avatar_url,omitempty"`
+	Notes     string `json:"notes,omitempty"`
+	IsReal    bool   `json:"is_real"`
 }
 
 // Session represents an active user session token.

@@ -19,42 +19,113 @@ type AIClient interface {
 	GenerateResponse(ctx context.Context, prompt string) (string, error)
 }
 
-// GeminiClient implements AIClient using Google's Gemini REST API.
-type GeminiClient struct {
-	apiKey     string
-	model      string
+// AIConfig holds settings for LLM generation.
+type AIConfig struct {
+	URL      string `json:"url"`
+	APIKey   string `json:"api_key"`
+	Model    string `json:"model"`
+	Provider string `json:"provider"` // "openai_compatible", "gemini"
+}
+
+// UniversalAIClient implements AIClient supporting OpenAI-compatible routers and Gemini.
+type UniversalAIClient struct {
+	config     AIConfig
 	httpClient *http.Client
 }
 
-// NewGeminiClient creates a lightweight Gemini API client.
-func NewGeminiClient(apiKey string) *GeminiClient {
-	if apiKey == "" {
-		return nil
+// NewUniversalAIClient creates a configurable AI client.
+func NewUniversalAIClient(cfg AIConfig) *UniversalAIClient {
+	if cfg.URL == "" {
+		cfg.URL = "https://router.ofertasshow.shop/v1"
 	}
-	return &GeminiClient{
-		apiKey: apiKey,
-		model:  "gemini-1.5-flash",
+	if cfg.Model == "" {
+		cfg.Model = "ondegastei"
+	}
+	if cfg.Provider == "" {
+		cfg.Provider = "openai_compatible"
+	}
+	return &UniversalAIClient{
+		config: cfg,
 		httpClient: &http.Client{
-			Timeout: 10 * time.Second,
+			Timeout: 15 * time.Second,
 		},
 	}
 }
 
-func (g *GeminiClient) GenerateResponse(ctx context.Context, prompt string) (string, error) {
-	if g.apiKey == "" {
-		return "", errors.New("gemini api key is not configured")
+// UpdateConfig hot-reloads the AI client configuration.
+func (u *UniversalAIClient) UpdateConfig(cfg AIConfig) {
+	u.config = cfg
+}
+
+// GetConfig returns the active AI configuration.
+func (u *UniversalAIClient) GetConfig() AIConfig {
+	return u.config
+}
+
+func (u *UniversalAIClient) GenerateResponse(ctx context.Context, prompt string) (string, error) {
+	startTime := time.Now()
+	traceID := "ai-" + fmt.Sprintf("%d", startTime.UnixNano())
+
+	if u.config.APIKey == "" {
+		return "", errors.New("ai api key is not configured")
 	}
 
-	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s", g.model, g.apiKey)
+	if u.config.Provider == "gemini" {
+		url := fmt.Sprintf("%s/models/%s:generateContent?key=%s", strings.TrimRight(u.config.URL, "/"), u.config.Model, u.config.APIKey)
+		reqBody := map[string]interface{}{
+			"contents": []map[string]interface{}{
+				{"parts": []map[string]string{{"text": prompt}}},
+			},
+		}
+		jsonData, err := json.Marshal(reqBody)
+		if err != nil {
+			return "", err
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
+		if err != nil {
+			return "", err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := u.httpClient.Do(req)
+		if err != nil {
+			return "", err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			b, _ := io.ReadAll(resp.Body)
+			return "", fmt.Errorf("gemini error (status %d): %s", resp.StatusCode, string(b))
+		}
+		var result struct {
+			Candidates []struct {
+				Content struct {
+					Parts []struct {
+						Text string `json:"text"`
+					} `json:"parts"`
+				} `json:"content"`
+			} `json:"candidates"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			return "", err
+		}
+		if len(result.Candidates) > 0 && len(result.Candidates[0].Content.Parts) > 0 {
+			return strings.TrimSpace(result.Candidates[0].Content.Parts[0].Text), nil
+		}
+		return "", errors.New("empty response from gemini")
+	}
+
+	// OpenAI-compatible endpoint (e.g. router.ofertasshow.shop/v1)
+	baseURL := strings.TrimRight(u.config.URL, "/")
+	endpoint := baseURL
+	if !strings.HasSuffix(endpoint, "/chat/completions") {
+		endpoint = baseURL + "/chat/completions"
+	}
 
 	reqBody := map[string]interface{}{
-		"contents": []map[string]interface{}{
-			{
-				"parts": []map[string]string{
-					{"text": prompt},
-				},
-			},
+		"model": u.config.Model,
+		"messages": []map[string]string{
+			{"role": "user", "content": prompt},
 		},
+		"temperature": 0.7,
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -62,42 +133,43 @@ func (g *GeminiClient) GenerateResponse(ctx context.Context, prompt string) (str
 		return "", err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+u.config.APIKey)
 
-	resp, err := g.httpClient.Do(req)
+	resp, err := u.httpClient.Do(req)
+	durationMs := time.Since(startTime).Milliseconds()
 	if err != nil {
-		return "", err
+		_ = traceID
+		return "", fmt.Errorf("router api connection error: %w (duration: %dms)", err, durationMs)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		bodyBytes, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("gemini api error (status %d): %s", resp.StatusCode, string(bodyBytes))
+		return "", fmt.Errorf("router api error (status %d): %s", resp.StatusCode, string(bodyBytes))
 	}
 
-	var result struct {
-		Candidates []struct {
-			Content struct {
-				Parts []struct {
-					Text string `json:"text"`
-				} `json:"parts"`
-			} `json:"content"`
-		} `json:"candidates"`
+	var chatResp struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&chatResp); err != nil {
 		return "", err
 	}
 
-	if len(result.Candidates) > 0 && len(result.Candidates[0].Content.Parts) > 0 {
-		return strings.TrimSpace(result.Candidates[0].Content.Parts[0].Text), nil
+	if len(chatResp.Choices) > 0 && chatResp.Choices[0].Message.Content != "" {
+		return strings.TrimSpace(chatResp.Choices[0].Message.Content), nil
 	}
 
-	return "", errors.New("empty response from gemini api")
+	return "", errors.New("empty choices response from router api")
 }
 
 // GenerateFallbackResponseWithStress generates an in-character Noir response factoring in suspect stress levels and 3-tier secrets.

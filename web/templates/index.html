@@ -46,6 +46,7 @@
 
         <!-- Controle de Áudio Diegético -->
         <button id="sound-toggle" class="btn btn-secondary" style="padding: 0.35rem 0.6rem; font-size: 0.8rem;" title="Alternar Som">🔊 Som: Ativo</button>
+        <a href="/admin" class="btn btn-secondary" style="padding: 0.35rem 0.6rem; font-size: 0.8rem; text-decoration: none;" title="Painel de Administração">⚙️ Admin</a>
 
         <button id="pwa-install-btn" class="btn-pwa-install">📲 Instalar App</button>
         <div class="agent-status">
@@ -82,7 +83,7 @@
 
     <!-- Lobby Section (Mode, Persona & Rooms) -->
     <section id="lobby-section" style="display: none;">
-      <div class="auth-wrapper" style="max-width: 640px; margin: 2rem auto;">
+      <div class="auth-wrapper" style="max-width: 680px; margin: 2rem auto;">
         <!-- Persona Quick Creator -->
         <div class="lobby-header-box" style="margin-bottom: 1.5rem; border-bottom: 1px dashed var(--border-noir); padding-bottom: 1.25rem;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
@@ -107,23 +108,64 @@
           </div>
         </div>
 
-        <!-- Investigation Configuration: Theme & Suspects -->
+        <!-- Investigation Configuration: Detective Night & Custom Characters -->
         <div class="investigation-config-box" style="margin-bottom: 1.5rem; border-bottom: 1px dashed var(--border-noir); padding-bottom: 1.25rem;">
-          <h4 style="font-family: var(--font-typewriter); color: var(--accent-amber); font-size: 1.05rem; margin-bottom: 0.75rem;">
-            ⚙️ Configuração do Mistério
-          </h4>
-          <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 0.75rem;">
-            <div class="form-group" style="margin-bottom: 0;">
-              <label class="form-label" for="theme-select">Cenário / Tema da Investigação</label>
-              <select id="theme-select" class="form-input">
-                <option value="mansion" selected>A Mansão do Vale das Sombras</option>
-                <option value="train">O Expresso da Meia-Noite</option>
-                <option value="opera">A Última Ária na Ópera</option>
-                <option value="casino">A Dívida do Cassino Clandestino</option>
-              </select>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+            <h4 style="font-family: var(--font-typewriter); color: var(--accent-amber); font-size: 1.05rem; margin: 0;">
+              📁 Catálogo Detective Night (Dossiê Digital)
+            </h4>
+            <span style="font-size: 0.75rem; color: var(--accent-amber); border: 1px solid var(--accent-amber); padding: 0.15rem 0.5rem; border-radius: 3px;">
+              3 Envelopes
+            </span>
+          </div>
+
+          <div class="form-group" style="margin-bottom: 0.75rem;">
+            <label class="form-label" for="theme-select">Escolha o Caso Criminal</label>
+            <select id="theme-select" class="form-input">
+              <option value="fazenda_coracao" selected>Fazenda Coração da Serra – A Morte de Antônio Ferraz</option>
+              <option value="sherlock_holmes">A Morte de Sherlock Holmes – Baker Street</option>
+              <option value="carga_479">O Roubo da Carga 479 – Porto de Santos</option>
+              <option value="estrela_fria">Caso Estrela Fria – Roubo no Laboratório</option>
+              <option value="mansion">A Mansão do Vale das Sombras (Procedural)</option>
+              <option value="train">O Expresso da Meia-Noite (Procedural)</option>
+              <option value="opera">A Última Ária na Ópera (Procedural)</option>
+              <option value="casino">A Dívida do Cassino Clandestino (Procedural)</option>
+            </select>
+          </div>
+
+          <!-- Custom Cast Upload / Creator Area -->
+          <div style="background: rgba(0,0,0,0.3); border: 1px solid var(--border-noir); padding: 0.75rem; border-radius: 4px; margin-top: 0.75rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+              <span style="font-size: 0.85rem; font-family: var(--font-typewriter); color: var(--text-main);">
+                🎭 Subir Personagens para a IA Organizar (Reais ou Fictícios)
+              </span>
+              <span style="font-size: 0.75rem; color: var(--text-muted);" id="custom-cast-count">0 adicionados</span>
             </div>
+            
+            <div style="display: grid; grid-template-columns: 2fr 2fr 1fr auto; gap: 0.5rem; align-items: end;">
+              <div>
+                <input type="text" id="cast-char-name" class="form-input" placeholder="Nome (Ex: Leandro)" style="font-size: 0.85rem; padding: 0.4rem;">
+              </div>
+              <div>
+                <input type="text" id="cast-char-notes" class="form-input" placeholder="Notas/Relação com a Vítima" style="font-size: 0.85rem; padding: 0.4rem;">
+              </div>
+              <div style="display: flex; align-items: center; gap: 0.3rem;">
+                <label style="font-size: 0.75rem; color: var(--text-muted); cursor: pointer;">
+                  <input type="checkbox" id="cast-char-real" checked> Real
+                </label>
+              </div>
+              <div>
+                <button type="button" id="btn-add-custom-char" class="btn btn-secondary" style="font-size: 0.8rem; padding: 0.4rem 0.75rem;">+ Adicionar</button>
+              </div>
+            </div>
+
+            <!-- Tags of added characters -->
+            <div id="custom-cast-tags" style="display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.5rem;"></div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr; gap: 0.75rem; margin-top: 0.75rem;">
             <div class="form-group" style="margin-bottom: 0;">
-              <label class="form-label" for="suspect-count-select">Nº de Suspeitos</label>
+              <label class="form-label" for="suspect-count-select">Nº de Suspeitos na Investigação</label>
               <select id="suspect-count-select" class="form-input">
                 <option value="3">3 Suspeitos</option>
                 <option value="4" selected>4 Suspeitos</option>
@@ -225,6 +267,16 @@
                   <div class="case-meta-item">Status: <strong id="investigation-status">Investigação Ativa</strong></div>
                 </div>
                 <p id="case-desc" class="case-desc">Consultando arquivos confidenciais do departamento...</p>
+              </div>
+
+              <!-- Detective Night 3 Envelopes Section -->
+              <div id="envelopes-container" style="margin-top: 1.5rem; border-top: 1px dashed rgba(0,0,0,0.3); padding-top: 1rem;">
+                <h3 style="font-family: var(--font-typewriter); font-size: 1.1rem; color: #3d2714; margin-bottom: 0.75rem; text-transform: uppercase;">
+                  📜 Envelopes Confidenciais (Detective Night)
+                </h3>
+                <div id="envelopes-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+                  <!-- Rendered dynamically by app.js -->
+                </div>
               </div>
             </div>
           </div>

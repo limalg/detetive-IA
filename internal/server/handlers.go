@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,7 +12,10 @@ import (
 	"time"
 
 	"detetive-ia/internal/auth"
+	"detetive-ia/internal/game"
 	"detetive-ia/internal/models"
+	"detetive-ia/internal/telemetry"
+	"detetive-ia/web"
 )
 
 // Handler manages HTTP endpoints for Detetive IA.
@@ -810,3 +814,387 @@ func (h *Handler) handleStartRoom(w http.ResponseWriter, r *http.Request, code s
 		"players": startedRoom.Players,
 	})
 }
+
+// HandleAdminSettings retrieves or updates the AI configuration.
+func (h *Handler) HandleAdminSettings(w http.ResponseWriter, r *http.Request) {
+	if h.cfg.DB == nil {
+		h.error(w, http.StatusInternalServerError, "database unavailable")
+		return
+	}
+
+	user, err := h.getAuthenticatedUser(r)
+	if err != nil || (!user.IsAdmin && user.Username != "admin") {
+		// Se não for admin autenticado, verifica se há admin key ou se é o único usuário
+		if r.Header.Get("X-Admin-Key") != "detetive-admin-key" && (user == nil || !user.IsAdmin) {
+			h.error(w, http.StatusForbidden, "acesso restrito apenas para administradores")
+			return
+		}
+	}
+
+	if r.Method == http.MethodGet {
+		settings := make(map[string]string)
+		rows, err := h.cfg.DB.Query("SELECT key, value FROM system_settings")
+		if err == nil {
+			defer rows.Close()
+			for rows.Next() {
+				var k, v string
+				if err := rows.Scan(&k, &v); err == nil {
+					settings[k] = v
+				}
+			}
+		}
+		// Mascarar parte da chave se não for super admin
+		maskedKey := settings["ai_api_key"]
+		if len(maskedKey) > 8 {
+			maskedKey = maskedKey[:4] + "••••••••" + maskedKey[len(maskedKey)-4:]
+		}
+		h.json(w, http.StatusOK, map[string]interface{}{
+			"url":         settings["ai_url"],
+			"model":       settings["ai_model"],
+			"provider":    settings["ai_provider"],
+			"api_key":     settings["ai_api_key"],
+			"masked_key":  maskedKey,
+		})
+		return
+	}
+
+	if r.Method == http.MethodPost {
+		var req struct {
+			URL      string `json:"url"`
+			APIKey   string `json:"api_key"`
+			Model    string `json:"model"`
+			Provider string `json:"provider"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			h.error(w, http.StatusBadRequest, "invalid json payload: "+err.Error())
+			return
+		}
+
+		if req.URL != "" {
+			_, _ = h.cfg.DB.Exec("INSERT OR REPLACE INTO system_settings (key, value) VALUES ('ai_url', ?)", req.URL)
+		}
+		if req.APIKey != "" {
+			_, _ = h.cfg.DB.Exec("INSERT OR REPLACE INTO system_settings (key, value) VALUES ('ai_api_key', ?)", req.APIKey)
+		}
+		if req.Model != "" {
+			_, _ = h.cfg.DB.Exec("INSERT OR REPLACE INTO system_settings (key, value) VALUES ('ai_model', ?)", req.Model)
+		}
+		if req.Provider != "" {
+			_, _ = h.cfg.DB.Exec("INSERT OR REPLACE INTO system_settings (key, value) VALUES ('ai_provider', ?)", req.Provider)
+		}
+
+		// Atualizar cliente de IA ativo em tempo real
+		if h.cfg.GameService != nil {
+			newClient := game.NewUniversalAIClient(game.AIConfig{
+				URL:      req.URL,
+				APIKey:   req.APIKey,
+				Model:    req.Model,
+				Provider: req.Provider,
+			})
+			h.cfg.GameService.SetAIClient(newClient)
+		}
+
+		telemetry.Info("admin", "", "Configurações de IA atualizadas com sucesso", map[string]interface{}{
+			"model": req.Model,
+			"url":   req.URL,
+		})
+
+		h.json(w, http.StatusOK, map[string]string{
+			"status":  "ok",
+			"message": "Configurações da IA atualizadas com sucesso",
+		})
+		return
+	}
+
+	h.error(w, http.StatusMethodNotAllowed, "method not allowed")
+}
+
+// HandleAdminLogs retrieves the live OpenTelemetry structured logs.
+func (h *Handler) HandleAdminLogs(w http.ResponseWriter, r *http.Request) {
+	limitStr := r.URL.Query().Get("limit")
+	limit := 50
+	if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
+		limit = l
+	}
+	level := r.URL.Query().Get("level")
+
+	logs := telemetry.GetCollector().GetRecentLogs(limit, level)
+	h.json(w, http.StatusOK, map[string]interface{}{
+		"total": len(logs),
+		"logs":  logs,
+	})
+}
+
+// HandleAdminTelemetry retrieves system performance metrics and OpenTelemetry traces.
+func (h *Handler) HandleAdminTelemetry(w http.ResponseWriter, r *http.Request) {
+	metrics := telemetry.Metrics()
+	spans := telemetry.GetCollector().GetRecentSpans(30)
+
+	h.json(w, http.StatusOK, map[string]interface{}{
+		"metrics": metrics,
+		"spans":   spans,
+	})
+}
+
+// HandleAdminTestAI tests sending a prompt through the active AI model.
+func (h *Handler) HandleAdminTestAI(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		h.error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req struct {
+		Prompt string `json:"prompt"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+	if req.Prompt == "" {
+		req.Prompt = "Olá! Confirme que você é a IA investigativa do Detetive IA em apenas uma frase temática."
+	}
+
+	start := time.Now()
+	aiClient := h.cfg.GameService.GetAIClient()
+	if aiClient == nil {
+		h.error(w, http.StatusBadRequest, "nenhum cliente de IA inicializado")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+
+	resp, err := aiClient.GenerateResponse(ctx, req.Prompt)
+	duration := time.Since(start).Milliseconds()
+
+	if err != nil {
+		telemetry.Error("ai_client", "", "Falha no teste de conexão da IA: "+err.Error(), map[string]interface{}{
+			"duration_ms": duration,
+		})
+		h.json(w, http.StatusOK, map[string]interface{}{
+			"status":      "error",
+			"error":       err.Error(),
+			"duration_ms": duration,
+		})
+		return
+	}
+
+	telemetry.Info("ai_client", "", "Teste de IA bem-sucedido", map[string]interface{}{
+		"duration_ms": duration,
+		"response":    resp,
+	})
+
+	h.json(w, http.StatusOK, map[string]interface{}{
+		"status":      "ok",
+		"response":    resp,
+		"duration_ms": duration,
+	})
+}
+
+// HandleDetectiveNightCatalog returns the pre-authored digital Detective Night cases.
+func (h *Handler) HandleDetectiveNightCatalog(w http.ResponseWriter, r *http.Request) {
+	catalog := game.GetDetectiveNightCatalog()
+	type CaseSummary struct {
+		ID          int64  `json:"id,omitempty"`
+		Title       string `json:"title"`
+		Description string `json:"description"`
+		Victim      string `json:"victim"`
+		Difficulty  string `json:"difficulty"`
+		Category    string `json:"category"`
+	}
+
+	var summaries []CaseSummary
+	for _, c := range catalog {
+		var caseID int64
+		if h.cfg.DB != nil {
+			_ = h.cfg.DB.QueryRow("SELECT id FROM cases WHERE title = ?", c.Title).Scan(&caseID)
+		}
+		summaries = append(summaries, CaseSummary{
+			ID:          caseID,
+			Title:       c.Title,
+			Description: c.Description,
+			Victim:      c.Victim,
+			Difficulty:  "4 de 5 (Investigação Profunda)",
+			Category:    "detective_night",
+		})
+	}
+
+	h.json(w, http.StatusOK, map[string]interface{}{
+		"total": len(summaries),
+		"cases": summaries,
+	})
+}
+
+// HandleAdminPage serves the admin dashboard only to authenticated admin users.
+func (h *Handler) HandleAdminPage(w http.ResponseWriter, r *http.Request) {
+	user, err := h.getAuthenticatedUser(r)
+	adminKey := r.Header.Get("X-Admin-Key")
+	if adminKey == "" {
+		adminKey = r.URL.Query().Get("key")
+	}
+
+	isAdmin := (err == nil && user != nil && user.IsAdmin) || adminKey == "detetive-admin-key"
+	if !isAdmin {
+		if user == nil {
+			http.Redirect(w, r, "/?auth=login_required&redirect=/admin", http.StatusFound)
+			return
+		}
+		h.error(w, http.StatusForbidden, "acesso restrito para administradores")
+		return
+	}
+
+	data, err := web.Assets.ReadFile("templates/admin.html")
+	if err != nil {
+		http.Error(w, "admin template not found", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Write(data)
+}
+
+// HandleDetectiveNightCaseEnvelopes returns the 3 envelopes for a specific case.
+func (h *Handler) HandleDetectiveNightCaseEnvelopes(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, "/api/game/case/")
+	parts := strings.Split(path, "/")
+	if len(parts) == 0 || parts[0] == "" {
+		h.error(w, http.StatusBadRequest, "invalid case path")
+		return
+	}
+
+	caseID, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil && h.cfg.DB != nil {
+		switch parts[0] {
+		case "fazenda_coracao":
+			_ = h.cfg.DB.QueryRow("SELECT id FROM cases WHERE title LIKE '%Fazenda Coração%' LIMIT 1").Scan(&caseID)
+		case "sherlock_holmes":
+			_ = h.cfg.DB.QueryRow("SELECT id FROM cases WHERE title LIKE '%Sherlock Holmes%' LIMIT 1").Scan(&caseID)
+		case "carga_479":
+			_ = h.cfg.DB.QueryRow("SELECT id FROM cases WHERE title LIKE '%Carga 479%' LIMIT 1").Scan(&caseID)
+		case "estrela_fria":
+			_ = h.cfg.DB.QueryRow("SELECT id FROM cases WHERE title LIKE '%Estrela Fria%' LIMIT 1").Scan(&caseID)
+		default:
+			_ = h.cfg.DB.QueryRow("SELECT id FROM cases WHERE title LIKE ? LIMIT 1", "%"+parts[0]+"%").Scan(&caseID)
+		}
+	}
+	if caseID == 0 {
+		h.error(w, http.StatusBadRequest, "invalid case id")
+		return
+	}
+
+	envelopes, err := game.GetCaseEnvelopes(h.cfg.DB, caseID)
+	if err != nil {
+		h.error(w, http.StatusInternalServerError, "failed to get case envelopes: "+err.Error())
+		return
+	}
+
+	h.json(w, http.StatusOK, envelopes)
+}
+
+// HandleCreateRoomWithCase creates a room with custom case selection and custom character casting.
+func (h *Handler) HandleCreateRoomWithCase(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		h.error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req struct {
+		CaseID           interface{}              `json:"case_id"`
+		CustomCharacters []models.CustomCharacter `json:"custom_characters"`
+		CustomCast       []models.CustomCharacter `json:"custom_cast"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.error(w, http.StatusBadRequest, "invalid json payload: "+err.Error())
+		return
+	}
+
+	var caseID int64
+	caseSlug := ""
+	switch v := req.CaseID.(type) {
+	case float64:
+		caseID = int64(v)
+	case int64:
+		caseID = v
+	case string:
+		caseSlug = v
+		caseID, _ = strconv.ParseInt(v, 10, 64)
+		if caseID == 0 && h.cfg.DB != nil {
+			switch v {
+			case "fazenda_coracao":
+				_ = h.cfg.DB.QueryRow("SELECT id FROM cases WHERE title LIKE '%Fazenda Coração%' LIMIT 1").Scan(&caseID)
+			case "sherlock_holmes":
+				_ = h.cfg.DB.QueryRow("SELECT id FROM cases WHERE title LIKE '%Sherlock Holmes%' LIMIT 1").Scan(&caseID)
+			case "carga_479":
+				_ = h.cfg.DB.QueryRow("SELECT id FROM cases WHERE title LIKE '%Carga 479%' LIMIT 1").Scan(&caseID)
+			case "estrela_fria":
+				_ = h.cfg.DB.QueryRow("SELECT id FROM cases WHERE title LIKE '%Estrela Fria%' LIMIT 1").Scan(&caseID)
+			default:
+				_ = h.cfg.DB.QueryRow("SELECT id FROM cases WHERE title LIKE ? LIMIT 1", "%"+v+"%").Scan(&caseID)
+			}
+		}
+	}
+	if caseID <= 0 {
+		caseID = 1
+	}
+
+	characters := req.CustomCharacters
+	if len(characters) == 0 && len(req.CustomCast) > 0 {
+		characters = req.CustomCast
+	}
+
+	user, err := h.getAuthenticatedUser(r)
+	var hostID int64 = 1
+	username := "Detetive Anfitrião"
+	if err == nil && user != nil {
+		hostID = user.ID
+		username = user.Username
+	}
+
+	roomObj, err := h.cfg.RoomManager.CreateRoom(hostID, username, username, "Investigador Chefe")
+	if err != nil {
+		h.error(w, http.StatusInternalServerError, "failed to create room: "+err.Error())
+		return
+	}
+
+	// Se o jogador enviou personagens customizados (reais ou fictícios), a IA ou Weaver organiza o elenco
+	if len(characters) > 0 && h.cfg.DB != nil {
+		var aiClient game.AIClient
+		if h.cfg.GameService != nil {
+			aiClient = h.cfg.GameService.GetAIClient()
+		}
+		_ = game.CastCustomCharacters(r.Context(), aiClient, h.cfg.DB, caseID, characters)
+	}
+
+	roomObj.CaseID = &caseID
+	if h.cfg.DB != nil {
+		_, _ = h.cfg.DB.Exec("UPDATE rooms SET case_id = ? WHERE code = ?", caseID, roomObj.Code)
+	}
+
+	var suspects []models.Suspect
+	if h.cfg.DB != nil {
+		rows, err := h.cfg.DB.Query("SELECT id, case_id, name, role, personality, alibi FROM suspects WHERE case_id = ?", caseID)
+		if err == nil {
+			defer rows.Close()
+			for rows.Next() {
+				var s models.Suspect
+				if err := rows.Scan(&s.ID, &s.CaseID, &s.Name, &s.Role, &s.Personality, &s.Alibi); err == nil {
+					suspects = append(suspects, s)
+				}
+			}
+		}
+	}
+
+	telemetry.Info("room", "", fmt.Sprintf("Sala %s criada com caso %d e %d personagens customizados", roomObj.Code, caseID, len(characters)), nil)
+
+	returnCaseID := interface{}(caseID)
+	if caseSlug != "" {
+		returnCaseID = caseSlug
+	}
+
+	h.json(w, http.StatusOK, map[string]interface{}{
+		"code":             roomObj.Code,
+		"room":             roomObj,
+		"case_id":          returnCaseID,
+		"suspects":         suspects,
+		"custom_cast":      characters,
+		"custom_cast_size": len(characters),
+	})
+}
+
+

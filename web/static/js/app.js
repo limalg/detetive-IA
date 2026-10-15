@@ -19,6 +19,7 @@
     timeRemainingMinutes: 420, // 21:00 to 04:00 (7 hours = 420 mins)
     warrantsRemaining: 2,
     selectedClueIDs: [],
+    customCast: [],
     isGameOver: false,
     deferredPrompt: null
   };
@@ -483,6 +484,49 @@
       });
     }
 
+    // Custom Cast Manager (Detective Night)
+    const btnAddChar = document.getElementById('btn-add-custom-char');
+    const castNameInput = document.getElementById('cast-char-name');
+    const castNotesInput = document.getElementById('cast-char-notes');
+    const castRealCheckbox = document.getElementById('cast-char-real');
+    const castTagsContainer = document.getElementById('custom-cast-tags');
+    const castCountLabel = document.getElementById('custom-cast-count');
+
+    function renderCustomCastTags() {
+      if (!castTagsContainer) return;
+      if (castCountLabel) castCountLabel.textContent = `${state.customCast.length} adicionados`;
+      castTagsContainer.innerHTML = state.customCast.map((c, idx) => `
+        <span class="custom-cast-badge" style="background: rgba(212,163,89,0.18); border: 1px solid var(--accent-amber); color: var(--accent-amber); padding: 0.2rem 0.5rem; border-radius: 12px; font-size: 0.75rem; display: inline-flex; align-items: center; gap: 0.35rem;">
+          ${escapeHtml(c.name)} ${c.is_real ? '👤' : '🎭'}
+          <span style="cursor: pointer; font-weight: bold; margin-left: 2px;" data-remove-cast="${idx}">×</span>
+        </span>
+      `).join('');
+
+      castTagsContainer.querySelectorAll('[data-remove-cast]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const idx = parseInt(e.target.dataset.removeCast, 10);
+          state.customCast.splice(idx, 1);
+          renderCustomCastTags();
+        });
+      });
+    }
+
+    if (btnAddChar) {
+      btnAddChar.addEventListener('click', () => {
+        const name = (castNameInput.value || '').trim();
+        const notes = (castNotesInput.value || '').trim();
+        const isReal = castRealCheckbox ? castRealCheckbox.checked : true;
+        if (!name) {
+          alert('Por favor digite o nome do personagem!');
+          return;
+        }
+        state.customCast.push({ name, notes, is_real: isReal });
+        castNameInput.value = '';
+        castNotesInput.value = '';
+        renderCustomCastTags();
+      });
+    }
+
     // Create Room
     if (el.btnCreateRoom) {
       el.btnCreateRoom.addEventListener('click', async () => {
@@ -492,14 +536,25 @@
         const pSecret = state.persona.secret || '';
 
         try {
-          const res = await api('/api/room/create', {
-            method: 'POST',
-            body: JSON.stringify({
-              persona_name: pName,
-              role: pRole,
-              secret: pSecret
-            })
-          });
+          let res;
+          if (state.customCast.length > 0) {
+            res = await api('/api/room/create-with-case', {
+              method: 'POST',
+              body: JSON.stringify({
+                case_id: 1,
+                custom_characters: state.customCast
+              })
+            });
+          } else {
+            res = await api('/api/room/create', {
+              method: 'POST',
+              body: JSON.stringify({
+                persona_name: pName,
+                role: pRole,
+                secret: pSecret
+              })
+            });
+          }
           enterRoomLobby(res.code || 'NOIR', true, res.players);
         } catch (_) {
           // Graceful fallback while room backend is active
@@ -881,6 +936,44 @@
       el.caseStamp.textContent = 'EM ANDAMENTO';
       el.caseStamp.className = 'case-stamp in-progress';
       el.investigationStatus.textContent = 'Investigação Ativa';
+    }
+
+    renderDetectiveNightEnvelopes(state.currentCase.id);
+  }
+
+  async function renderDetectiveNightEnvelopes(caseId) {
+    const grid = document.getElementById('envelopes-grid');
+    if (!grid) return;
+
+    try {
+      const res = await api('/api/game/case/' + caseId + '/envelopes');
+      if (res && res.envelopes && res.envelopes.length > 0) {
+        grid.innerHTML = res.envelopes.map(env => `
+          <div class="kraft-folder" style="background: #e8d7be; border: 2px solid #8c6d46; padding: 0.85rem; border-radius: 4px; box-shadow: 0 4px 10px rgba(0,0,0,0.25);">
+            <div style="font-size: 0.7rem; font-weight: bold; color: #78350f; font-family: var(--font-typewriter); letter-spacing: 1px;">ENVELOPE ${env.envelope_number}</div>
+            <h4 style="font-family: var(--font-typewriter); color: #291c10; font-size: 0.95rem; margin: 0.25rem 0;">${escapeHtml(env.title)}</h4>
+            <p style="font-size: 0.8rem; color: #4a3728; line-height: 1.3; margin-bottom: 0.6rem;">${escapeHtml(env.description)}</p>
+            <button type="button" class="btn btn-secondary btn-inspect-envelope" data-env-id="${env.id}" style="width: 100%; font-size: 0.75rem; padding: 0.35rem; color: #3d2714; border-color: #8c6d46;">Examinar Documentos 🔍</button>
+            <div class="env-content-preview" id="env-content-${env.id}" style="display: none; margin-top: 0.6rem; font-family: monospace; font-size: 0.75rem; background: #fff8ee; padding: 0.6rem; border: 1px solid #c2a782; border-radius: 3px; max-height: 180px; overflow-y: auto; white-space: pre-wrap; color: #291c10;">${escapeHtml(JSON.stringify(env.items || env.content_json, null, 2))}</div>
+          </div>
+        `).join('');
+
+        grid.querySelectorAll('.btn-inspect-envelope').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const id = btn.dataset.envId;
+            const preview = document.getElementById('env-content-' + id);
+            if (preview) {
+              const isHidden = preview.style.display === 'none';
+              preview.style.display = isHidden ? 'block' : 'none';
+              btn.textContent = isHidden ? 'Ocultar Documentos ▲' : 'Examinar Documentos 🔍';
+            }
+          });
+        });
+      } else {
+        grid.innerHTML = '<div style="color: #6b4e31; font-size: 0.85rem; font-style: italic;">Envelopes em análise pericial.</div>';
+      }
+    } catch (_) {
+      grid.innerHTML = '<div style="color: #6b4e31; font-size: 0.85rem; font-style: italic;">Envelopes lacrados pela perícia.</div>';
     }
   }
 

@@ -33,6 +33,11 @@ func (s *Service) SetAIClient(aiClient AIClient) {
 	s.aiClient = aiClient
 }
 
+// GetAIClient returns the current LLM client.
+func (s *Service) GetAIClient() AIClient {
+	return s.aiClient
+}
+
 // SeedInitialCase populates the initial murder mystery "O Enigma do Vale das Sombras" if not already present.
 func (s *Service) SeedInitialCase() (int64, error) {
 	var existingID int64

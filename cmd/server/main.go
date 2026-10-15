@@ -46,9 +46,28 @@ func main() {
 	}
 
 	authService := auth.New(database)
-	gameService := game.New(database, nil)
+	_, _ = authService.EnsureAdminUser("admin", "admin1940")
+
+	// Carregar configurações de IA do banco (padrão da nota credencias)
+	var aiURL, aiKey, aiModel, aiProvider string
+	_ = database.QueryRow("SELECT value FROM system_settings WHERE key = 'ai_url'").Scan(&aiURL)
+	_ = database.QueryRow("SELECT value FROM system_settings WHERE key = 'ai_api_key'").Scan(&aiKey)
+	_ = database.QueryRow("SELECT value FROM system_settings WHERE key = 'ai_model'").Scan(&aiModel)
+	_ = database.QueryRow("SELECT value FROM system_settings WHERE key = 'ai_provider'").Scan(&aiProvider)
+
+	aiClient := game.NewUniversalAIClient(game.AIConfig{
+		URL:      aiURL,
+		APIKey:   aiKey,
+		Model:    aiModel,
+		Provider: aiProvider,
+	})
+
+	gameService := game.New(database, aiClient)
 	if _, err := gameService.SeedInitialCase(); err != nil {
 		log.Printf("Aviso: falha ao semear caso inicial: %v", err)
+	}
+	if err := game.SeedDetectiveNightCases(database); err != nil {
+		log.Printf("Aviso: falha ao semear catálogo Detective Night: %v", err)
 	}
 
 	roomManager, err := room.NewManager(database)

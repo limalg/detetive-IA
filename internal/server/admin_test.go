@@ -1,0 +1,161 @@
+package server_test
+
+import (
+	"bytes"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"detetive-ia/internal/auth"
+	"detetive-ia/internal/db"
+	"detetive-ia/internal/game"
+	"detetive-ia/internal/room"
+	"detetive-ia/internal/server"
+)
+
+func setupAdminTestServer(t *testing.T) (http.Handler, *auth.Service, string) {
+	t.Helper()
+	database, err := db.InitDB(":memory:")
+	if err != nil {
+		t.Fatalf("failed to init in-memory db: %v", err)
+	}
+
+	if err := db.RunMigrations(database); err != nil {
+		t.Fatalf("failed to run migrations: %v", err)
+	}
+
+	authService := auth.New(database)
+	adminUser, err := authService.EnsureAdminUser("admin", "admin12345")
+	if err != nil {
+		t.Fatalf("failed to ensure admin user: %v", err)
+	}
+
+	token, err := authService.Login("admin", "admin12345")
+	if err != nil {
+		t.Fatalf("failed to login admin: %v", err)
+	}
+	_ = adminUser
+
+	gameService := game.New(database, nil)
+	_, _ = gameService.SeedInitialCase()
+	_ = game.SeedDetectiveNightCases(database)
+
+	roomManager, _ := room.NewManager(database)
+	weaver := game.NewWeaver(database)
+
+	cfg := server.Config{
+		DB:          database,
+		AuthService: authService,
+		GameService: gameService,
+		RoomManager: roomManager,
+		Weaver:      weaver,
+	}
+
+	router := server.NewRouter(cfg)
+	return router, authService, token
+}
+
+func TestAdminSettingsAndTelemetry(t *testing.T) {
+	router, _, token := setupAdminTestServer(t)
+
+	// 1. Test GET /api/admin/settings
+	req := httptest.NewRequest(http.MethodGet, "/api/admin/settings", nil)
+	req.AddCookie(&http.Cookie{Name: "session_token", Value: token})
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200 on GET /api/admin/settings, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var settingsResp map[string]interface{}
+	if err := json.NewDecoder(w.Body).Decode(&settingsResp); err != nil {
+		t.Fatalf("failed to decode settings: %v", err)
+	}
+	if settingsResp["model"] != "ondegastei" {
+		t.Errorf("expected default model ondegastei, got %v", settingsResp["model"])
+	}
+	if settingsResp["url"] != "https://router.ofertasshow.shop/v1" {
+		t.Errorf("expected default url https://router.ofertasshow.shop/v1, got %v", settingsResp["url"])
+	}
+
+	// 2. Test POST /api/admin/settings
+	updatePayload := `{"url": "https://api.openai.com/v1", "api_key": "sk-test12345678", "model": "gpt-4o", "provider": "openai_compatible"}`
+	reqPost := httptest.NewRequest(http.MethodPost, "/api/admin/settings", bytes.NewBufferString(updatePayload))
+	reqPost.AddCookie(&http.Cookie{Name: "session_token", Value: token})
+	wPost := httptest.NewRecorder()
+	router.ServeHTTP(wPost, reqPost)
+
+	if wPost.Code != http.StatusOK {
+		t.Fatalf("expected status 200 on POST /api/admin/settings, got %d: %s", wPost.Code, wPost.Body.String())
+	}
+
+	// 3. Test GET /api/admin/telemetry
+	reqTel := httptest.NewRequest(http.MethodGet, "/api/admin/telemetry", nil)
+	wTel := httptest.NewRecorder()
+	router.ServeHTTP(wTel, reqTel)
+	if wTel.Code != http.StatusOK {
+		t.Fatalf("expected status 200 on /api/admin/telemetry, got %d", wTel.Code)
+	}
+
+	// 4. Test GET /api/admin/logs
+	reqLogs := httptest.NewRequest(http.MethodGet, "/api/admin/logs?limit=20", nil)
+	wLogs := httptest.NewRecorder()
+	router.ServeHTTP(wLogs, reqLogs)
+	if wLogs.Code != http.StatusOK {
+		t.Fatalf("expected status 200 on /api/admin/logs, got %d", wLogs.Code)
+	}
+
+	// 5. Test GET /api/game/cases/detective-night
+	reqCases := httptest.NewRequest(http.MethodGet, "/api/game/cases/detective-night", nil)
+	wCases := httptest.NewRecorder()
+	router.ServeHTTP(wCases, reqCases)
+	if wCases.Code != http.StatusOK {
+		t.Fatalf("expected status 200 on /api/game/cases/detective-night, got %d", wCases.Code)
+	}
+
+	var casesData struct {
+		Total int `json:"total"`
+		Cases []struct {
+			Title string `json:"title"`
+		} `json:"cases"`
+	}
+	if err := json.NewDecoder(wCases.Body).Decode(&casesData); err != nil {
+		t.Fatalf("failed to decode cases: %v", err)
+	}
+	if casesData.Total < 4 {
+		t.Errorf("expected at least 4 Detective Night cases, got %d", casesData.Total)
+	}
+
+	// 6. Test POST /api/room/create-with-case
+	roomPayload := `{
+		"case_id": 1,
+		"custom_characters": [
+			{"name": "Leandro Lima", "notes": "Amigo de infância da vítima", "is_real": true},
+			{"name": "Inspetor Clouseau", "notes": "Perito desastrado convidado", "is_real": false}
+		]
+	}`
+	reqRoom := httptest.NewRequest(http.MethodPost, "/api/room/create-with-case", bytes.NewBufferString(roomPayload))
+	reqRoom.AddCookie(&http.Cookie{Name: "session_token", Value: token})
+	wRoom := httptest.NewRecorder()
+	router.ServeHTTP(wRoom, reqRoom)
+
+	if wRoom.Code != http.StatusOK {
+		t.Fatalf("expected status 200 on /api/room/create-with-case, got %d: %s", wRoom.Code, wRoom.Body.String())
+	}
+
+	var roomResp struct {
+		Code           string `json:"code"`
+		CustomCastSize int    `json:"custom_cast_size"`
+	}
+	if err := json.NewDecoder(wRoom.Body).Decode(&roomResp); err != nil {
+		t.Fatalf("failed to decode room response: %v", err)
+	}
+	if len(roomResp.Code) != 4 {
+		t.Errorf("expected 4-letter room code, got %s", roomResp.Code)
+	}
+	if roomResp.CustomCastSize != 2 {
+		t.Errorf("expected custom cast size 2, got %d", roomResp.CustomCastSize)
+	}
+}
