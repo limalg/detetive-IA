@@ -29,8 +29,9 @@ vendor/
 # Superpowers execution workspace
 .superpowers/
 
-# Maestri worktrees
+# Maestri worktrees and roles
 .maestri/floors/
+.maestri/roles/
 .worktrees/
 
 # Agent local tooling directories

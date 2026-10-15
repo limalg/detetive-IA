@@ -199,4 +199,60 @@ func TestFileServer(t *testing.T) {
 	}
 }
 
+func TestLobbyAndConfrontationUI(t *testing.T) {
+	// Verify HTML structure for Lobby and Confrontation
+	indexFile, err := web.Assets.Open("templates/index.html")
+	if err != nil {
+		t.Fatalf("failed to open templates/index.html: %v", err)
+	}
+	defer indexFile.Close()
+
+	htmlBytes, _ := io.ReadAll(indexFile)
+	html := string(htmlBytes)
+
+	requiredHTMLElements := []string{
+		`id="lobby-section"`,
+		`id="btn-mode-solo"`,
+		`id="btn-mode-multi"`,
+		`id="room-code-input"`,
+		`id="btn-random-persona"`,
+		`id="persona-name"`,
+		`id="persona-role"`,
+		`id="persona-secret"`,
+		`id="btn-start-game"`,
+		`id="confront-clue-select"`,
+		`id="suspect-stress-meter"`,
+	}
+
+	for _, elem := range requiredHTMLElements {
+		if !strings.Contains(html, elem) {
+			t.Errorf("templates/index.html missing required element for Task 5: %s", elem)
+		}
+	}
+
+	// Verify JS logic for Lobby and Confrontation
+	jsFile, err := web.Assets.Open("static/js/app.js")
+	if err != nil {
+		t.Fatalf("failed to open static/js/app.js: %v", err)
+	}
+	defer jsFile.Close()
+
+	jsBytes, _ := io.ReadAll(jsFile)
+	js := string(jsBytes)
+
+	requiredJSElements := []string{
+		"generateRandomPersona",
+		"confront_clue_id",
+		"/api/room",
+		"stress_level",
+	}
+
+	for _, elem := range requiredJSElements {
+		if !strings.Contains(js, elem) {
+			t.Errorf("static/js/app.js missing required logic for Task 5: %s", elem)
+		}
+	}
+}
+
+
 

@@ -712,3 +712,134 @@ body::after {
     max-width: 90%;
   }
 }
+
+/* ==========================================================================
+   Lobby Noir & Persona Dice Styling
+   ========================================================================== */
+
+.mode-card-btn {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-noir);
+  border-radius: 6px;
+  padding: 1.25rem 1rem;
+  color: var(--text-main);
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.mode-card-btn:hover {
+  background-color: var(--bg-card-hover);
+  border-color: var(--accent-amber);
+  transform: translateY(-2px);
+}
+
+.mode-card-btn.active {
+  background: linear-gradient(180deg, rgba(245, 158, 11, 0.12), rgba(0,0,0,0.3));
+  border-color: var(--accent-amber);
+  box-shadow: 0 0 15px rgba(245, 158, 11, 0.2);
+}
+
+.mode-icon {
+  font-size: 2rem;
+}
+
+.mode-title {
+  font-family: var(--font-typewriter);
+  font-weight: bold;
+  font-size: 1.05rem;
+  color: var(--accent-amber);
+}
+
+.mode-desc {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+/* Room Code Badge */
+.room-code-badge {
+  font-family: var(--font-typewriter);
+  font-size: 2rem;
+  font-weight: 900;
+  letter-spacing: 6px;
+  color: var(--accent-amber);
+  background: #0d0d10;
+  border: 2px dashed var(--accent-gold);
+  padding: 0.25rem 1rem;
+  border-radius: 4px;
+  display: inline-block;
+  text-shadow: 0 0 10px rgba(245, 158, 11, 0.5);
+  margin-top: 0.25rem;
+}
+
+/* Players Grid in Lobby */
+.players-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 0.75rem;
+}
+
+.player-chip {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-noir);
+  border-radius: 4px;
+  padding: 0.6rem 0.8rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.player-chip.is-host {
+  border-color: var(--accent-amber);
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.player-chip.is-bot {
+  border-style: dashed;
+  opacity: 0.85;
+}
+
+.player-badge-tag {
+  font-size: 0.65rem;
+  padding: 1px 4px;
+  border-radius: 2px;
+  text-transform: uppercase;
+  font-family: var(--font-typewriter);
+  margin-left: auto;
+}
+
+.player-badge-tag.host {
+  background: var(--accent-amber);
+  color: #121214;
+  font-weight: bold;
+}
+
+.player-badge-tag.bot {
+  background: var(--border-noir);
+  color: var(--text-muted);
+}
+
+/* Stress Meter & Animation */
+.stress-bar-fill.calm {
+  background: linear-gradient(90deg, #10b981, #34d399);
+}
+
+.stress-bar-fill.nervous {
+  background: linear-gradient(90deg, #f59e0b, #fbbf24);
+}
+
+.stress-bar-fill.panic {
+  background: linear-gradient(90deg, #ef4444, #dc2626);
+  animation: pulsePanic 1.2s infinite alternate ease-in-out;
+}
+
+@keyframes pulsePanic {
+  0% { box-shadow: 0 0 5px rgba(239, 68, 68, 0.4); }
+  100% { box-shadow: 0 0 15px rgba(239, 68, 68, 0.9); }
+}
+

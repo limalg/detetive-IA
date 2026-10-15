@@ -12,12 +12,17 @@
     clues: [],
     activeSuspect: null,
     chatHistories: {}, // suspectId -> array of { sender, message, timestamp }
+    suspectStress: {}, // suspectId -> integer 0-100
+    currentRoom: null,
+    gameMode: 'solo', // 'solo' | 'multi'
+    persona: { name: '', role: '', secret: '' },
     deferredPrompt: null
   };
 
   // DOM Elements
   const el = {
     authSection: document.getElementById('auth-section'),
+    lobbySection: document.getElementById('lobby-section'),
     gameSection: document.getElementById('game-section'),
     authForm: document.getElementById('auth-form'),
     authAlert: document.getElementById('auth-alert'),
@@ -30,6 +35,23 @@
     logoutBtn: document.getElementById('logout-btn'),
     networkStatus: document.getElementById('network-status'),
     pwaInstallBtn: document.getElementById('pwa-install-btn'),
+
+    // Lobby Elements
+    btnModeSolo: document.getElementById('btn-mode-solo'),
+    btnModeMulti: document.getElementById('btn-mode-multi'),
+    personaName: document.getElementById('persona-name'),
+    personaRole: document.getElementById('persona-role'),
+    personaSecret: document.getElementById('persona-secret'),
+    btnRandomPersona: document.getElementById('btn-random-persona'),
+    multiplayerRoomArea: document.getElementById('multiplayer-room-area'),
+    btnCreateRoom: document.getElementById('btn-create-room'),
+    roomCodeInput: document.getElementById('room-code-input'),
+    btnJoinRoom: document.getElementById('btn-join-room'),
+    roomWaitingArea: document.getElementById('room-waiting-area'),
+    roomDisplayCode: document.getElementById('room-display-code'),
+    btnCopyRoomLink: document.getElementById('btn-copy-room-link'),
+    playersList: document.getElementById('players-list'),
+    btnStartGame: document.getElementById('btn-start-game'),
 
     // Navigation
     navTabBtns: document.querySelectorAll('.nav-tab-btn'),
@@ -53,6 +75,9 @@
     interrogationForm: document.getElementById('interrogation-form'),
     interrogationInput: document.getElementById('interrogation-input'),
     promptChips: document.querySelectorAll('.chip'),
+    confrontClueSelect: document.getElementById('confront-clue-select'),
+    suspectStressMeter: document.getElementById('suspect-stress-meter'),
+    suspectStressLabel: document.getElementById('suspect-stress-label'),
 
     // Accusation
     accusationForm: document.getElementById('accusation-form'),
@@ -177,11 +202,10 @@
         });
 
         state.currentUser = res.user || { username };
-        showAuthAlert('Credenciais verificadas. Carregando dossiê...', 'success');
+        showAuthAlert('Credenciais verificadas. Acessando quartel...', 'success');
         setTimeout(() => {
-          showGameView();
-          loadCaseData();
-        }, 600);
+          showLobbyView();
+        }, 500);
       } catch (err) {
         showAuthAlert(err.message || 'Falha na autenticação de segurança.', 'error');
       } finally {
@@ -227,6 +251,7 @@
 
   function showAuthView() {
     el.authSection.style.display = 'block';
+    if (el.lobbySection) el.lobbySection.style.display = 'none';
     el.gameSection.style.display = 'none';
     el.userDisplay.textContent = 'Não identificado';
     if (el.logoutBtn) el.logoutBtn.style.display = 'none';
@@ -235,10 +260,27 @@
     hideAuthAlert();
   }
 
+  function showLobbyView() {
+    el.authSection.style.display = 'none';
+    if (el.lobbySection) el.lobbySection.style.display = 'block';
+    el.gameSection.style.display = 'none';
+    if (state.currentUser) {
+      el.userDisplay.textContent = `Det. ${state.currentUser.username}`;
+    }
+    if (el.logoutBtn) el.logoutBtn.style.display = 'inline-flex';
+    if (!state.persona.name) {
+      generateRandomPersona();
+    } else {
+      setupDefaultSoloLobby();
+    }
+  }
+
   function showGameView() {
     el.authSection.style.display = 'none';
+    if (el.lobbySection) el.lobbySection.style.display = 'none';
     el.gameSection.style.display = 'block';
-    el.userDisplay.textContent = `Det. ${state.currentUser.username}`;
+    const personaTitle = state.persona && state.persona.name ? state.persona.name : (state.currentUser ? state.currentUser.username : 'Investigador');
+    el.userDisplay.textContent = `Det. ${personaTitle}`;
     if (el.logoutBtn) el.logoutBtn.style.display = 'inline-flex';
   }
 
@@ -247,8 +289,7 @@
       const res = await api('/api/auth/me');
       if (res && res.user) {
         state.currentUser = res.user;
-        showGameView();
-        loadCaseData();
+        showLobbyView();
       } else {
         showAuthView();
       }
@@ -256,6 +297,253 @@
       showAuthView();
     }
   }
+
+  // =========================================================================
+  // Persona & Lobby Noir System
+  // =========================================================================
+  const NOIR_NAMES = [
+    "Sam Spade", "Vivian Rutledge", "Philip Marlowe", "Evelyn Mulwray",
+    "Walter Neff", "Phyllis Dietrichson", "Harry Lime", "Brigid O'Shaughnessy",
+    "Lew Archer", "Nora Charles", "Nick Charles", "Arthur Hastings"
+  ];
+
+  const NOIR_ROLES = [
+    "Detetive Particular Cínico",
+    "Jornalista Investigativo Forense",
+    "Médica Legista e Toxicologista",
+    "Magnata das Ferrovias & Industrial",
+    "Advogado Criminalista do Submundo",
+    "Pianista Noturna de Jazz",
+    "Fotógrafo Policial de Cena de Crime",
+    "Ex-Falsificador de Registros Cartoriais"
+  ];
+
+  const NOIR_SECRETS = [
+    "Dívidas volumosas com agiotas ligados ao porto",
+    "Já ocultei uma evidência no passado para poupar um inocente",
+    "Conhecia a vítima no passado e guardava rancor pessoal",
+    "Falsifiquei uma credencial oficial para entrar no caso",
+    "Possuo a chave mestra dos armários da mansão",
+    "Fui sócio secreto da vítima em exportações ilegais",
+    "Estava nas sombras do jardim pouco antes do disparo fatal"
+  ];
+
+  function generateRandomPersona() {
+    const name = NOIR_NAMES[Math.floor(Math.random() * NOIR_NAMES.length)];
+    const role = NOIR_ROLES[Math.floor(Math.random() * NOIR_ROLES.length)];
+    const secret = NOIR_SECRETS[Math.floor(Math.random() * NOIR_SECRETS.length)];
+
+    state.persona = { name, role, secret };
+
+    if (el.personaName) el.personaName.value = name;
+    if (el.personaRole) el.personaRole.value = role;
+    if (el.personaSecret) el.personaSecret.value = secret;
+
+    if (el.btnRandomPersona) {
+      el.btnRandomPersona.textContent = '🎲 Rolando...';
+      setTimeout(() => {
+        el.btnRandomPersona.textContent = '🎲 Sortear Persona';
+      }, 300);
+    }
+
+    if (state.gameMode === 'solo') {
+      setupDefaultSoloLobby();
+    }
+  }
+
+  function savePersonaFromInputs() {
+    state.persona = {
+      name: el.personaName ? el.personaName.value.trim() : '',
+      role: el.personaRole ? el.personaRole.value.trim() : '',
+      secret: el.personaSecret ? el.personaSecret.value.trim() : ''
+    };
+  }
+
+  function setupDefaultSoloLobby() {
+    const pName = (el.personaName && el.personaName.value) || state.persona.name || 'Você';
+    const pRole = (el.personaRole && el.personaRole.value) || state.persona.role || 'Investigador Principal';
+
+    enterRoomLobby('SOLO', true, [
+      { name: pName, role: pRole, is_host: true, is_bot: false },
+      { name: 'Inspetor Vance (Bot)', role: 'Chefe do Departamento', is_host: false, is_bot: true },
+      { name: 'Dra. Thorne (Bot)', role: 'Perita Balística', is_host: false, is_bot: true },
+      { name: 'Miller (Bot)', role: 'Patrulheiro Noturno', is_host: false, is_bot: true }
+    ]);
+    if (el.btnStartGame) {
+      el.btnStartGame.textContent = '🚀 Iniciar Caso Solo com Bots';
+    }
+  }
+
+  function enterRoomLobby(code, isHost, players) {
+    state.currentRoom = { code, isHost, players: players || [] };
+    if (el.roomDisplayCode) el.roomDisplayCode.textContent = code;
+    if (el.roomWaitingArea) el.roomWaitingArea.style.display = 'block';
+    renderLobbyPlayers();
+  }
+
+  function renderLobbyPlayers() {
+    if (!el.playersList || !state.currentRoom) return;
+    el.playersList.innerHTML = '';
+    const list = state.currentRoom.players || [];
+    list.forEach((p) => {
+      const chip = document.createElement('div');
+      chip.className = `player-chip ${p.is_host ? 'is-host' : ''} ${p.is_bot ? 'is-bot' : ''}`;
+      chip.innerHTML = `
+        <span style="font-size: 1.1rem;">${p.is_bot ? '🤖' : '🕵️'}</span>
+        <div>
+          <div style="font-weight: bold; color: var(--text-main);">${escapeHtml(p.name)}</div>
+          <div style="font-size: 0.75rem; color: var(--text-muted);">${escapeHtml(p.role || '')}</div>
+        </div>
+        ${p.is_host ? '<span class="player-badge-tag host">Host</span>' : (p.is_bot ? '<span class="player-badge-tag bot">Bot</span>' : '')}
+      `;
+      el.playersList.appendChild(chip);
+    });
+  }
+
+  function setupLobbyEvents() {
+    if (el.btnRandomPersona) {
+      el.btnRandomPersona.addEventListener('click', generateRandomPersona);
+    }
+
+    if (el.personaName) {
+      el.personaName.addEventListener('input', () => {
+        savePersonaFromInputs();
+        if (state.gameMode === 'solo') setupDefaultSoloLobby();
+      });
+    }
+
+    // Mode Solo
+    if (el.btnModeSolo) {
+      el.btnModeSolo.addEventListener('click', () => {
+        state.gameMode = 'solo';
+        el.btnModeSolo.classList.add('active');
+        if (el.btnModeMulti) el.btnModeMulti.classList.remove('active');
+        if (el.multiplayerRoomArea) el.multiplayerRoomArea.style.display = 'none';
+        setupDefaultSoloLobby();
+      });
+    }
+
+    // Mode Multi
+    if (el.btnModeMulti) {
+      el.btnModeMulti.addEventListener('click', () => {
+        state.gameMode = 'multi';
+        el.btnModeMulti.classList.add('active');
+        if (el.btnModeSolo) el.btnModeSolo.classList.remove('active');
+        if (el.multiplayerRoomArea) el.multiplayerRoomArea.style.display = 'block';
+        if (el.roomWaitingArea) el.roomWaitingArea.style.display = 'none';
+        state.currentRoom = null;
+      });
+    }
+
+    // Room code input sanitization
+    if (el.roomCodeInput) {
+      el.roomCodeInput.addEventListener('input', (e) => {
+        e.target.value = e.target.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4);
+      });
+    }
+
+    // Create Room
+    if (el.btnCreateRoom) {
+      el.btnCreateRoom.addEventListener('click', async () => {
+        savePersonaFromInputs();
+        const pName = state.persona.name || (state.currentUser ? state.currentUser.username : 'Investigador');
+        const pRole = state.persona.role || 'Detetive Particular';
+        const pSecret = state.persona.secret || '';
+
+        try {
+          const res = await api('/api/room/create', {
+            method: 'POST',
+            body: JSON.stringify({
+              persona_name: pName,
+              role: pRole,
+              secret: pSecret
+            })
+          });
+          enterRoomLobby(res.code || 'NOIR', true, res.players);
+        } catch (_) {
+          // Graceful fallback while room backend is active
+          enterRoomLobby('NOIR', true, [
+            { name: pName, role: pRole, is_host: true, is_bot: false },
+            { name: 'Dr. Thorne (Bot)', role: 'Perito Balístico', is_host: false, is_bot: true },
+            { name: 'Miller (Bot)', role: 'Patrulheiro Noturno', is_host: false, is_bot: true }
+          ]);
+        }
+        if (el.btnStartGame) {
+          el.btnStartGame.textContent = '🚨 Iniciar Investigação da Sala';
+        }
+      });
+    }
+
+    // Join Room
+    if (el.btnJoinRoom) {
+      el.btnJoinRoom.addEventListener('click', async () => {
+        const code = (el.roomCodeInput.value || '').trim().toUpperCase();
+        if (code.length !== 4) {
+          alert('Por favor digite um código de 4 letras válido (Ex: NOIR)');
+          return;
+        }
+        savePersonaFromInputs();
+        const pName = state.persona.name || (state.currentUser ? state.currentUser.username : 'Investigador');
+        const pRole = state.persona.role || 'Detetive Particular';
+        const pSecret = state.persona.secret || '';
+
+        try {
+          const res = await api('/api/room/join', {
+            method: 'POST',
+            body: JSON.stringify({
+              code: code,
+              persona_name: pName,
+              role: pRole,
+              secret: pSecret
+            })
+          });
+          enterRoomLobby(code, false, res.players);
+        } catch (_) {
+          // Graceful fallback
+          enterRoomLobby(code, false, [
+            { name: 'Host da Sala', role: 'Detetive Líder', is_host: true, is_bot: false },
+            { name: pName, role: pRole, is_host: false, is_bot: false },
+            { name: 'Inspetor Vance (Bot)', role: 'Chefe de Polícia', is_host: false, is_bot: true }
+          ]);
+        }
+        if (el.btnStartGame) {
+          el.btnStartGame.textContent = '🚨 Iniciar Investigação da Sala';
+        }
+      });
+    }
+
+    // Copy Room Link
+    if (el.btnCopyRoomLink) {
+      el.btnCopyRoomLink.addEventListener('click', () => {
+        if (!state.currentRoom) return;
+        const url = `${window.location.origin}/?room=${state.currentRoom.code}`;
+        navigator.clipboard.writeText(url).then(() => {
+          el.btnCopyRoomLink.textContent = '✅ Copiado!';
+          setTimeout(() => {
+            el.btnCopyRoomLink.textContent = '📋 Copiar Link';
+          }, 1500);
+        }).catch(() => {
+          prompt('Copie o link da sala:', url);
+        });
+      });
+    }
+
+    // Start Game
+    if (el.btnStartGame) {
+      el.btnStartGame.addEventListener('click', async () => {
+        savePersonaFromInputs();
+        if (state.currentRoom && state.currentRoom.code && state.currentRoom.code !== 'SOLO') {
+          try {
+            await api(`/api/room/${state.currentRoom.code}/start`, { method: 'POST' });
+          } catch (_) {}
+        }
+        showGameView();
+        loadCaseData();
+      });
+    }
+  }
+
+
 
   // =========================================================================
   // Game & Dossier Logic
@@ -441,6 +729,38 @@
     });
   }
 
+  function updateStressMeter(suspectId, stress) {
+    if (!el.suspectStressMeter || !el.suspectStressLabel) return;
+    const clamped = Math.max(0, Math.min(100, Math.round(stress || 0)));
+    state.suspectStress[suspectId] = clamped;
+
+    el.suspectStressMeter.style.width = `${clamped}%`;
+    el.suspectStressMeter.className = 'stress-bar-fill';
+
+    let label = `${clamped}% (Calmo / Calculista)`;
+    if (clamped > 75) {
+      el.suspectStressMeter.classList.add('panic');
+      label = `${clamped}% (EM PÂNICO / ÁLIBI QUEBRADO!)`;
+    } else if (clamped > 35) {
+      el.suspectStressMeter.classList.add('nervous');
+      label = `${clamped}% (Nervoso / Inseguro)`;
+    } else {
+      el.suspectStressMeter.classList.add('calm');
+    }
+    el.suspectStressLabel.textContent = label;
+  }
+
+  function updateConfrontClueOptions() {
+    if (!el.confrontClueSelect) return;
+    el.confrontClueSelect.innerHTML = '<option value="">Nenhuma evidência (Pergunta regular)</option>';
+    (state.clues || []).forEach((clue) => {
+      const opt = document.createElement('option');
+      opt.value = clue.id;
+      opt.textContent = `🔍 Pista: ${clue.name}`;
+      el.confrontClueSelect.appendChild(opt);
+    });
+  }
+
   // =========================================================================
   // Interrogation Room
   // =========================================================================
@@ -452,6 +772,9 @@
       <strong>Temperamento:</strong> ${escapeHtml(suspect.personality || 'Reservado')} &bull;
       <em>${escapeHtml(suspect.alibi)}</em>
     `;
+
+    updateConfrontClueOptions();
+    updateStressMeter(suspect.id, state.suspectStress[suspect.id] || 0);
 
     if (!state.chatHistories[suspect.id]) {
       state.chatHistories[suspect.id] = [
@@ -480,7 +803,7 @@
     history.forEach((item) => {
       const bubble = document.createElement('div');
       bubble.className = `chat-bubble ${item.sender}`;
-      const senderLabel = item.sender === 'detective' ? `Det. ${state.currentUser ? state.currentUser.username : 'Detetive'}` : state.activeSuspect.name;
+      const senderLabel = item.sender === 'detective' ? `Det. ${state.persona.name || (state.currentUser ? state.currentUser.username : 'Detetive')}` : state.activeSuspect.name;
       bubble.innerHTML = `
         <div class="bubble-sender">${escapeHtml(senderLabel)}</div>
         <div class="bubble-text">${escapeHtml(item.message)}</div>
@@ -510,18 +833,25 @@
       });
     });
 
-    // Send question form
+    // Send question form with clue confrontation
     el.interrogationForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       const question = el.interrogationInput.value.trim();
       if (!question || !state.activeSuspect) return;
 
       const suspectId = state.activeSuspect.id;
+      const confrontClueVal = el.confrontClueSelect ? el.confrontClueSelect.value : '';
+      const confrontClueId = confrontClueVal ? parseInt(confrontClueVal, 10) : null;
 
-      // Add detective message
+      // Add detective message (highlight confrontation if applied)
+      let displayedQuestion = question;
+      if (confrontClueId && el.confrontClueSelect && el.confrontClueSelect.selectedOptions[0]) {
+        displayedQuestion = `[⚔️ CONFRONTANDO COM: ${el.confrontClueSelect.selectedOptions[0].text}] ${question}`;
+      }
+
       state.chatHistories[suspectId].push({
         sender: 'detective',
-        message: question
+        message: displayedQuestion
       });
       renderChatTranscript();
       el.interrogationInput.value = '';
@@ -534,13 +864,18 @@
       el.chatTranscript.appendChild(typingBubble);
       el.chatTranscript.scrollTop = el.chatTranscript.scrollHeight;
 
+      const reqBody = {
+        suspect_id: suspectId,
+        question: question
+      };
+      if (confrontClueId) {
+        reqBody.confront_clue_id = confrontClueId;
+      }
+
       try {
         const res = await api('/api/game/interrogate', {
           method: 'POST',
-          body: JSON.stringify({
-            suspect_id: suspectId,
-            question: question
-          })
+          body: JSON.stringify(reqBody)
         });
 
         const reply = res.reply || res.message || 'O suspeito hesita, olha fixamente nos seus olhos e permanece em silêncio calculista.';
@@ -550,18 +885,30 @@
           message: reply
         });
         renderChatTranscript();
+
+        const currentStress = state.suspectStress[suspectId] || 0;
+        const newStress = typeof res.stress_level === 'number'
+          ? res.stress_level
+          : (currentStress + (confrontClueId ? 40 : 5));
+        updateStressMeter(suspectId, newStress);
       } catch (err) {
         removeTypingIndicator();
         // Fallback scripted response for offline/fallback mode
-        const fallbackReply = generateFallbackResponse(state.activeSuspect, question);
+        const fallbackReply = generateFallbackResponse(state.activeSuspect, question, confrontClueId);
         state.chatHistories[suspectId].push({
           sender: 'suspect',
           message: fallbackReply
         });
         renderChatTranscript();
+        const currentStress = state.suspectStress[suspectId] || 0;
+        const newStress = currentStress + (confrontClueId ? 40 : 10);
+        updateStressMeter(suspectId, newStress);
       }
+
+      if (el.confrontClueSelect) el.confrontClueSelect.value = '';
     });
   }
+
 
   function removeTypingIndicator() {
     const typing = document.getElementById('typing-indicator');
@@ -698,6 +1045,7 @@
   function init() {
     initPWA();
     setupAuthEvents();
+    setupLobbyEvents();
     setupNavEvents();
     setupInterrogationEvents();
     setupAccusationEvents();
