@@ -126,6 +126,7 @@ func (u *UniversalAIClient) GenerateResponse(ctx context.Context, prompt string)
 			{"role": "user", "content": prompt},
 		},
 		"temperature": 0.7,
+		"stream":      false,
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -148,9 +149,46 @@ func (u *UniversalAIClient) GenerateResponse(ctx context.Context, prompt string)
 	}
 	defer resp.Body.Close()
 
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+
 	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := io.ReadAll(resp.Body)
 		return "", fmt.Errorf("router api error (status %d): %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	trimmedBody := strings.TrimSpace(string(bodyBytes))
+
+	// Handle SSE streaming chunks if router returns text/event-stream
+	if strings.HasPrefix(trimmedBody, "data:") {
+		var contentBuilder strings.Builder
+		lines := strings.Split(trimmedBody, "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if !strings.HasPrefix(line, "data:") {
+				continue
+			}
+			payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+			if payload == "[DONE]" || payload == "" {
+				continue
+			}
+			var chunk struct {
+				Choices []struct {
+					Delta struct {
+						Content string `json:"content"`
+					} `json:"delta"`
+				} `json:"choices"`
+			}
+			if err := json.Unmarshal([]byte(payload), &chunk); err == nil {
+				if len(chunk.Choices) > 0 && chunk.Choices[0].Delta.Content != "" {
+					contentBuilder.WriteString(chunk.Choices[0].Delta.Content)
+				}
+			}
+		}
+		if contentBuilder.Len() > 0 {
+			return strings.TrimSpace(contentBuilder.String()), nil
+		}
 	}
 
 	var chatResp struct {
@@ -161,15 +199,11 @@ func (u *UniversalAIClient) GenerateResponse(ctx context.Context, prompt string)
 		} `json:"choices"`
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&chatResp); err != nil {
-		return "", err
-	}
-
-	if len(chatResp.Choices) > 0 && chatResp.Choices[0].Message.Content != "" {
+	if err := json.Unmarshal(bodyBytes, &chatResp); err == nil && len(chatResp.Choices) > 0 && chatResp.Choices[0].Message.Content != "" {
 		return strings.TrimSpace(chatResp.Choices[0].Message.Content), nil
 	}
 
-	return "", errors.New("empty choices response from router api")
+	return "", errors.New("empty choices response from router api: " + trimmedBody)
 }
 
 // GenerateFallbackResponseWithStress generates an in-character Noir response factoring in suspect stress levels and 3-tier secrets.
