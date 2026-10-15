@@ -284,7 +284,8 @@ func (s *Service) SubmitAccusation(userID int64, caseID int64, accusedSuspectID 
 	weaponMatch := strings.Contains(wLower, "adaga") || strings.Contains(wLower, solWLower) || strings.Contains(solWLower, wLower)
 
 	mLower := strings.ToLower(accusedMotive)
-	motiveMatch := containsAny(mLower, "herança", "heranca", "dívida", "divida", "dinheiro", "jogo", "cassino")
+	solMLower := strings.ToLower(solMotive)
+	motiveMatch := strings.Contains(mLower, solMLower) || strings.Contains(solMLower, mLower) || containsAny(mLower, "herança", "heranca", "dívida", "divida", "dinheiro", "jogo", "cassino", "chantagem", "vingança", "vinganca", "desvio")
 
 	var verdict models.Verdict
 	var status string
