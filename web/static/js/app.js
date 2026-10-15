@@ -936,21 +936,43 @@
     });
   }
 
+  function getWeaponPhotoUrl(weaponName) {
+    if (!weaponName) return null;
+    const text = weaponName.toLowerCase();
+    if (text.includes('cianeto') || text.includes('veneno') || text.includes('cálice') || text.includes('calice') || text.includes('estricnina')) {
+      return '/static/assets/weapon_poison.webp';
+    }
+    if (text.includes('adaga') || text.includes('punhal') || text.includes('faca')) {
+      return '/static/assets/weapon_dagger.webp';
+    }
+    if (text.includes('castiçal') || text.includes('castical') || text.includes('bronze')) {
+      return '/static/assets/weapon_candlestick.webp';
+    }
+    if (text.includes('navalha') || text.includes('lâmina') || text.includes('lamina') || text.includes('cirúrgic') || text.includes('cirurgic')) {
+      return '/static/assets/weapon_razor.webp';
+    }
+    if (text.includes('revólver') || text.includes('revolver') || text.includes('arma') || text.includes('tiro') || text.includes('.38') || text.includes('silenciador')) {
+      return '/static/assets/murder_weapon.webp';
+    }
+    return null;
+  }
+  window.getWeaponPhotoUrl = getWeaponPhotoUrl;
+
   function openForensicLoupe(item) {
     if (!el.forensicLoupeModal) return;
     if (window.NoirAudio) window.NoirAudio.playPaper();
 
     const name = item.name || 'Evidência Pericial';
     const text = ((item.name || '') + ' ' + (item.description || '')).toLowerCase();
-    const isWeapon = text.includes('adaga') || text.includes('arma') || text.includes('lâmina') || text.includes('lamina') || text.includes('faca') || text.includes('punhal') || text.includes('cálice') || text.includes('calice') || text.includes('revólver') || text.includes('revolver') || text.includes('castiçal') || text.includes('veneno');
+    const weaponPhoto = getWeaponPhotoUrl(text);
 
     if (el.loupeItemName) el.loupeItemName.textContent = name;
     if (el.loupeItemCategory) el.loupeItemCategory.textContent = item.location ? `Local: ${item.location}` : 'Laudo Forense';
     if (el.loupeItemDesc) el.loupeItemDesc.textContent = item.description || 'Nenhum detalhe adicional registrado.';
 
     if (el.loupeMedia) {
-      if (isWeapon) {
-        el.loupeMedia.innerHTML = `<img src="/static/assets/murder_weapon.webp" alt="${escapeHtml(name)}" class="loupe-img-inspect">`;
+      if (weaponPhoto) {
+        el.loupeMedia.innerHTML = `<img src="${weaponPhoto}" alt="${escapeHtml(name)}" class="loupe-img-inspect">`;
       } else {
         el.loupeMedia.innerHTML = `<img src="/static/assets/scene_noir.webp" alt="${escapeHtml(name)}" class="loupe-img-inspect">`;
       }
@@ -984,10 +1006,10 @@
       const card = document.createElement('div');
       card.className = 'card-noir clue-card-inspectable';
       const text = ((clue.name || '') + ' ' + (clue.description || '')).toLowerCase();
-      const isWeaponClue = text.includes('adaga') || text.includes('arma') || text.includes('lâmina') || text.includes('lamina') || text.includes('faca') || text.includes('punhal');
-      const weaponImg = isWeaponClue
+      const weaponPhoto = getWeaponPhotoUrl(text);
+      const weaponImg = weaponPhoto
         ? `<div style="margin-bottom: 0.75rem; border-radius: 4px; overflow: hidden; border: 1px solid var(--border-dim); max-height: 140px;">
-             <img src="/static/assets/murder_weapon.webp" alt="Arma do Crime Pericial" style="width: 100%; height: 140px; object-fit: cover; filter: grayscale(30%) sepia(20%) contrast(1.15);">
+             <img src="${weaponPhoto}" alt="Arma do Crime Pericial" style="width: 100%; height: 140px; object-fit: cover; filter: grayscale(20%) sepia(20%) contrast(1.15);">
            </div>`
         : '';
 
@@ -1032,6 +1054,7 @@
       'Adaga Cerimonial de Prata',
       'Revólver Calibre .38 com Silenciador',
       'Castiçal Pesado de Bronze',
+      'Navalha Pericial de Aço',
       'Veneno Estricnina no Whisky'
     ];
     weapons.forEach((w) => {

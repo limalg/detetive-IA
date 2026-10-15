@@ -338,6 +338,10 @@ func TestEmbeddedVisualAssets(t *testing.T) {
 		"static/assets/suspect_magnate.webp",
 		"static/assets/suspect_butler.webp",
 		"static/assets/murder_weapon.webp",
+		"static/assets/weapon_poison.webp",
+		"static/assets/weapon_dagger.webp",
+		"static/assets/weapon_candlestick.webp",
+		"static/assets/weapon_razor.webp",
 	}
 
 	handler := web.FileServer()
@@ -358,6 +362,32 @@ func TestEmbeddedVisualAssets(t *testing.T) {
 		handler.ServeHTTP(rec, req)
 		if rec.Code != http.StatusOK {
 			t.Errorf("GET /%s returned status %d, expected 200", a, rec.Code)
+		}
+	}
+
+	// Verify app.js contains getWeaponPhotoUrl and mappings
+	jsFile, err := web.Assets.Open("static/js/app.js")
+	if err != nil {
+		t.Fatalf("failed to open static/js/app.js: %v", err)
+	}
+	defer jsFile.Close()
+	jsBytes, err := io.ReadAll(jsFile)
+	if err != nil {
+		t.Fatalf("failed to read static/js/app.js: %v", err)
+	}
+	jsContent := string(jsBytes)
+
+	requiredWeaponSnippets := []string{
+		"getWeaponPhotoUrl",
+		"weapon_poison.webp",
+		"weapon_dagger.webp",
+		"weapon_candlestick.webp",
+		"weapon_razor.webp",
+		"murder_weapon.webp",
+	}
+	for _, snippet := range requiredWeaponSnippets {
+		if !strings.Contains(jsContent, snippet) {
+			t.Errorf("static/js/app.js is missing weapon mapping snippet: %q", snippet)
 		}
 	}
 }
