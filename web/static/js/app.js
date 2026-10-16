@@ -1234,7 +1234,7 @@
 
       const imgHtml = `
         <div style="margin-bottom: 0.75rem; border-radius: 4px; overflow: hidden; border: 1px solid var(--border-dim); height: 160px; background: #0c0b0e;">
-          <img src="${photoUrl}" alt="${escapeHtml(clue.name)}" style="width: 100%; height: 100%; object-fit: cover; object-position: center 25%; filter: contrast(1.15) sepia(10%);">
+          <img src="${photoUrl}" alt="${escapeHtml(clue.name)}" style="width: 100%; height: 100%; object-fit: cover; object-position: center; filter: contrast(1.15) sepia(10%);">
         </div>
       `;
 

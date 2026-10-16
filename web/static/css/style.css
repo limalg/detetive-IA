@@ -1350,7 +1350,7 @@ body::after {
 /* Visual Weapon Selector Cards */
 .weapon-cards-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   gap: 1rem;
   margin-top: 0.5rem;
   margin-bottom: 1.25rem;
@@ -1360,18 +1360,24 @@ body::after {
   background: var(--bg-card);
   border: 1px solid var(--border-noir);
   border-radius: 6px;
-  padding: 0.5rem;
+  padding: 0.6rem;
   text-align: center;
   cursor: pointer;
   transition: all 0.25s ease;
   position: relative;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .weapon-card-item:hover {
   border-color: var(--accent-amber);
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(245, 158, 11, 0.2);
+}
+
+.weapon-card-item:hover .weapon-card-thumb img {
+  transform: scale(1.04);
 }
 
 .weapon-card-item.selected {
@@ -1392,24 +1398,22 @@ body::after {
 
 .weapon-card-thumb {
   width: 100%;
-  height: 105px;
+  aspect-ratio: 1 / 1;
   border-radius: 4px;
   overflow: hidden;
-  margin-bottom: 0.4rem;
-  border: 1px solid rgba(0, 0, 0, 0.4);
-  background: radial-gradient(circle, #25201b 0%, #0d0b09 80%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 4px;
+  margin-bottom: 0.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: #0d0b09;
+  position: relative;
 }
 
 .weapon-card-thumb img {
   width: 100%;
   height: 100%;
-  object-fit: contain;
+  object-fit: cover;
   display: block;
-  filter: contrast(1.15) sepia(10%);
+  filter: contrast(1.1) sepia(8%);
+  transition: transform 0.3s ease;
 }
 
 .weapon-card-label {
