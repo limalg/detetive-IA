@@ -1221,8 +1221,8 @@ body::after {
 /* Polaroid Suspect Cards with Red Pushpin */
 .polaroid-gallery {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-  gap: 1.75rem;
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  gap: 2rem;
 }
 
 .polaroid-card {
@@ -1258,7 +1258,7 @@ body::after {
 
 .polaroid-photo-area {
   width: 100%;
-  height: 170px;
+  height: 250px;
   background: #2a2a2e;
   border: 1px solid #e4e4e7;
   display: flex;
@@ -1275,7 +1275,7 @@ body::after {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  object-position: center 20%;
+  object-position: center 15%;
   filter: grayscale(15%) sepia(10%) contrast(1.1);
   display: block;
   margin: 0 auto;
@@ -1350,8 +1350,8 @@ body::after {
 /* Visual Weapon Selector Cards */
 .weapon-cards-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 1rem;
   margin-top: 0.5rem;
   margin-bottom: 1.25rem;
 }
@@ -1392,17 +1392,22 @@ body::after {
 
 .weapon-card-thumb {
   width: 100%;
-  height: 70px;
+  height: 105px;
   border-radius: 4px;
   overflow: hidden;
   margin-bottom: 0.4rem;
   border: 1px solid rgba(0, 0, 0, 0.4);
+  background: radial-gradient(circle, #25201b 0%, #0d0b09 80%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
 }
 
 .weapon-card-thumb img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   display: block;
   filter: contrast(1.15) sepia(10%);
 }

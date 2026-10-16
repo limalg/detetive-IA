@@ -929,6 +929,13 @@
     el.caseVictim.textContent = state.currentCase.victim;
     el.caseDesc.textContent = state.currentCase.description;
 
+    const themeSceneUrl = getThemeScenePhotoUrl(state.currentCase);
+    const dossierSceneImg = document.getElementById('dossier-scene-img');
+    if (dossierSceneImg) {
+      dossierSceneImg.src = themeSceneUrl;
+      dossierSceneImg.alt = state.currentCase.title || 'Cena do Crime';
+    }
+
     const status = state.currentCase.status || 'in_progress';
     if (status === 'solved') {
       el.caseStamp.textContent = 'RESOLVIDO';
@@ -1101,24 +1108,82 @@
   }
   window.getWeaponPhotoUrl = getWeaponPhotoUrl;
 
+  function getThemeScenePhotoUrl(caseObj) {
+    if (!caseObj) return '/static/assets/scene_noir.webp';
+    const text = ((caseObj.title || '') + ' ' + (caseObj.description || '')).toLowerCase();
+    if (text.includes('expresso') || text.includes('trem') || text.includes('orlov') || text.includes('ferrovia')) {
+      return '/static/assets/scene_train.webp';
+    }
+    if (text.includes('ária') || text.includes('aria') || text.includes('ópera') || text.includes('opera') || text.includes('fontaine') || text.includes('teatro')) {
+      return '/static/assets/scene_opera.webp';
+    }
+    if (text.includes('cassino') || text.includes('casino') || text.includes('ramos') || text.includes('dívida') || text.includes('divida') || text.includes('roleta')) {
+      return '/static/assets/scene_casino.webp';
+    }
+    return '/static/assets/scene_noir.webp';
+  }
+  window.getThemeScenePhotoUrl = getThemeScenePhotoUrl;
+
+  function getCluePhotoUrl(clue) {
+    if (!clue) return getThemeScenePhotoUrl(state.currentCase);
+    const text = ((clue.name || '') + ' ' + (clue.description || '') + ' ' + (clue.location || '')).toLowerCase();
+
+    // 1. Murder weapon match
+    const weaponPhoto = getWeaponPhotoUrl(text);
+    if (weaponPhoto) return weaponPhoto;
+
+    // 2. Documents, wills, letters, IOUs, contracts, promissory notes, files
+    if (text.includes('testamento') || text.includes('documento') || text.includes('carta') ||
+        text.includes('promissória') || text.includes('promissoria') || text.includes('papel') ||
+        text.includes('contrato') || text.includes('recibo') || text.includes('dossiê') ||
+        text.includes('dossie') || text.includes('anotação') || text.includes('anotacao') ||
+        text.includes('manuscrito') || text.includes('escritura') || text.includes('segredo') ||
+        text.includes('telegrama') || text.includes('cheque') || text.includes('certidão') ||
+        text.includes('certidao') || text.includes('herança') || text.includes('heranca')) {
+      return '/static/assets/clue_document.webp';
+    }
+
+    // 3. Contradictions, logbooks, registries, keys, pocket watch, time stamps, alibi contradictions
+    if (text.includes('registro') || text.includes('livro') || text.includes('escala') ||
+        text.includes('chave') || text.includes('álibi') || text.includes('alibi') ||
+        text.includes('relógio') || text.includes('relogio') || text.includes('horário') ||
+        text.includes('horario') || text.includes('contrad') || text.includes('manutenção') ||
+        text.includes('manutencao') || text.includes('serviço') || text.includes('servico') ||
+        text.includes('bilhete') || text.includes('passagem') || text.includes('guarda-volume') ||
+        text.includes('ponto') || text.includes('turno') || text.includes('confronto')) {
+      return '/static/assets/clue_contradiction.webp';
+    }
+
+    // 4. Forensic physical traces: footprints, shoe prints, cigar ashes, gloves, tire tracks, mud, blood, fibers
+    if (text.includes('pegada') || text.includes('cinza') || text.includes('charuto') ||
+        text.includes('luva') || text.includes('rastro') || text.includes('pneu') ||
+        text.includes('lama') || text.includes('fibra') || text.includes('salto') ||
+        text.includes('vestígio') || text.includes('vestigio') || text.includes('marca') ||
+        text.includes('gota') || text.includes('sangue') || text.includes('ficha') ||
+        text.includes('copo') || text.includes('cabelo') || text.includes('fragmento') ||
+        text.includes('vidro') || text.includes('botão') || text.includes('botao') ||
+        text.includes('poeira') || text.includes('mancha') || text.includes('solo')) {
+      return '/static/assets/clue_trace.webp';
+    }
+
+    // 5. Procedural theme fallback
+    return getThemeScenePhotoUrl(state.currentCase);
+  }
+  window.getCluePhotoUrl = getCluePhotoUrl;
+
   function openForensicLoupe(item) {
     if (!el.forensicLoupeModal) return;
     if (window.NoirAudio) window.NoirAudio.playPaper();
 
     const name = item.name || 'Evidência Pericial';
-    const text = ((item.name || '') + ' ' + (item.description || '')).toLowerCase();
-    const weaponPhoto = getWeaponPhotoUrl(text);
+    const photoUrl = getCluePhotoUrl(item);
 
     if (el.loupeItemName) el.loupeItemName.textContent = name;
     if (el.loupeItemCategory) el.loupeItemCategory.textContent = item.location ? `Local: ${item.location}` : 'Laudo Forense';
     if (el.loupeItemDesc) el.loupeItemDesc.textContent = item.description || 'Nenhum detalhe adicional registrado.';
 
     if (el.loupeMedia) {
-      if (weaponPhoto) {
-        el.loupeMedia.innerHTML = `<img src="${weaponPhoto}" alt="${escapeHtml(name)}" class="loupe-img-inspect">`;
-      } else {
-        el.loupeMedia.innerHTML = `<img src="/static/assets/scene_noir.webp" alt="${escapeHtml(name)}" class="loupe-img-inspect">`;
-      }
+      el.loupeMedia.innerHTML = `<img src="${photoUrl}" alt="${escapeHtml(name)}" class="loupe-img-inspect">`;
     }
 
     el.forensicLoupeModal.classList.add('active');
@@ -1150,17 +1215,25 @@
 
   function renderClues() {
     el.cluesList.innerHTML = '';
+
+    const themeSceneUrl = getThemeScenePhotoUrl(state.currentCase);
+    const sceneBannerImg = document.getElementById('crime-scene-banner-img');
+    const sceneBannerCaption = document.getElementById('crime-scene-banner-caption');
+    if (sceneBannerImg) {
+      sceneBannerImg.src = themeSceneUrl;
+      sceneBannerImg.alt = state.currentCase ? state.currentCase.title : 'Cena do Crime Noir';
+    }
+    if (sceneBannerCaption && state.currentCase) {
+      sceneBannerCaption.textContent = `📍 ${state.currentCase.title || 'Cena do Crime'} — Fotografia Pericial da Cena do Crime`;
+    }
+
     state.clues.forEach((clue) => {
       const card = document.createElement('div');
       card.className = 'card-noir clue-card-inspectable';
-      const text = ((clue.name || '') + ' ' + (clue.description || '')).toLowerCase();
-      let photoUrl = getWeaponPhotoUrl(text);
-      if (!photoUrl) {
-        photoUrl = '/static/assets/scene_noir.webp';
-      }
+      const photoUrl = getCluePhotoUrl(clue);
 
       const imgHtml = `
-        <div style="margin-bottom: 0.75rem; border-radius: 4px; overflow: hidden; border: 1px solid var(--border-dim); height: 140px; background: #0c0b0e;">
+        <div style="margin-bottom: 0.75rem; border-radius: 4px; overflow: hidden; border: 1px solid var(--border-dim); height: 160px; background: #0c0b0e;">
           <img src="${photoUrl}" alt="${escapeHtml(clue.name)}" style="width: 100%; height: 100%; object-fit: cover; object-position: center 25%; filter: contrast(1.15) sepia(10%);">
         </div>
       `;

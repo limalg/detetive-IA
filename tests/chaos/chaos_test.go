@@ -153,7 +153,7 @@ func TestAccuseValidationAndEdgeCases(t *testing.T) {
 func TestInterrogateAndRegisterResilience(t *testing.T) {
 	baseURL := getBaseURL()
 	checkServerAvailable(t, baseURL)
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: 30 * time.Second}
 
 	// Criar uma partida solo fresca para isolamento e garantia de mandados e tempo intactos
 	var freshSuspectID int64 = 1

@@ -334,6 +334,12 @@ func TestDiegeticNoirDeskAndNightClockUI(t *testing.T) {
 func TestEmbeddedVisualAssets(t *testing.T) {
 	assets := []string{
 		"static/assets/scene_noir.webp",
+		"static/assets/scene_train.webp",
+		"static/assets/scene_opera.webp",
+		"static/assets/scene_casino.webp",
+		"static/assets/clue_document.webp",
+		"static/assets/clue_contradiction.webp",
+		"static/assets/clue_trace.webp",
 		"static/assets/char_nicole.webp",
 		"static/assets/char_vincent.webp",
 		"static/assets/char_klaus.webp",
@@ -372,7 +378,7 @@ func TestEmbeddedVisualAssets(t *testing.T) {
 		}
 	}
 
-	// Verify app.js contains getWeaponPhotoUrl and mappings
+	// Verify app.js contains getWeaponPhotoUrl, getCluePhotoUrl, getThemeScenePhotoUrl and mappings
 	jsFile, err := web.Assets.Open("static/js/app.js")
 	if err != nil {
 		t.Fatalf("failed to open static/js/app.js: %v", err)
@@ -384,17 +390,25 @@ func TestEmbeddedVisualAssets(t *testing.T) {
 	}
 	jsContent := string(jsBytes)
 
-	requiredWeaponSnippets := []string{
+	requiredSnippets := []string{
 		"getWeaponPhotoUrl",
+		"getThemeScenePhotoUrl",
+		"getCluePhotoUrl",
 		"weapon_poison.webp",
 		"weapon_dagger.webp",
 		"weapon_candlestick.webp",
 		"weapon_razor.webp",
 		"murder_weapon.webp",
+		"clue_document.webp",
+		"clue_contradiction.webp",
+		"clue_trace.webp",
+		"scene_train.webp",
+		"scene_opera.webp",
+		"scene_casino.webp",
 	}
-	for _, snippet := range requiredWeaponSnippets {
+	for _, snippet := range requiredSnippets {
 		if !strings.Contains(jsContent, snippet) {
-			t.Errorf("static/js/app.js is missing weapon mapping snippet: %q", snippet)
+			t.Errorf("static/js/app.js is missing asset mapping snippet: %q", snippet)
 		}
 	}
 }

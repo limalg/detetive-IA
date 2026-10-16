@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"detetive-ia/internal/models"
 )
@@ -266,7 +267,9 @@ func (s *Service) InterrogateWithStress(sessionID string, suspectID int64, quest
 			"Você é %s (%s). Personalidade: %s. Álibi (Tier 1): %s. Delito Secundário (Tier 2): %s. Verdade Íntima (Tier 3): %s. Suspeita sobre outro personagem: %s. Nível de estresse: %d/100. Responda em Português como um personagem Noir à pergunta do Detetive: '%s'. Mantenha a resposta concisa, expressiva e misteriosa. Se o estresse for <30%%, mantenha seu álibi. Se estiver entre 30%% e 70%%, admita com relutância seu delito secundário e lance suspeita sobre outro. Se estiver acima de 70%%, quebre e revele a verdade íntima.",
 			susp.Name, susp.Role, susp.Personality, susp.Tier1Alibi, susp.Tier2PettyCrime, susp.Tier3Truth, susp.CrossSuspicion, stress, question,
 		)
-		resp, err := s.aiClient.GenerateResponse(context.Background(), prompt)
+		aiCtx, aiCancel := context.WithTimeout(context.Background(), 3*time.Second)
+		resp, err := s.aiClient.GenerateResponse(aiCtx, prompt)
+		aiCancel()
 		if err == nil && len(strings.TrimSpace(resp)) > 0 {
 			answer = resp
 		}
