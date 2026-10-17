@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Courier+Prime:ital,wght@0,400;0,700;1,400&family=Special+Elite&display=swap');
+
 /* ==========================================================================
    Detetive IA - Noir Atmosphere & PWA Styling
    ========================================================================== */
@@ -10,7 +12,7 @@
   --border-noir: #3e3a45;
   --border-focus: #e09f3e;
   --text-main: #f5f3ef;
-  --text-muted: #c8c5bc;
+  --text-muted: #d4d0c5;
   --text-dim: #9e9a91;
   --accent-amber: #e09f3e;
   --accent-gold: #c28829;
@@ -45,6 +47,46 @@ button:active, .btn:active, .chip:active, .polaroid-card:active, .weapon-card-it
   }
 }
 
+/* Monochromatic Noir Vector Icons */
+.noir-icon {
+  width: 1.15em;
+  height: 1.15em;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  display: inline-block;
+  vertical-align: -0.18em;
+  flex-shrink: 0;
+}
+
+.noir-icon-lg {
+  width: 1.8em;
+  height: 1.8em;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  display: inline-block;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
+.noir-icon-huge {
+  width: 3.2em;
+  height: 3.2em;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  display: inline-block;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
 * {
   box-sizing: border-box;
   margin: 0;
@@ -59,6 +101,8 @@ body {
   min-height: 100vh;
   position: relative;
   overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 /* Noir Film Grain / Vignette Overlay */
@@ -365,6 +409,24 @@ body::after {
   border-bottom: 1px solid var(--border-noir);
   padding-bottom: 0.5rem;
   overflow-x: auto;
+  scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 600px) {
+  .nav-tabs {
+    scroll-snap-type: x mandatory;
+    gap: 0.35rem;
+    scrollbar-width: none;
+  }
+  .nav-tabs::-webkit-scrollbar {
+    display: none;
+  }
+  .nav-tab-btn {
+    scroll-snap-align: start;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.85rem;
+  }
 }
 
 .nav-tab-btn {
@@ -913,34 +975,39 @@ body::after {
 }
 
 .chat-bubble {
-  max-width: 80%;
-  padding: 0.8rem 1rem;
-  border-radius: 6px;
+  max-width: 82%;
+  padding: 0.85rem 1.15rem;
+  border-radius: 4px;
   font-size: 0.92rem;
-  line-height: 1.5;
+  line-height: 1.55;
   position: relative;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
 }
 
 .chat-bubble.detective {
-  background-color: #272730;
+  background-color: #24222a;
   border: 1px solid var(--accent-gold);
+  border-right: 3px solid var(--accent-amber);
   color: var(--text-main);
   border-bottom-right-radius: 1px;
 }
 
 .chat-bubble.suspect {
-  background-color: #1f1f26;
+  background-color: #1a191f;
   border: 1px solid var(--border-noir);
-  color: var(--text-main);
+  border-left: 3px solid #71717a;
+  color: #f0ede6;
   border-bottom-left-radius: 1px;
 }
 
 .bubble-sender {
   font-family: var(--font-typewriter);
-  font-size: 0.75rem;
+  font-size: 0.72rem;
+  letter-spacing: 0.8px;
   color: var(--accent-amber);
-  margin-bottom: 0.25rem;
+  margin-bottom: 0.35rem;
   text-transform: uppercase;
+  font-weight: bold;
 }
 
 .chat-input-wrapper {
@@ -1140,6 +1207,135 @@ body::after {
   color: var(--text-muted);
 }
 
+/* ==========================================================================
+   Analog Galvanic Lie Detector (Polygraph Oscilloscope Model 1944)
+   ========================================================================== */
+.polygraph-cabinet {
+  background: #121115;
+  border: 1px solid #38343f;
+  border-top: 2px solid var(--accent-gold);
+  border-radius: 4px;
+  padding: 0.65rem 0.85rem;
+  margin: 0.75rem 0;
+  box-shadow: inset 0 0 25px rgba(0, 0, 0, 0.9), 0 6px 16px rgba(0, 0, 0, 0.6);
+  width: 100%;
+}
+
+.polygraph-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.35rem;
+  font-family: var(--font-typewriter);
+  font-size: 0.72rem;
+  letter-spacing: 0.5px;
+}
+
+.polygraph-label {
+  color: var(--text-dim);
+  font-weight: bold;
+}
+
+.polygraph-readout {
+  color: #10b981;
+  font-weight: bold;
+  padding: 1px 6px;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: 2px;
+  font-size: 0.68rem;
+  transition: all 0.3s ease;
+}
+
+.polygraph-readout.nervous {
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.15);
+  border-color: rgba(245, 158, 11, 0.4);
+}
+
+.polygraph-readout.panic {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.6);
+  animation: pulsePanic 0.8s infinite alternate ease-in-out;
+}
+
+.polygraph-screen {
+  position: relative;
+  height: 48px;
+  background: #060b07;
+  border: 1px solid #142a1a;
+  border-radius: 2px;
+  overflow: hidden;
+  box-shadow: inset 0 0 15px rgba(0, 0, 0, 0.95);
+}
+
+.polygraph-grid {
+  position: absolute;
+  inset: 0;
+  background-image: 
+    linear-gradient(rgba(34, 197, 94, 0.09) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(34, 197, 94, 0.09) 1px, transparent 1px);
+  background-size: 8px 8px;
+  pointer-events: none;
+}
+
+.polygraph-ecg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 200%;
+  height: 100%;
+  stroke: #22c55e;
+  fill: none;
+  stroke-width: 2;
+  filter: drop-shadow(0 0 3px rgba(34, 197, 94, 0.75));
+  animation: ecgScroll 2.2s linear infinite;
+}
+
+@keyframes ecgScroll {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+.polygraph-needle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #f59e0b;
+  box-shadow: 0 0 6px #f59e0b, 0 0 12px rgba(245, 158, 11, 0.6);
+  transition: left 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+  left: 10%;
+  z-index: 5;
+}
+
+.polygraph-needle::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -3px;
+  width: 8px;
+  height: 6px;
+  background: #f59e0b;
+  border-radius: 2px;
+}
+
+.polygraph-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 0.35rem;
+  font-family: var(--font-typewriter);
+  font-size: 0.65rem;
+  color: var(--text-dim);
+}
+
+.polygraph-pulse {
+  color: #22c55e;
+  font-weight: bold;
+}
+
 /* Stress Meter & Animation */
 .stress-bar-fill.calm {
   background: linear-gradient(90deg, #10b981, #34d399);
@@ -1304,7 +1500,62 @@ body::after {
   pointer-events: none;
 }
 
-/* Polaroid Suspect Cards with Red Pushpin */
+/* Physical Brass Paperclip Marker */
+.paperclip-marker {
+  position: absolute;
+  top: -10px;
+  right: 28px;
+  width: 16px;
+  height: 42px;
+  border: 2px solid #bfa15f;
+  border-radius: 8px 8px 3px 3px;
+  background: transparent;
+  box-shadow: 2px 3px 6px rgba(0, 0, 0, 0.7), inset 0 1px 1px rgba(255, 255, 255, 0.4);
+  z-index: 15;
+  pointer-events: none;
+  transform: rotate(4deg);
+}
+
+.paperclip-marker::before {
+  content: "";
+  position: absolute;
+  top: 6px;
+  left: 2px;
+  right: 2px;
+  bottom: 8px;
+  border: 2px solid #d4af37;
+  border-top: none;
+  border-radius: 0 0 5px 5px;
+}
+
+/* String & Button Sealed Envelope Card */
+.envelope-string-card {
+  background: #2a2016 linear-gradient(135deg, rgba(200, 160, 100, 0.08) 0%, transparent 100%);
+  border: 1px solid #4a3825;
+  position: relative;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.envelope-string-card::before {
+  content: "";
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  width: 14px;
+  height: 14px;
+  background: radial-gradient(circle at center, #8c2a2a 0%, #4a1212 100%);
+  border: 1px solid #c8a064;
+  border-radius: 50%;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.6);
+}
+
+.envelope-string-card:hover {
+  border-color: var(--accent-gold);
+  transform: translateY(-3px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.6), 0 0 10px rgba(224, 159, 62, 0.15);
+}
+
+/* Polaroid Suspect Cards with Organic Rotations & Red Pushpin */
 .polaroid-gallery {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
@@ -1318,28 +1569,53 @@ body::after {
   border-radius: 2px;
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.75), 0 2px 4px rgba(0, 0, 0, 0.3);
   position: relative;
-  transition: transform 0.25s ease, box-shadow 0.25s ease;
+  transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.25s ease;
   display: flex;
   flex-direction: column;
 }
 
-.polaroid-card:hover {
-  transform: translateY(-5px) rotate(0.8deg);
-  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.85);
-  z-index: 5;
+.polaroid-card:nth-child(4n+1) {
+  transform: rotate(-1.5deg);
+}
+.polaroid-card:nth-child(4n+2) {
+  transform: rotate(1.2deg);
+}
+.polaroid-card:nth-child(4n+3) {
+  transform: rotate(-0.8deg);
+}
+.polaroid-card:nth-child(4n) {
+  transform: rotate(1.6deg);
 }
 
-.pushpin {
+.polaroid-card:hover {
+  transform: translateY(-8px) scale(1.02) rotate(0deg) !important;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.9), 0 0 15px rgba(224, 159, 62, 0.25);
+  z-index: 10;
+}
+
+.polaroid-pin, .pushpin {
   position: absolute;
   top: -9px;
   left: 50%;
   transform: translateX(-50%);
-  width: 15px;
-  height: 15px;
+  width: 16px;
+  height: 16px;
   background: radial-gradient(circle at 35% 35%, #f87171 0%, #dc2626 50%, #7f1d1d 100%);
   border-radius: 50%;
   box-shadow: 0 3px 6px rgba(0, 0, 0, 0.7), inset 0 1px 2px rgba(255, 255, 255, 0.6);
   z-index: 12;
+}
+
+.polaroid-pin::after, .pushpin::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 4px;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.6);
+  border-radius: 50%;
 }
 
 .polaroid-photo-area {

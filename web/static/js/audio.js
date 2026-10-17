@@ -48,12 +48,17 @@
     return compressor || c.destination;
   }
 
+  var rainSource = null;
+  var rainGain = null;
+
   function updateToggleUI() {
     var btn = document.getElementById('sound-toggle');
     if (btn) {
-      btn.textContent = muted ? '🔇 Som: Mudo' : '🔊 Som: Ativo';
+      var icon = muted ? '#icon-mute' : '#icon-sound';
+      var text = muted ? 'Som: Mudo' : 'Som: Ativo';
+      btn.innerHTML = '<svg class="noir-icon" aria-hidden="true"><use href="' + icon + '"></use></svg> <span>' + text + '</span>';
       btn.setAttribute('aria-pressed', (!muted).toString());
-      btn.title = muted ? 'Ativar efeitos sonoros diegéticos' : 'Desativar efeitos sonoros diegéticos';
+      btn.title = muted ? 'Ativar efeitos sonoros diegéticos e chuva' : 'Desativar efeitos sonoros e chuva';
     }
   }
 
@@ -74,6 +79,9 @@
           window.removeEventListener('click', unlock, true);
           window.removeEventListener('keydown', unlock, true);
           window.removeEventListener('touchstart', unlock, true);
+          if (!muted) {
+            NoirAudio.startRain();
+          }
         }
       };
 
@@ -101,6 +109,11 @@
       try {
         localStorage.setItem('detiv_muted', muted.toString());
       } catch (e) {}
+      if (muted) {
+        NoirAudio.stopRain();
+      } else {
+        NoirAudio.startRain();
+      }
       updateToggleUI();
       return muted;
     },
@@ -324,6 +337,107 @@
       g2.connect(dest);
       osc2.start(t + 0.12);
       osc2.stop(t + 0.24);
+    },
+
+    /**
+     * Continuous atmospheric diegetic rain against window pane
+     */
+    startRain: function () {
+      if (muted || rainSource) return;
+      var c = getAudioContext();
+      if (!c) return;
+      try {
+        var bufferSize = Math.floor(c.sampleRate * 2.5);
+        var buffer = c.createBuffer(1, bufferSize, c.sampleRate);
+        var data = buffer.getChannelData(0);
+        var lastOut = 0.0;
+        for (var i = 0; i < bufferSize; i++) {
+          var white = Math.random() * 2 - 1;
+          data[i] = (lastOut + (0.02 * white)) / 1.02;
+          lastOut = data[i];
+          data[i] *= 3.0;
+        }
+
+        rainSource = c.createBufferSource();
+        rainSource.buffer = buffer;
+        rainSource.loop = true;
+
+        var filter = c.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(850, c.currentTime);
+
+        rainGain = c.createGain();
+        rainGain.gain.setValueAtTime(0.045, c.currentTime);
+
+        rainSource.connect(filter);
+        filter.connect(rainGain);
+        rainGain.connect(getMasterNode(c));
+        rainSource.start();
+      } catch (e) {}
+    },
+
+    /**
+     * Stops ambient rain
+     */
+    stopRain: function () {
+      if (rainSource) {
+        try {
+          rainSource.stop();
+          rainSource.disconnect();
+        } catch (e) {}
+        rainSource = null;
+        rainGain = null;
+      }
+    },
+
+    /**
+     * Metallic lens focus click for forensic loupe
+     */
+    playLensFocus: function () {
+      if (muted) return;
+      var c = getAudioContext();
+      if (!c) return;
+      var t = c.currentTime;
+      var dest = getMasterNode(c);
+
+      var osc = c.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(2200, t);
+      osc.frequency.exponentialRampToValueAtTime(1200, t + 0.03);
+
+      var g = c.createGain();
+      g.gain.setValueAtTime(0.18, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.035);
+
+      osc.connect(g);
+      g.connect(dest);
+      osc.start(t);
+      osc.stop(t + 0.04);
+    },
+
+    /**
+     * Thumbtack / corkboard pin click when pinning clues or suspects
+     */
+    playPin: function () {
+      if (muted) return;
+      var c = getAudioContext();
+      if (!c) return;
+      var t = c.currentTime;
+      var dest = getMasterNode(c);
+
+      var osc = c.createOscillator();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(1400, t);
+      osc.frequency.exponentialRampToValueAtTime(300, t + 0.02);
+
+      var g = c.createGain();
+      g.gain.setValueAtTime(0.25, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.025);
+
+      osc.connect(g);
+      g.connect(dest);
+      osc.start(t);
+      osc.stop(t + 0.03);
     }
   };
 

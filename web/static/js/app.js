@@ -382,9 +382,9 @@
     if (el.personaSecret) el.personaSecret.value = secret;
 
     if (el.btnRandomPersona) {
-      el.btnRandomPersona.textContent = '🎲 Rolando...';
+      el.btnRandomPersona.innerHTML = '<svg class="noir-icon" aria-hidden="true"><use href="#icon-dice"></use></svg> <span>Rolando...</span>';
       setTimeout(() => {
-        el.btnRandomPersona.textContent = '🎲 Sortear Persona';
+        el.btnRandomPersona.innerHTML = '<svg class="noir-icon" aria-hidden="true"><use href="#icon-dice"></use></svg> <span>Sortear Persona</span>';
       }, 300);
     }
 
@@ -412,7 +412,7 @@
       { name: 'Miller (Bot)', role: 'Patrulheiro Noturno', is_host: false, is_bot: true }
     ]);
     if (el.btnStartGame) {
-      el.btnStartGame.textContent = '🚀 Iniciar Caso Solo com Bots';
+      el.btnStartGame.innerHTML = '<svg class="noir-icon" aria-hidden="true"><use href="#icon-door"></use></svg> <span>Iniciar Caso Solo com Bots</span>';
     }
   }
 
@@ -431,7 +431,9 @@
       const chip = document.createElement('div');
       chip.className = `player-chip ${p.is_host ? 'is-host' : ''} ${p.is_bot ? 'is-bot' : ''}`;
       chip.innerHTML = `
-        <span style="font-size: 1.1rem;">${p.is_bot ? '🤖' : '🕵️'}</span>
+        <span class="player-icon" style="display: flex; align-items: center; color: var(--accent-amber);">
+          <svg class="noir-icon" aria-hidden="true"><use href="${p.is_bot ? '#icon-secret' : '#icon-detective'}"></use></svg>
+        </span>
         <div>
           <div style="font-weight: bold; color: var(--text-main);">${escapeHtml(p.name)}</div>
           <div style="font-size: 0.75rem; color: var(--text-muted);">${escapeHtml(p.role || '')}</div>
@@ -497,8 +499,9 @@
       if (castCountLabel) castCountLabel.textContent = `${state.customCast.length} adicionados`;
       castTagsContainer.innerHTML = state.customCast.map((c, idx) => `
         <span class="custom-cast-badge" style="background: rgba(212,163,89,0.18); border: 1px solid var(--accent-amber); color: var(--accent-amber); padding: 0.2rem 0.5rem; border-radius: 12px; font-size: 0.75rem; display: inline-flex; align-items: center; gap: 0.35rem;">
-          ${escapeHtml(c.name)} ${c.is_real ? '👤' : '🎭'}
-          <span style="cursor: pointer; font-weight: bold; margin-left: 2px;" data-remove-cast="${idx}">×</span>
+          <span>${escapeHtml(c.name)}</span>
+          <span style="font-size: 0.68rem; opacity: 0.8;">${c.is_real ? '(Humano)' : '(Perfil IA)'}</span>
+          <span style="cursor: pointer; font-weight: bold; margin-left: 2px;" data-remove-cast="${idx}">&times;</span>
         </span>
       `).join('');
 
@@ -565,7 +568,7 @@
           ]);
         }
         if (el.btnStartGame) {
-          el.btnStartGame.textContent = '🚨 Iniciar Investigação da Sala';
+          el.btnStartGame.innerHTML = '<svg class="noir-icon" aria-hidden="true"><use href="#icon-badge"></use></svg> <span>Iniciar Investigação da Sala</span>';
         }
       });
     }
@@ -603,7 +606,7 @@
           ]);
         }
         if (el.btnStartGame) {
-          el.btnStartGame.textContent = '🚨 Iniciar Investigação da Sala';
+          el.btnStartGame.innerHTML = '<svg class="noir-icon" aria-hidden="true"><use href="#icon-badge"></use></svg> <span>Iniciar Investigação da Sala</span>';
         }
       });
     }
@@ -614,9 +617,9 @@
         if (!state.currentRoom) return;
         const url = `${window.location.origin}/?room=${state.currentRoom.code}`;
         navigator.clipboard.writeText(url).then(() => {
-          el.btnCopyRoomLink.textContent = '✅ Copiado!';
+          el.btnCopyRoomLink.innerHTML = '<svg class="noir-icon" aria-hidden="true"><use href="#icon-folder"></use></svg> <span>Copiado!</span>';
           setTimeout(() => {
-            el.btnCopyRoomLink.textContent = '📋 Copiar Link';
+            el.btnCopyRoomLink.innerHTML = '<svg class="noir-icon" aria-hidden="true"><use href="#icon-folder"></use></svg> <span>Copiar Link</span>';
           }, 1500);
         }).catch(() => {
           prompt('Copie o link da sala:', url);
@@ -745,14 +748,14 @@
 
     if (type === 'time_out') {
       if (el.gameOverTitle) el.gameOverTitle.textContent = 'MADRUGADA ESGOTADA';
-      if (el.gameOverIcon) el.gameOverIcon.textContent = '🕰️';
+      if (el.gameOverIcon) el.gameOverIcon.innerHTML = '<svg class="noir-icon-huge" style="color: var(--accent-amber);" aria-hidden="true"><use href="#icon-clock"></use></svg>';
       if (el.gameOverHeadline) el.gameOverHeadline.textContent = 'O Relógio bateu 04:00 na Mansão';
       if (el.gameOverReason) {
         el.gameOverReason.textContent = 'O prazo fatal estipulado pelo Departamento expirou. A neblina do amanhecer encobriu as pegadas, os arquivos foram selados e o verdadeiro assassino fugiu a bordo do cargueiro noturno.';
       }
     } else {
       if (el.gameOverTitle) el.gameOverTitle.textContent = 'DISTINTIVO CASSADO';
-      if (el.gameOverIcon) el.gameOverIcon.textContent = '🚫';
+      if (el.gameOverIcon) el.gameOverIcon.innerHTML = '<svg class="noir-icon-huge" style="color: var(--accent-crimson);" aria-hidden="true"><use href="#icon-badge"></use></svg>';
       if (el.gameOverHeadline) el.gameOverHeadline.textContent = 'Mandados de Prisão Esgotados';
       if (el.gameOverReason) {
         el.gameOverReason.textContent = 'Você esgotou os mandados judiciais emitindo acusações equivocadas perante o Tribunal. O Magistrado revogou sua credencial forense e o caso foi arquivado como não resolvido.';
@@ -962,23 +965,28 @@
       const res = await api('/api/game/case/' + caseId + '/envelopes');
       if (res && res.envelopes && res.envelopes.length > 0) {
         grid.innerHTML = res.envelopes.map(env => `
-          <div class="kraft-folder" style="background: #e8d7be; border: 2px solid #8c6d46; padding: 0.85rem; border-radius: 4px; box-shadow: 0 4px 10px rgba(0,0,0,0.25);">
-            <div style="font-size: 0.7rem; font-weight: bold; color: #78350f; font-family: var(--font-typewriter); letter-spacing: 1px;">ENVELOPE ${env.envelope_number}</div>
-            <h4 style="font-family: var(--font-typewriter); color: #291c10; font-size: 0.95rem; margin: 0.25rem 0;">${escapeHtml(env.title)}</h4>
-            <p style="font-size: 0.8rem; color: #4a3728; line-height: 1.3; margin-bottom: 0.6rem;">${escapeHtml(env.description)}</p>
-            <button type="button" class="btn btn-secondary btn-inspect-envelope" data-env-id="${env.id}" style="width: 100%; font-size: 0.75rem; padding: 0.35rem; color: #3d2714; border-color: #8c6d46;">Examinar Documentos 🔍</button>
-            <div class="env-content-preview" id="env-content-${env.id}" style="display: none; margin-top: 0.6rem; font-family: monospace; font-size: 0.75rem; background: #fff8ee; padding: 0.6rem; border: 1px solid #c2a782; border-radius: 3px; max-height: 180px; overflow-y: auto; white-space: pre-wrap; color: #291c10;">${escapeHtml(JSON.stringify(env.items || env.content_json, null, 2))}</div>
+          <div class="kraft-folder envelope-string-card" style="position: relative; padding: 0.95rem; border-radius: 4px; box-shadow: 0 4px 10px rgba(0,0,0,0.3);">
+            <div style="font-size: 0.7rem; font-weight: bold; color: var(--accent-gold); font-family: var(--font-typewriter); letter-spacing: 1px;">ENVELOPE LACRADO #${env.envelope_number}</div>
+            <h4 style="font-family: var(--font-typewriter); color: var(--text-main); font-size: 0.95rem; margin: 0.25rem 0;">${escapeHtml(env.title)}</h4>
+            <p style="font-size: 0.8rem; color: var(--text-muted); line-height: 1.35; margin-bottom: 0.6rem;">${escapeHtml(env.description)}</p>
+            <button type="button" class="btn btn-secondary btn-inspect-envelope" data-env-id="${env.id}" style="width: 100%; font-size: 0.78rem; padding: 0.4rem;">
+              <svg class="noir-icon" aria-hidden="true"><use href="#icon-search"></use></svg> <span>Examinar Documentos</span>
+            </button>
+            <div class="env-content-preview" id="env-content-${env.id}" style="display: none; margin-top: 0.6rem; font-family: var(--font-typewriter); font-size: 0.75rem; background: rgba(0,0,0,0.4); padding: 0.6rem; border: 1px solid var(--border-noir); border-radius: 3px; max-height: 180px; overflow-y: auto; white-space: pre-wrap; color: var(--text-main);">${escapeHtml(JSON.stringify(env.items || env.content_json, null, 2))}</div>
           </div>
         `).join('');
 
         grid.querySelectorAll('.btn-inspect-envelope').forEach(btn => {
           btn.addEventListener('click', () => {
+            if (window.NoirAudio) window.NoirAudio.playPaper();
             const id = btn.dataset.envId;
             const preview = document.getElementById('env-content-' + id);
             if (preview) {
               const isHidden = preview.style.display === 'none';
               preview.style.display = isHidden ? 'block' : 'none';
-              btn.textContent = isHidden ? 'Ocultar Documentos ▲' : 'Examinar Documentos 🔍';
+              btn.innerHTML = isHidden 
+                ? '<span>Ocultar Documentos ▲</span>' 
+                : '<svg class="noir-icon" aria-hidden="true"><use href="#icon-search"></use></svg> <span>Examinar Documentos</span>';
             }
           });
         });
@@ -1058,10 +1066,10 @@
       const photoUrl = getSuspectPhotoUrl(suspect);
       const photoHtml = photoUrl
         ? `<img src="${photoUrl}" alt="${escapeHtml(suspect.name)}" class="polaroid-photo-img">`
-        : `<span>🕵️</span>`;
+        : `<svg class="noir-icon-lg" style="color: var(--accent-amber);" aria-hidden="true"><use href="#icon-detective"></use></svg>`;
 
       card.innerHTML = `
-        <div class="pushpin"></div>
+        <div class="polaroid-pin" aria-hidden="true"></div>
         <div class="polaroid-photo-area">
           ${photoHtml}
         </div>
@@ -1074,9 +1082,15 @@
           "${escapeHtml(suspect.alibi || 'Nenhum álibi formal registrado.')}"
         </div>
         <button class="btn btn-primary btn-interrogate" data-id="${suspect.id}" style="width: 100%; margin-top: auto; font-size: 0.85rem; padding: 0.5rem;">
-          Interrogar Suspeito
+          <svg class="noir-icon" aria-hidden="true"><use href="#icon-detective"></use></svg> <span>Interrogar Suspeito</span>
         </button>
       `;
+
+      card.addEventListener('click', (e) => {
+        if (!e.target.closest('.btn-interrogate') && window.NoirAudio && window.NoirAudio.playPin) {
+          window.NoirAudio.playPin();
+        }
+      });
 
       card.querySelector('.btn-interrogate').addEventListener('click', () => {
         openInterrogation(suspect);
@@ -1173,7 +1187,11 @@
 
   function openForensicLoupe(item) {
     if (!el.forensicLoupeModal) return;
-    if (window.NoirAudio) window.NoirAudio.playPaper();
+    if (window.NoirAudio && window.NoirAudio.playLensFocus) {
+      window.NoirAudio.playLensFocus();
+    } else if (window.NoirAudio) {
+      window.NoirAudio.playPaper();
+    }
 
     const name = item.name || 'Evidência Pericial';
     const photoUrl = getCluePhotoUrl(item);
@@ -1207,10 +1225,29 @@
       });
     }
     window.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && el.forensicLoupeModal && el.forensicLoupeModal.classList.contains('active')) {
-        closeForensicLoupe();
+      if (e.key === 'Escape') {
+        if (el.forensicLoupeModal && el.forensicLoupeModal.classList.contains('active')) {
+          closeForensicLoupe();
+        } else if (el.interrogationModal && el.interrogationModal.classList.contains('active')) {
+          closeInterrogation();
+        } else if (el.gameOverModal && el.gameOverModal.classList.contains('active')) {
+          el.gameOverModal.classList.remove('active');
+        } else {
+          const accuseModal = document.getElementById('accuse-modal');
+          if (accuseModal && accuseModal.classList.contains('active')) {
+            accuseModal.classList.remove('active');
+          }
+        }
       }
     });
+
+    const closeAccuseBtn = document.getElementById('close-accuse-modal-btn');
+    if (closeAccuseBtn) {
+      closeAccuseBtn.addEventListener('click', () => {
+        const accuseModal = document.getElementById('accuse-modal');
+        if (accuseModal) accuseModal.classList.remove('active');
+      });
+    }
   }
 
   function renderClues() {
@@ -1224,7 +1261,7 @@
       sceneBannerImg.alt = state.currentCase ? state.currentCase.title : 'Cena do Crime Noir';
     }
     if (sceneBannerCaption && state.currentCase) {
-      sceneBannerCaption.textContent = `📍 ${state.currentCase.title || 'Cena do Crime'} — Fotografia Pericial da Cena do Crime`;
+      sceneBannerCaption.innerHTML = `<svg class="noir-icon" aria-hidden="true"><use href="#icon-pin"></use></svg> <span>${escapeHtml(state.currentCase.title || 'Cena do Crime')} — Fotografia Pericial</span>`;
     }
 
     state.clues.forEach((clue) => {
@@ -1249,7 +1286,7 @@
             <p>${escapeHtml(clue.description)}</p>
           </div>
           <button type="button" class="btn btn-secondary btn-inspect-clue" style="width: 100%; margin-top: 0.75rem; font-size: 0.8rem; padding: 0.4rem;">
-            🔍 Analisar com Lupa Pericial
+            <svg class="noir-icon" aria-hidden="true"><use href="#icon-search"></use></svg> <span>Analisar com Lupa Pericial</span>
           </button>
         </div>
       `;
@@ -1370,7 +1407,7 @@
     (state.clues || []).forEach((clue) => {
       const opt = document.createElement('option');
       opt.value = clue.id;
-      opt.textContent = `🔍 Pista: ${clue.name}`;
+      opt.textContent = `Evidência: ${clue.name}`;
       el.confrontClueSelect.appendChild(opt);
     });
   }
@@ -1467,7 +1504,7 @@
       const avatarWrapper = document.createElement('div');
       avatarWrapper.className = 'chat-avatar-wrapper';
       if (item.sender === 'detective') {
-        avatarWrapper.innerHTML = `<span class="chat-avatar-icon">🕵️</span>`;
+        avatarWrapper.innerHTML = `<svg class="noir-icon" style="color: var(--accent-amber);" aria-hidden="true"><use href="#icon-detective"></use></svg>`;
       } else {
         avatarWrapper.innerHTML = `<img src="${suspectPhoto}" alt="${escapeHtml(state.activeSuspect.name)}" class="chat-avatar-img">`;
       }
@@ -1520,7 +1557,7 @@
       // Add detective message (highlight confrontation if applied)
       let displayedQuestion = question;
       if (confrontClueId && el.confrontClueSelect && el.confrontClueSelect.selectedOptions[0]) {
-        displayedQuestion = `[⚔️ CONFRONTANDO COM: ${el.confrontClueSelect.selectedOptions[0].text}] ${question}`;
+        displayedQuestion = `[CONFRONTO PERICIAL COM ${el.confrontClueSelect.selectedOptions[0].text}] ${question}`;
       }
 
       state.chatHistories[suspectId].push({
@@ -1694,7 +1731,7 @@
         }
       } finally {
         submitBtn.disabled = false;
-        submitBtn.textContent = '⚖️ Emitir Mandado de Prisão';
+        submitBtn.innerHTML = '<svg class="noir-icon" aria-hidden="true"><use href="#icon-scales"></use></svg> <span>Emitir Mandado de Prisão</span>';
       }
     });
   }
@@ -1708,8 +1745,9 @@
 
     el.verdictResult.innerHTML = `
       <div class="${bannerClass}">
-        <h4 style="font-family: var(--font-typewriter); font-size: 1.4rem; margin-bottom: 0.5rem;">
-          ${isCorrect ? '🏆 CASO RESOLVIDO COM LOUVOR!' : '❌ ACUSAÇÃO INCORRETA!'}
+        <h4 style="font-family: var(--font-typewriter); font-size: 1.35rem; margin-bottom: 0.5rem; display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
+          <svg class="noir-icon-lg" style="color: ${isCorrect ? 'var(--accent-green)' : 'var(--accent-crimson)'};" aria-hidden="true"><use href="${isCorrect ? '#icon-badge' : '#icon-skull'}"></use></svg>
+          <span>${isCorrect ? 'CASO RESOLVIDO COM LOUVOR' : 'ACUSAÇÃO INCORRETA — CASO ARQUIVADO'}</span>
         </h4>
         <p style="font-size: 0.95rem; line-height: 1.6;">${escapeHtml(res.message || res.verdict || '')}</p>
       </div>
