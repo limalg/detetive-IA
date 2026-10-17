@@ -253,7 +253,7 @@
         state.currentUser = res.user || { username };
         showAuthAlert('Credenciais verificadas. Acessando quartel...', 'success');
         setTimeout(() => {
-          showLobbyView();
+          showHubView();
         }, 500);
       } catch (err) {
         showAuthAlert(err.message || 'Falha na autenticação de segurança.', 'error');
@@ -505,7 +505,7 @@
       const res = await api('/api/auth/me');
       if (res && res.user) {
         state.currentUser = res.user;
-        showLobbyView();
+        showHubView();
       } else {
         showAuthView();
       }
