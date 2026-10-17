@@ -978,5 +978,72 @@ func TestBancoImobiliarioFrontend(t *testing.T) {
 			t.Errorf("templates/index.html missing Banco Imobiliário snippet: %s", s)
 		}
 	}
+
+	// 2. CSS verification for Emerald Felt and 8x8 perimeter grid
+	cssFile, err := web.Assets.Open("static/css/style.css")
+	if err != nil {
+		t.Fatalf("failed to open static/css/style.css: %v", err)
+	}
+	defer cssFile.Close()
+
+	cssBytes, err := io.ReadAll(cssFile)
+	if err != nil {
+		t.Fatalf("failed to read static/css/style.css: %v", err)
+	}
+	css := string(cssBytes)
+
+	requiredCSS := []string{
+		".banco-board-grid",
+		".tile-pos-0",
+		".tile-pos-27",
+		".banco-tile",
+		".banco-pawn",
+		".banco-die",
+		".banco-center-desk",
+		".banco-action-panel",
+		".banco-hud-container",
+	}
+	for _, rule := range requiredCSS {
+		if !strings.Contains(css, rule) {
+			t.Errorf("static/css/style.css missing Banco Imobiliário rule: %s", rule)
+		}
+	}
+
+	// 3. JS verification for state management, actions & rendering
+	jsFile, err := web.Assets.Open("static/js/app.js")
+	if err != nil {
+		t.Fatalf("failed to open static/js/app.js: %v", err)
+	}
+	defer jsFile.Close()
+
+	jsBytes, err := io.ReadAll(jsFile)
+	if err != nil {
+		t.Fatalf("failed to read static/js/app.js: %v", err)
+	}
+	js := string(jsBytes)
+
+	requiredJS := []string{
+		"startBancoGame(",
+		"rollBancoDice(",
+		"buyBancoProperty(",
+		"buildBancoHouse(",
+		"endBancoTurn(",
+		"renderBancoBoard(",
+		"renderBancoPlayers(",
+		"renderBancoPortfolio(",
+		"setupBancoEvents(",
+		"showBancoView(",
+		"showBancoLobbyView(",
+		"/api/banco/start",
+		"/api/banco/roll",
+		"/api/banco/buy",
+		"/api/banco/build",
+		"/api/banco/end-turn",
+	}
+	for _, snippet := range requiredJS {
+		if !strings.Contains(js, snippet) {
+			t.Errorf("static/js/app.js missing Banco Imobiliário logic: %s", snippet)
+		}
+	}
 }
 

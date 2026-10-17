@@ -21,7 +21,10 @@
     selectedClueIDs: [],
     customCast: [],
     isGameOver: false,
-    deferredPrompt: null
+    deferredPrompt: null,
+    bancoGame: null,
+    bancoMode: 'solo',
+    bancoRolling: false
   };
 
   // DOM Elements
@@ -156,7 +159,54 @@
     gameOverIcon: document.getElementById('game-over-icon'),
     gameOverHeadline: document.getElementById('game-over-headline'),
     gameOverReason: document.getElementById('game-over-reason'),
-    btnRestartGame: document.getElementById('btn-restart-game')
+    btnRestartGame: document.getElementById('btn-restart-game'),
+
+    // Banco Imobiliário IA Elements
+    bancoSection: document.getElementById('banco-section'),
+    bancoLobbySection: document.getElementById('banco-lobby-section'),
+    bancoCustomModal: document.getElementById('banco-custom-modal'),
+    closeBancoCustomBtn: document.getElementById('close-banco-custom-btn'),
+    bancoCustomForm: document.getElementById('banco-custom-form'),
+    bancoCityInput: document.getElementById('banco-city-input'),
+    bancoAgeInput: document.getElementById('banco-age-input'),
+    bancoGradeSelect: document.getElementById('banco-grade-select'),
+    bancoDiffSelect: document.getElementById('banco-diff-select'),
+    bancoBotsSelect: document.getElementById('banco-bots-select'),
+    bancoBalanceSelect: document.getElementById('banco-balance-select'),
+    bancoHumanName: document.getElementById('banco-human-name'),
+    bancoFriendsInput: document.getElementById('banco-friends-input'),
+    btnStartBancoCustom: document.getElementById('btn-start-banco-custom'),
+    btnStartBancoBots: document.getElementById('btn-start-banco-bots'),
+    btnOpenBancoCustom: document.getElementById('btn-open-banco-custom'),
+    btnBancoModeSolo: document.getElementById('btn-banco-mode-solo'),
+    btnBancoModeMulti: document.getElementById('btn-banco-mode-multi'),
+    bancoBotsStartPanel: document.getElementById('banco-bots-start-panel'),
+    bancoMultiPanel: document.getElementById('banco-multi-panel'),
+    btnStartBancoMulti: document.getElementById('btn-start-banco-multi'),
+    btnBancoCopyLink: document.getElementById('btn-banco-copy-link'),
+    btnBancoLobbyHub: document.getElementById('btn-banco-lobby-hub'),
+    btnBancoHub: document.getElementById('btn-banco-hub'),
+    btnBancoRefresh: document.getElementById('btn-banco-refresh'),
+    btnBancoRestart: document.getElementById('btn-banco-restart'),
+    bancoBoardGrid: document.getElementById('banco-board-grid'),
+    bancoCenterDesk: document.getElementById('banco-center-desk'),
+    bancoCityBadge: document.getElementById('banco-city-badge'),
+    bancoRoundBadge: document.getElementById('banco-round-badge'),
+    bancoCurrentPlayerName: document.getElementById('banco-current-player-name'),
+    bancoDie1: document.getElementById('banco-die-1'),
+    bancoDie2: document.getElementById('banco-die-2'),
+    bancoDiceResult: document.getElementById('banco-dice-result'),
+    btnBancoRoll: document.getElementById('btn-banco-roll'),
+    btnBancoBuy: document.getElementById('btn-banco-buy'),
+    btnBancoBuild: document.getElementById('btn-banco-build'),
+    btnBancoEndTurn: document.getElementById('btn-banco-end-turn'),
+    bancoTickerLog: document.getElementById('banco-ticker-log'),
+    bancoUserBalance: document.getElementById('banco-user-balance'),
+    bancoPropCount: document.getElementById('banco-prop-count'),
+    bancoRentTotal: document.getElementById('banco-rent-total'),
+    bancoPropertiesList: document.getElementById('banco-properties-list'),
+    bancoPlayersList: document.getElementById('banco-players-list'),
+    bancoPlayersCount: document.getElementById('banco-players-count')
   };
 
   let authMode = 'login'; // 'login' | 'register'
@@ -338,6 +388,8 @@
     el.authSection.style.display = 'none';
     if (el.lobbySection) el.lobbySection.style.display = 'block';
     el.gameSection.style.display = 'none';
+    if (el.bancoLobbySection) el.bancoLobbySection.style.display = 'none';
+    if (el.bancoSection) el.bancoSection.style.display = 'none';
     if (el.hubSection) el.hubSection.style.display = 'none';
     if (el.btnHubNav) el.btnHubNav.style.display = 'inline-flex';
     if (state.currentUser) {
@@ -355,11 +407,42 @@
     el.authSection.style.display = 'none';
     if (el.lobbySection) el.lobbySection.style.display = 'none';
     el.gameSection.style.display = 'block';
+    if (el.bancoLobbySection) el.bancoLobbySection.style.display = 'none';
+    if (el.bancoSection) el.bancoSection.style.display = 'none';
     if (el.hubSection) el.hubSection.style.display = 'none';
     if (el.btnHubNav) el.btnHubNav.style.display = 'inline-flex';
     const personaTitle = state.persona && state.persona.name ? state.persona.name : (state.currentUser ? state.currentUser.username : 'Investigador');
     el.userDisplay.textContent = `Det. ${personaTitle}`;
     if (el.logoutBtn) el.logoutBtn.style.display = 'inline-flex';
+  }
+
+  function showBancoLobbyView() {
+    el.authSection.style.display = 'none';
+    if (el.lobbySection) el.lobbySection.style.display = 'none';
+    el.gameSection.style.display = 'none';
+    if (el.hubSection) el.hubSection.style.display = 'none';
+    if (el.bancoSection) el.bancoSection.style.display = 'none';
+    if (el.bancoLobbySection) el.bancoLobbySection.style.display = 'block';
+    if (el.btnHubNav) el.btnHubNav.style.display = 'inline-flex';
+    if (state.currentUser) {
+      el.userDisplay.textContent = `${state.currentUser.username}`;
+      if (el.logoutBtn) el.logoutBtn.style.display = 'inline-flex';
+    }
+  }
+
+  function showBancoView() {
+    el.authSection.style.display = 'none';
+    if (el.lobbySection) el.lobbySection.style.display = 'none';
+    el.gameSection.style.display = 'none';
+    if (el.hubSection) el.hubSection.style.display = 'none';
+    if (el.bancoLobbySection) el.bancoLobbySection.style.display = 'none';
+    if (el.bancoSection) el.bancoSection.style.display = 'block';
+    if (el.btnHubNav) el.btnHubNav.style.display = 'inline-flex';
+    if (state.currentUser) {
+      el.userDisplay.textContent = `${state.currentUser.username}`;
+      if (el.logoutBtn) el.logoutBtn.style.display = 'inline-flex';
+    }
+    renderBancoAll();
   }
 
   // =========================================================================
@@ -381,11 +464,12 @@
       id: 'banco-imobiliario-ia',
       title: 'Banco Imobiliário IA',
       subtitle: 'Estratégia Financeira & Negociações com IA',
-      description: 'Negociação de imóveis, leilões e acordos com agentes autônomos de IA.',
+      description: 'Negociação de imóveis, leilões e acordos com agentes autônomos de IA. Tabuleiro dinâmico por cidade!',
       min_players: 2,
       max_players: 4,
       difficulty: 'Avançado',
-      status: 'in_construction',
+      status: 'active',
+      badge: 'Disponível',
       icon: 'building'
     }
   ];
@@ -396,6 +480,8 @@
     el.authSection.style.display = 'none';
     if (el.lobbySection) el.lobbySection.style.display = 'none';
     el.gameSection.style.display = 'none';
+    if (el.bancoLobbySection) el.bancoLobbySection.style.display = 'none';
+    if (el.bancoSection) el.bancoSection.style.display = 'none';
     if (el.hubSection) el.hubSection.style.display = 'block';
     if (el.btnHubNav) el.btnHubNav.style.display = 'none';
     if (state.currentUser) {
@@ -463,6 +549,12 @@
       : '';
 
     if (game.status === 'active') {
+      const isBanco = game.id === 'banco-imobiliario-ia';
+      const mainAction = isBanco ? 'open-banco' : 'open-detective';
+      const mainBtn = isBanco ? '🏛️ Jogar Banco Imobiliário' : 'Investigar / Abrir Dossiê';
+      const subAction = isBanco ? 'open-custom-banco' : 'open-custom-investigation';
+      const subBtn = isBanco ? '⚙️ Personalizar Partida IA' : '🧬 Personalizar Caso com IA';
+
       return `
       <article class="hub-card hub-card-active" data-game-id="${escapeHtml(game.id)}">
         <div class="hub-card-icon">${icon}</div>
@@ -471,8 +563,8 @@
         <p class="hub-card-subtitle">${subtitle}</p>
         <p class="hub-card-desc">${description}</p>
         <div class="hub-card-tags">${playersTag}${difficultyTag}</div>
-        <button type="button" class="hub-card-btn" data-hub-action="open-detective">Investigar / Abrir Dossiê</button>
-        <button type="button" class="hub-card-btn-sub" data-hub-action="open-custom-investigation">🧬 Personalizar Caso com IA</button>
+        <button type="button" class="hub-card-btn" data-hub-action="${mainAction}">${mainBtn}</button>
+        <button type="button" class="hub-card-btn-sub" data-hub-action="${subAction}">${subBtn}</button>
       </article>`;
     }
 
@@ -640,6 +732,15 @@
             if (typeof playStamp === 'function') playStamp();
           } else if (action === 'open-custom-investigation') {
             openCustomInvestigation();
+          } else if (action === 'open-banco') {
+            if (state.bancoGame && state.bancoGame.status !== 'finished') {
+              showBancoView();
+            } else {
+              showBancoLobbyView();
+            }
+            if (typeof playStamp === 'function') playStamp();
+          } else if (action === 'open-custom-banco') {
+            openBancoCustomModal();
           } else if (action === 'open-game-preview') {
             openGamePreview(gameId);
           }
@@ -651,10 +752,18 @@
         const gameId = card.dataset.gameId;
         const game = findHubGame(gameId);
         if (game && game.status === 'active') {
-          if (state.currentCase && !state.isGameOver) {
-            showGameView();
+          if (gameId === 'banco-imobiliario-ia') {
+            if (state.bancoGame && state.bancoGame.status !== 'finished') {
+              showBancoView();
+            } else {
+              showBancoLobbyView();
+            }
           } else {
-            showLobbyView();
+            if (state.currentCase && !state.isGameOver) {
+              showGameView();
+            } else {
+              showLobbyView();
+            }
           }
           if (typeof playStamp === 'function') playStamp();
         } else if (gameId) {
@@ -2172,6 +2281,629 @@
   }
 
   // =========================================================================
+  // Banco Imobiliário IA — Tabletop Engine & Controller
+  // =========================================================================
+
+  const DICE_FACES = ['', '⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
+
+  function openBancoCustomModal() {
+    if (!el.bancoCustomModal) return;
+    el.bancoCustomModal.style.display = 'flex';
+    if (window.NoirAudio && typeof window.NoirAudio.playPaper === 'function') {
+      window.NoirAudio.playPaper();
+    } else if (typeof playPaper === 'function') {
+      playPaper();
+    }
+  }
+
+  function closeBancoCustomModal() {
+    if (!el.bancoCustomModal) return;
+    el.bancoCustomModal.style.display = 'none';
+  }
+
+  function addBancoTickerLog(text, type) {
+    if (!el.bancoTickerLog) return;
+    const entry = document.createElement('div');
+    entry.className = `ticker-entry ${type || 'info'}`;
+    entry.textContent = text;
+    el.bancoTickerLog.prepend(entry);
+    while (el.bancoTickerLog.children.length > 30) {
+      el.bancoTickerLog.removeChild(el.bancoTickerLog.lastChild);
+    }
+  }
+
+  async function startBancoGame(options = {}) {
+    const defaultName = (state.currentUser && state.currentUser.username) ? state.currentUser.username : 'Investidor';
+    const payload = {
+      city: options.city || 'São Paulo',
+      age: parseInt(options.age, 10) || 14,
+      school_grade: options.school_grade || 'medio',
+      difficulty: options.difficulty || 'Médio',
+      bots_count: typeof options.bots_count === 'number' ? options.bots_count : 3,
+      starting_balance: parseInt(options.starting_balance, 10) || 1500,
+      human_name: options.human_name || defaultName,
+      friends: Array.isArray(options.friends) ? options.friends : []
+    };
+
+    try {
+      const data = await api('/api/banco/start', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+
+      if (data && data.state) {
+        state.bancoGame = data.state;
+        closeBancoCustomModal();
+        showBancoView();
+        addBancoTickerLog(`🏛️ Partida de Banco Imobiliário IA iniciada em ${data.state.city}!`, 'info');
+        if (window.NoirAudio && typeof window.NoirAudio.playStamp === 'function') {
+          window.NoirAudio.playStamp();
+        } else if (typeof playStamp === 'function') {
+          playStamp();
+        }
+      }
+    } catch (err) {
+      alert(`Erro ao iniciar Banco Imobiliário: ${err.message || err}`);
+    }
+  }
+
+  async function fetchBancoState(gameId) {
+    try {
+      const query = gameId ? `?game_id=${encodeURIComponent(gameId)}` : '';
+      const data = await api(`/api/banco/state${query}`);
+      if (data && data.id) {
+        state.bancoGame = data;
+        renderBancoAll();
+      }
+    } catch (_) {
+      // Game not found
+    }
+  }
+
+  async function rollBancoDice() {
+    if (!state.bancoGame || state.bancoRolling) return;
+    state.bancoRolling = true;
+
+    if (el.bancoDie1) el.bancoDie1.classList.add('rolling');
+    if (el.bancoDie2) el.bancoDie2.classList.add('rolling');
+    if (el.btnBancoRoll) el.btnBancoRoll.disabled = true;
+
+    if (window.NoirAudio && typeof window.NoirAudio.playPaper === 'function') {
+      window.NoirAudio.playPaper();
+    } else if (typeof playPaper === 'function') {
+      playPaper();
+    }
+
+    try {
+      const res = await api('/api/banco/roll', {
+        method: 'POST',
+        body: JSON.stringify({ game_id: state.bancoGame.id })
+      });
+
+      setTimeout(() => {
+        if (el.bancoDie1) el.bancoDie1.classList.remove('rolling');
+        if (el.bancoDie2) el.bancoDie2.classList.remove('rolling');
+        state.bancoRolling = false;
+
+        if (res && res.dice) {
+          if (el.bancoDie1) el.bancoDie1.textContent = DICE_FACES[res.dice[0]] || res.dice[0];
+          if (el.bancoDie2) el.bancoDie2.textContent = DICE_FACES[res.dice[1]] || res.dice[1];
+          const doubleMsg = res.is_double ? ' 🎲 DUPLO!' : '';
+          if (el.bancoDiceResult) {
+            el.bancoDiceResult.textContent = `Dados: ${res.dice[0]} + ${res.dice[1]} = ${res.total}${doubleMsg}`;
+          }
+          if (res.event_log) {
+            addBancoTickerLog(res.event_log, res.rent_paid > 0 ? 'rent' : 'info');
+          }
+          if (res.state) {
+            state.bancoGame = res.state;
+          }
+          renderBancoAll();
+
+          if (window.NoirAudio && typeof window.NoirAudio.playTypewriter === 'function') {
+            window.NoirAudio.playTypewriter();
+          } else if (typeof playTypewriter === 'function') {
+            playTypewriter();
+          }
+        }
+      }, 400);
+    } catch (err) {
+      state.bancoRolling = false;
+      if (el.bancoDie1) el.bancoDie1.classList.remove('rolling');
+      if (el.bancoDie2) el.bancoDie2.classList.remove('rolling');
+      alert(`Erro ao rolar dados: ${err.message || err}`);
+      renderBancoAll();
+    }
+  }
+
+  async function buyBancoProperty() {
+    if (!state.bancoGame) return;
+    try {
+      const res = await api('/api/banco/buy', {
+        method: 'POST',
+        body: JSON.stringify({ game_id: state.bancoGame.id })
+      });
+      if (res && res.state) {
+        state.bancoGame = res.state;
+        addBancoTickerLog(`💰 Você adquiriu o imóvel!`, 'buy');
+        if (window.NoirAudio && typeof window.NoirAudio.playPaper === 'function') {
+          window.NoirAudio.playPaper();
+        } else if (typeof playPaper === 'function') {
+          playPaper();
+        }
+        renderBancoAll();
+      }
+    } catch (err) {
+      alert(`Erro na compra: ${err.message || err}`);
+    }
+  }
+
+  async function buildBancoHouse() {
+    if (!state.bancoGame) return;
+    const human = state.bancoGame.players.find(p => !p.is_bot) || state.bancoGame.players[0];
+    if (!human || !human.properties || human.properties.length === 0) {
+      alert('Você ainda não possui propriedades para construir.');
+      return;
+    }
+    const eligibleTile = state.bancoGame.board.find(t => t.owner_id === human.id && !t.hotel && t.type === 'PROPERTY');
+    if (!eligibleTile) {
+      alert('Nenhum imóvel elegível para construção no momento (necessário possuir todas as cores do grupo).');
+      return;
+    }
+
+    try {
+      const res = await api('/api/banco/build', {
+        method: 'POST',
+        body: JSON.stringify({ game_id: state.bancoGame.id, tile_pos: eligibleTile.position })
+      });
+      if (res && res.state) {
+        state.bancoGame = res.state;
+        addBancoTickerLog(`🏗️ Construção erguida em ${eligibleTile.name}!`, 'buy');
+        if (window.NoirAudio && typeof window.NoirAudio.playStamp === 'function') {
+          window.NoirAudio.playStamp();
+        } else if (typeof playStamp === 'function') {
+          playStamp();
+        }
+        renderBancoAll();
+      }
+    } catch (err) {
+      alert(`Não foi possível construir: ${err.message || err}`);
+    }
+  }
+
+  async function endBancoTurn() {
+    if (!state.bancoGame) return;
+    try {
+      const res = await api('/api/banco/end-turn', {
+        method: 'POST',
+        body: JSON.stringify({ game_id: state.bancoGame.id })
+      });
+
+      if (res) {
+        if (Array.isArray(res.bot_actions)) {
+          res.bot_actions.forEach(action => {
+            addBancoTickerLog(action, 'info');
+          });
+        }
+        if (res.state) {
+          state.bancoGame = res.state;
+        }
+        if (window.NoirAudio && typeof window.NoirAudio.playTypewriter === 'function') {
+          window.NoirAudio.playTypewriter();
+        } else if (typeof playTypewriter === 'function') {
+          playTypewriter();
+        }
+        renderBancoAll();
+      }
+    } catch (err) {
+      alert(`Erro ao passar a vez: ${err.message || err}`);
+    }
+  }
+
+  function renderBancoBoard() {
+    if (!el.bancoBoardGrid || !state.bancoGame || !Array.isArray(state.bancoGame.board)) return;
+    const board = state.bancoGame.board;
+    const players = state.bancoGame.players || [];
+
+    // Remove existing tile divs (keep center desk)
+    const existingTiles = el.bancoBoardGrid.querySelectorAll('.banco-tile');
+    existingTiles.forEach(t => t.remove());
+
+    board.forEach(tile => {
+      const tileEl = document.createElement('div');
+      const isCorner = [0, 7, 14, 21].includes(tile.position);
+      tileEl.className = `banco-tile tile-pos-${tile.position}${isCorner ? ' corner' : ''}`;
+      tileEl.dataset.position = tile.position;
+
+      // Find players on this tile
+      const playersHere = players.filter(p => p.position === tile.position && !p.bankrupt);
+      const pawnsHtml = playersHere.map(p => {
+        const isTurn = p.id === state.bancoGame.current_turn;
+        const glow = isTurn ? 'box-shadow: 0 0 8px #d4af37; transform: scale(1.15);' : `box-shadow: 0 0 4px ${p.color};`;
+        return `<span class="banco-pawn" style="border-color: ${p.color}; ${glow}" title="${escapeHtml(p.name)}">${p.avatar}</span>`;
+      }).join('');
+
+      // Color group strip
+      let barHtml = '';
+      if (tile.group && tile.group !== 'special') {
+        barHtml = `<div class="banco-tile-bar bar-${tile.group}"></div>`;
+      }
+
+      // Houses or Hotel
+      let houseIndicator = '';
+      if (tile.hotel) {
+        houseIndicator = '<div class="banco-tile-houses">🏨 Hotel</div>';
+      } else if (tile.houses > 0) {
+        houseIndicator = `<div class="banco-tile-houses">🏠x${tile.houses}</div>`;
+      }
+
+      // Owner styling
+      if (tile.owner_id > 0) {
+        const owner = players.find(p => p.id === tile.owner_id);
+        if (owner) {
+          tileEl.style.borderColor = owner.color;
+          tileEl.style.boxShadow = `inset 0 0 6px ${owner.color}`;
+        }
+      }
+
+      let priceHtml = '';
+      if (tile.price > 0 && tile.type !== 'TAX') {
+        priceHtml = `<span class="banco-tile-price">R$ ${tile.price}</span>`;
+      } else if (tile.type === 'TAX') {
+        priceHtml = `<span class="banco-tile-price" style="color:#d32f2f;">Taxa R$ ${tile.price}</span>`;
+      } else if (tile.position === 0) {
+        priceHtml = `<span class="banco-tile-price" style="color:#1b5e20;">+R$ 200</span>`;
+      }
+
+      tileEl.innerHTML = `
+        ${barHtml}
+        <div class="banco-tile-content">
+          <div class="banco-tile-name" title="${escapeHtml(tile.name)}">${escapeHtml(tile.name)}</div>
+          ${houseIndicator}
+          ${priceHtml}
+        </div>
+        <div class="banco-tile-pawns">${pawnsHtml}</div>
+      `;
+
+      el.bancoBoardGrid.appendChild(tileEl);
+    });
+  }
+
+  function renderBancoPlayers() {
+    if (!el.bancoPlayersList || !state.bancoGame) return;
+    const players = state.bancoGame.players || [];
+    if (el.bancoPlayersCount) {
+      el.bancoPlayersCount.textContent = `${players.length} Jogadores`;
+    }
+
+    el.bancoPlayersList.innerHTML = players.map(p => {
+      const isTurn = p.id === state.bancoGame.current_turn;
+      const posTile = (state.bancoGame.board && state.bancoGame.board[p.position]) ? state.bancoGame.board[p.position].name : `Casa ${p.position}`;
+      let statusHtml = '';
+      if (p.bankrupt) {
+        statusHtml = '<span class="banco-player-status" style="color:#999;">Falência</span>';
+      } else if (p.in_jail) {
+        statusHtml = '<span class="banco-player-status jail">🔒 Prisão</span>';
+      }
+
+      return `
+        <div class="banco-player-row ${isTurn ? 'current-turn' : ''} ${p.bankrupt ? 'bankrupt' : ''}">
+          <div class="banco-player-info">
+            <span class="banco-player-avatar">${p.avatar}</span>
+            <div>
+              <div class="banco-player-name" style="color: ${p.color};">
+                ${escapeHtml(p.name)}
+                ${p.is_bot ? '<span class="banco-player-bot-tag">IA</span>' : ''}
+              </div>
+              <div style="font-size: 0.68rem; color: var(--text-muted);">${escapeHtml(posTile)}</div>
+            </div>
+          </div>
+          <div class="banco-player-stats">
+            ${statusHtml}
+            <span class="banco-player-balance">R$ ${p.balance}</span>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function renderBancoPortfolio() {
+    if (!state.bancoGame) return;
+    const human = state.bancoGame.players.find(p => !p.is_bot) || state.bancoGame.players[0];
+    if (!human) return;
+
+    if (el.bancoUserBalance) {
+      el.bancoUserBalance.textContent = `R$ ${human.balance}`;
+    }
+
+    const ownedTiles = (state.bancoGame.board || []).filter(t => t.owner_id === human.id);
+    if (el.bancoPropCount) {
+      el.bancoPropCount.textContent = ownedTiles.length;
+    }
+
+    let estimatedRent = 0;
+    ownedTiles.forEach(t => {
+      if (t.hotel && t.rent_house && t.rent_house[4]) {
+        estimatedRent += t.rent_house[4];
+      } else if (t.houses > 0 && t.rent_house && t.rent_house[t.houses - 1]) {
+        estimatedRent += t.rent_house[t.houses - 1];
+      } else {
+        estimatedRent += t.rent_base;
+      }
+    });
+
+    if (el.bancoRentTotal) {
+      el.bancoRentTotal.textContent = `R$ ${estimatedRent}`;
+    }
+
+    if (el.bancoPropertiesList) {
+      if (ownedTiles.length === 0) {
+        el.bancoPropertiesList.innerHTML = '<span class="empty-hint" style="font-size:0.75rem; color:var(--text-muted);">Nenhuma propriedade adquirida ainda.</span>';
+      } else {
+        el.bancoPropertiesList.innerHTML = ownedTiles.map(t => {
+          return `
+            <div class="banco-prop-pill">
+              <span class="banco-prop-color-dot bar-${t.group}"></span>
+              <span>${escapeHtml(t.name)}</span>
+              <span style="font-size:0.65rem; color:#52c41a;">(R$ ${t.rent_base})</span>
+            </div>
+          `;
+        }).join('');
+      }
+    }
+  }
+
+  function updateBancoControls() {
+    if (!state.bancoGame) return;
+    const currentTurnID = state.bancoGame.current_turn;
+    const currentPlayer = state.bancoGame.players.find(p => p.id === currentTurnID);
+    const isHumanTurn = currentPlayer && !currentPlayer.is_bot;
+
+    if (el.bancoCityBadge) el.bancoCityBadge.textContent = `🏙️ ${state.bancoGame.city || 'São Paulo'}`;
+    if (el.bancoRoundBadge) el.bancoRoundBadge.textContent = `Rodada ${state.bancoGame.round || 1}`;
+
+    if (el.bancoCurrentPlayerName && currentPlayer) {
+      el.bancoCurrentPlayerName.innerHTML = `${currentPlayer.avatar} ${escapeHtml(currentPlayer.name)} ${isHumanTurn ? '(Você)' : '(Bot IA)'}`;
+      el.bancoCurrentPlayerName.style.color = currentPlayer.color;
+    }
+
+    if (el.btnBancoRoll) {
+      el.btnBancoRoll.disabled = !isHumanTurn || !state.bancoGame.can_roll || state.bancoRolling;
+    }
+
+    if (el.btnBancoBuy) {
+      el.btnBancoBuy.disabled = !isHumanTurn || !state.bancoGame.can_buy;
+    }
+
+    if (el.btnBancoEndTurn) {
+      el.btnBancoEndTurn.disabled = !isHumanTurn || !state.bancoGame.can_end_turn;
+    }
+
+    if (el.btnBancoBuild) {
+      const human = state.bancoGame.players.find(p => !p.is_bot) || state.bancoGame.players[0];
+      const hasBuildable = human && (state.bancoGame.board || []).some(t => t.owner_id === human.id && !t.hotel && t.type === 'PROPERTY');
+      el.btnBancoBuild.disabled = !isHumanTurn || !hasBuildable;
+    }
+  }
+
+  function renderBancoAll() {
+    renderBancoBoard();
+    renderBancoPlayers();
+    renderBancoPortfolio();
+    updateBancoControls();
+  }
+
+  function setupBancoEvents() {
+    // Mode toggles in Banco Lobby
+    if (el.btnBancoModeSolo) {
+      el.btnBancoModeSolo.addEventListener('click', () => {
+        state.bancoMode = 'solo';
+        el.btnBancoModeSolo.classList.add('active');
+        if (el.btnBancoModeMulti) el.btnBancoModeMulti.classList.remove('active');
+        if (el.bancoBotsStartPanel) el.bancoBotsStartPanel.style.display = 'block';
+        if (el.bancoMultiPanel) el.bancoMultiPanel.style.display = 'none';
+        if (window.NoirAudio && typeof window.NoirAudio.playPaper === 'function') {
+          window.NoirAudio.playPaper();
+        } else if (typeof playPaper === 'function') {
+          playPaper();
+        }
+      });
+    }
+
+    if (el.btnBancoModeMulti) {
+      el.btnBancoModeMulti.addEventListener('click', () => {
+        state.bancoMode = 'multi';
+        el.btnBancoModeMulti.classList.add('active');
+        if (el.btnBancoModeSolo) el.btnBancoModeSolo.classList.remove('active');
+        if (el.bancoBotsStartPanel) el.bancoBotsStartPanel.style.display = 'none';
+        if (el.bancoMultiPanel) el.bancoMultiPanel.style.display = 'block';
+        if (window.NoirAudio && typeof window.NoirAudio.playPaper === 'function') {
+          window.NoirAudio.playPaper();
+        } else if (typeof playPaper === 'function') {
+          playPaper();
+        }
+      });
+    }
+
+    // Quick start with bots button
+    if (el.btnStartBancoBots) {
+      el.btnStartBancoBots.addEventListener('click', () => {
+        startBancoGame({
+          city: 'São Paulo',
+          difficulty: 'Médio',
+          bots_count: 3,
+          starting_balance: 1500
+        });
+      });
+    }
+
+    // Open custom modal from lobby
+    if (el.btnOpenBancoCustom) {
+      el.btnOpenBancoCustom.addEventListener('click', openBancoCustomModal);
+    }
+
+    if (el.closeBancoCustomBtn) {
+      el.closeBancoCustomBtn.addEventListener('click', closeBancoCustomModal);
+    }
+
+    if (el.bancoCustomModal) {
+      el.bancoCustomModal.addEventListener('click', (e) => {
+        if (e.target === el.bancoCustomModal) closeBancoCustomModal();
+      });
+    }
+
+    // City quick chips in custom modal
+    document.querySelectorAll('.banco-city-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        document.querySelectorAll('.banco-city-chip').forEach(c => c.classList.remove('active'));
+        chip.classList.add('active');
+        if (el.bancoCityInput) {
+          el.bancoCityInput.value = chip.dataset.city || 'São Paulo';
+        }
+        if (window.NoirAudio && typeof window.NoirAudio.playPaper === 'function') {
+          window.NoirAudio.playPaper();
+        } else if (typeof playPaper === 'function') {
+          playPaper();
+        }
+      });
+    });
+
+    // Custom form submit
+    if (el.bancoCustomForm) {
+      el.bancoCustomForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const city = el.bancoCityInput ? el.bancoCityInput.value.trim() : 'São Paulo';
+        const age = el.bancoAgeInput ? el.bancoAgeInput.value : '14';
+        const school_grade = el.bancoGradeSelect ? el.bancoGradeSelect.value : 'medio';
+        const difficulty = el.bancoDiffSelect ? el.bancoDiffSelect.value : 'Médio';
+        const bots_count = el.bancoBotsSelect ? parseInt(el.bancoBotsSelect.value, 10) : 3;
+        const starting_balance = el.bancoBalanceSelect ? parseInt(el.bancoBalanceSelect.value, 10) : 1500;
+        const human_name = el.bancoHumanName ? el.bancoHumanName.value.trim() : '';
+        const friendsStr = el.bancoFriendsInput ? el.bancoFriendsInput.value.trim() : '';
+        const friends = friendsStr ? friendsStr.split(',').map(s => s.trim()).filter(Boolean) : [];
+
+        startBancoGame({
+          city,
+          age,
+          school_grade,
+          difficulty,
+          bots_count,
+          starting_balance,
+          human_name,
+          friends
+        });
+      });
+    }
+
+    // Copy Invite link in multi mode
+    if (el.btnBancoCopyLink) {
+      el.btnBancoCopyLink.addEventListener('click', () => {
+        const url = `${window.location.origin}/?banco_room=BANCO-IA`;
+        navigator.clipboard.writeText(url).then(() => {
+          if (window.NoirAudio && typeof window.NoirAudio.playPaper === 'function') {
+            window.NoirAudio.playPaper();
+          } else if (typeof playPaper === 'function') {
+            playPaper();
+          }
+          el.btnBancoCopyLink.textContent = '✅ Link Copiado!';
+          setTimeout(() => {
+            el.btnBancoCopyLink.textContent = '📋 Copiar Link de Convite';
+          }, 2500);
+        });
+      });
+    }
+
+    if (el.btnStartBancoMulti) {
+      el.btnStartBancoMulti.addEventListener('click', () => {
+        startBancoGame({
+          city: 'Rio de Janeiro',
+          difficulty: 'Médio',
+          bots_count: 1,
+          starting_balance: 1500
+        });
+      });
+    }
+
+    // Navigation back to Hub
+    if (el.btnBancoLobbyHub) {
+      el.btnBancoLobbyHub.addEventListener('click', () => {
+        if (window.NoirAudio && typeof window.NoirAudio.playStamp === 'function') {
+          window.NoirAudio.playStamp();
+        } else if (typeof playStamp === 'function') {
+          playStamp();
+        }
+        showHubView();
+      });
+    }
+
+    if (el.btnBancoHub) {
+      el.btnBancoHub.addEventListener('click', () => {
+        if (window.NoirAudio && typeof window.NoirAudio.playStamp === 'function') {
+          window.NoirAudio.playStamp();
+        } else if (typeof playStamp === 'function') {
+          playStamp();
+        }
+        showHubView();
+      });
+    }
+
+    if (el.btnBancoRefresh) {
+      el.btnBancoRefresh.addEventListener('click', () => {
+        if (state.bancoGame) {
+          fetchBancoState(state.bancoGame.id);
+          if (window.NoirAudio && typeof window.NoirAudio.playTypewriter === 'function') {
+            window.NoirAudio.playTypewriter();
+          } else if (typeof playTypewriter === 'function') {
+            playTypewriter();
+          }
+        }
+      });
+    }
+
+    if (el.btnBancoRestart) {
+      el.btnBancoRestart.addEventListener('click', () => {
+        if (confirm('Deseja iniciar uma nova partida de Banco Imobiliário?')) {
+          state.bancoGame = null;
+          showBancoLobbyView();
+          if (window.NoirAudio && typeof window.NoirAudio.playPaper === 'function') {
+            window.NoirAudio.playPaper();
+          } else if (typeof playPaper === 'function') {
+            playPaper();
+          }
+        }
+      });
+    }
+
+    // Board action buttons
+    if (el.btnBancoRoll) {
+      el.btnBancoRoll.addEventListener('click', rollBancoDice);
+    }
+
+    if (el.btnBancoBuy) {
+      el.btnBancoBuy.addEventListener('click', buyBancoProperty);
+    }
+
+    if (el.btnBancoBuild) {
+      el.btnBancoBuild.addEventListener('click', buildBancoHouse);
+    }
+
+    if (el.btnBancoEndTurn) {
+      el.btnBancoEndTurn.addEventListener('click', endBancoTurn);
+    }
+  }
+
+  async function checkActiveBancoGame() {
+    try {
+      const data = await api('/api/banco/state');
+      if (data && data.id && data.status !== 'finished') {
+        state.bancoGame = data;
+      }
+    } catch (_) {
+      // No active game
+    }
+  }
+
+  // =========================================================================
   // App Initialization
   // =========================================================================
   function init() {
@@ -2179,6 +2911,7 @@
     setupAuthEvents();
     setupLobbyEvents();
     setupHubEvents();
+    setupBancoEvents();
     setupNavEvents();
     setupLoupeEvents();
     setupInterrogationEvents();
@@ -2187,6 +2920,7 @@
     updateNightClock(420);
     updateWarrantsBadge(2);
     checkActiveSession();
+    checkActiveBancoGame();
   }
 
   if (document.readyState === 'loading') {
