@@ -301,10 +301,7 @@ func (h *Handler) HandleStartSoloGame(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req struct {
-		ThemeID      string `json:"theme_id"`
-		SuspectCount int    `json:"suspect_count"`
-	}
+	var req models.CustomInvestigationParams
 	if r.Body != nil {
 		_ = json.NewDecoder(r.Body).Decode(&req)
 	}
@@ -314,11 +311,20 @@ func (h *Handler) HandleStartSoloGame(w http.ResponseWriter, r *http.Request) {
 		userID = user.ID
 	}
 
-	details, inv, err := h.cfg.GameService.StartSoloGame(userID, req.ThemeID, req.SuspectCount)
+	var details *models.CaseDetails
+	var inv *models.Investigation
+	var err error
+
+	if req.City != "" || len(req.Friends) > 0 || req.Difficulty != "" || req.FocusSubject != "" || req.SchoolGrade != "" || req.Tone != "" || req.WeatherEra != "" {
+		details, inv, err = h.cfg.GameService.StartCustomInvestigation(userID, req)
+	} else {
+		details, inv, err = h.cfg.GameService.StartSoloGame(userID, req.ThemeID, req.SuspectCount)
+	}
 	if err != nil {
 		h.error(w, http.StatusInternalServerError, "failed to start solo game: "+err.Error())
 		return
 	}
+
 
 	// Sanitize output so players cannot cheat via inspector
 	publicCase := map[string]interface{}{

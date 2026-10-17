@@ -287,6 +287,54 @@ func (w *Weaver) WeaveCase(players []room.Player) (*WeaverResult, error) {
 
 // WeaveCaseWithTheme procedurally constructs a murder mystery for the chosen theme and suspect count.
 func (w *Weaver) WeaveCaseWithTheme(players []room.Player, themeID string, suspectCount int) (*WeaverResult, error) {
+	return w.WeaveCaseWithThemeAndCustomParams(players, themeID, suspectCount, nil)
+}
+
+// WeaveCustomCase procedurally constructs a murder mystery tailored to custom dimensions.
+func (w *Weaver) WeaveCustomCase(params models.CustomInvestigationParams) (*WeaverResult, error) {
+	themeID := params.Theme
+	if themeID == "" {
+		themeID = params.ThemeID
+	}
+	if themeID == "" {
+		themeID = "mansion"
+	}
+
+	suspectCount := params.SuspectCount
+	if suspectCount <= 0 {
+		suspectCount = 4
+	}
+	if len(params.Friends) > suspectCount {
+		suspectCount = len(params.Friends)
+	}
+
+	var players []room.Player
+	for i, friend := range params.Friends {
+		friend = strings.TrimSpace(friend)
+		if friend == "" {
+			continue
+		}
+		role := "Convidado & Amigo Próximo"
+		if params.SchoolGrade != "" {
+			role = fmt.Sprintf("Colega da Turma %s", params.SchoolGrade)
+		} else if params.FocusSubject != "" {
+			role = fmt.Sprintf("Estudante de %s", params.FocusSubject)
+		}
+		players = append(players, room.Player{
+			ID:          int64(1000 + i),
+			Username:    friend,
+			PersonaName: friend,
+			Role:        role,
+			Secret:      "Guardava anotações confidenciais sobre os acontecimentos recentes.",
+			IsBot:       false,
+		})
+	}
+
+	return w.WeaveCaseWithThemeAndCustomParams(players, themeID, suspectCount, &params)
+}
+
+// WeaveCaseWithThemeAndCustomParams builds a case with theme, player pool and optional custom parameters.
+func (w *Weaver) WeaveCaseWithThemeAndCustomParams(players []room.Player, themeID string, suspectCount int, params *models.CustomInvestigationParams) (*WeaverResult, error) {
 	if suspectCount <= 0 {
 		suspectCount = 4
 	} else if suspectCount < 3 {
@@ -296,6 +344,7 @@ func (w *Weaver) WeaveCaseWithTheme(players []room.Player, themeID string, suspe
 	}
 
 	theme := getTheme(themeID)
+
 
 	// 1. Fill suspect pool with players and bots up to suspectCount
 	suspectPool := make([]WeaverSuspect, 0, suspectCount)
@@ -396,6 +445,26 @@ func (w *Weaver) WeaveCaseWithTheme(players []room.Player, themeID string, suspe
 	caseTitle := theme.title
 	caseDesc := fmt.Sprintf(theme.caseDescFormat, victimName, len(suspectPool))
 
+	if params != nil {
+		if params.City != "" {
+			caseTitle = fmt.Sprintf("%s em %s", theme.title, params.City)
+			caseDesc = fmt.Sprintf("Na cidade de %s, %s", params.City, caseDesc)
+			theme.crimeScene = fmt.Sprintf("%s, %s", theme.crimeScene, params.City)
+		}
+		if params.FocusSubject != "" {
+			caseDesc += fmt.Sprintf(" O enigma envolve conhecimentos de %s.", params.FocusSubject)
+		}
+		if params.SchoolGrade != "" {
+			caseDesc += fmt.Sprintf(" Investigação adaptada para a turma do %s.", params.SchoolGrade)
+		}
+		if params.Tone != "" {
+			caseDesc += fmt.Sprintf(" Tom investigativo: %s.", params.Tone)
+		}
+		if params.WeatherEra != "" {
+			caseDesc += fmt.Sprintf(" Época e clima: %s.", params.WeatherEra)
+		}
+	}
+
 	// 5. Persist Case in SQLite
 	var caseID int64
 	if w.db != nil {
@@ -468,6 +537,20 @@ func (w *Weaver) WeaveCaseWithTheme(players []room.Player, themeID string, suspe
 			Description: theme.atmosDesc,
 		},
 	}
+
+	if params != nil && params.FocusSubject != "" {
+		loc := "Sala de Estudos e Arquivos"
+		if params.City != "" {
+			loc = fmt.Sprintf("Gabinete em %s", params.City)
+		}
+		cluesToInsert = append(cluesToInsert, models.Clue{
+			CaseID:      caseID,
+			Location:    loc,
+			Name:        fmt.Sprintf("Anotações de %s", params.FocusSubject),
+			Description: fmt.Sprintf("Documento acadêmico com fundamentos e fórmulas de %s analisado pelos peritos.", params.FocusSubject),
+		})
+	}
+
 
 	savedClues := make([]models.Clue, len(cluesToInsert))
 	for i, c := range cluesToInsert {

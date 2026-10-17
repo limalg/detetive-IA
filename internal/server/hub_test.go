@@ -28,18 +28,19 @@ func TestGetHubGames_Success(t *testing.T) {
 
 	var res struct {
 		Games []struct {
-			ID          string `json:"id"`
-			Title       string `json:"title"`
-			Subtitle    string `json:"subtitle"`
-			Description string `json:"description"`
-			Genre       string `json:"genre"`
-			MinPlayers  int    `json:"min_players"`
-			MaxPlayers  int    `json:"max_players"`
-			Difficulty  string `json:"difficulty"`
-			Status      string `json:"status"`
-			Badge       string `json:"badge"`
-			Route       string `json:"route"`
-			Icon        string `json:"icon"`
+			ID                 string   `json:"id"`
+			Title              string   `json:"title"`
+			Subtitle           string   `json:"subtitle"`
+			Description        string   `json:"description"`
+			Genre              string   `json:"genre"`
+			MinPlayers         int      `json:"min_players"`
+			MaxPlayers         int      `json:"max_players"`
+			Difficulty         string   `json:"difficulty"`
+			Status             string   `json:"status"`
+			Badge              string   `json:"badge"`
+			Route              string   `json:"route"`
+			Icon               string   `json:"icon"`
+			CustomizableFields []string `json:"customizable_fields"`
 		} `json:"games"`
 	}
 
@@ -47,60 +48,74 @@ func TestGetHubGames_Success(t *testing.T) {
 		t.Fatalf("failed to decode JSON response: %v", err)
 	}
 
-	if len(res.Games) < 2 {
-		t.Fatalf("expected at least 2 games in hub catalog, got %d", len(res.Games))
+	if len(res.Games) != 8 {
+		t.Fatalf("expected 8 games in hub catalog, got %d", len(res.Games))
 	}
 
-	// Validate Detetive IA
-	var detetiveFound bool
-	for _, g := range res.Games {
-		if g.ID == "detetive-ia" {
-			detetiveFound = true
-			if g.Status != "active" {
-				t.Errorf("expected detetive-ia status 'active', got %q", g.Status)
-			}
-			if g.Badge != "Disponível" {
-				t.Errorf("expected detetive-ia badge 'Disponível', got %q", g.Badge)
-			}
-			if g.MinPlayers != 1 || g.MaxPlayers != 6 {
-				t.Errorf("expected players 1-6 for detetive-ia, got %d-%d", g.MinPlayers, g.MaxPlayers)
-			}
-			if g.Route != "/" {
-				t.Errorf("expected detetive-ia route '/', got %q", g.Route)
-			}
-			if g.Title != "Detetive IA" {
-				t.Errorf("expected detetive-ia title 'Detetive IA', got %q", g.Title)
-			}
-		}
-	}
-	if !detetiveFound {
-		t.Errorf("detetive-ia not found in hub games")
+	expectedGames := map[string]struct {
+		status string
+		badge  string
+		route  string
+		icon   string
+	}{
+		"detetive-ia":         {status: "active", badge: "Disponível", route: "/", icon: "search"},
+		"banco-imobiliario-ia": {status: "in_construction", badge: "Em Construção", route: "/banco-imobiliario", icon: "building"},
+		"codenames-ia":        {status: "in_construction", badge: "Em Construção", route: "/codenames", icon: "grid"},
+		"dixit-ia":            {status: "in_construction", badge: "Em Construção", route: "/dixit", icon: "image"},
+		"tabu-ia":             {status: "in_construction", badge: "Em Construção", route: "/tabu", icon: "slash"},
+		"adivinhe-quem-ia":    {status: "in_construction", badge: "Em Construção", route: "/adivinhe-quem", icon: "users"},
+		"ticket-to-ride-ia":   {status: "in_construction", badge: "Em Construção", route: "/ticket-to-ride", icon: "compass"},
+		"story-cubes-ia":      {status: "in_construction", badge: "Em Construção", route: "/story-cubes", icon: "box"},
 	}
 
-	// Validate Banco Imobiliário IA
-	var bancoFound bool
+	gamesByID := make(map[string]struct {
+		status             string
+		badge              string
+		route              string
+		icon               string
+		customizableFields []string
+	})
+
 	for _, g := range res.Games {
-		if g.ID == "banco-imobiliario-ia" {
-			bancoFound = true
-			if g.Status != "in_construction" {
-				t.Errorf("expected banco-imobiliario-ia status 'in_construction', got %q", g.Status)
-			}
-			if g.Badge != "Em Construção" {
-				t.Errorf("expected banco-imobiliario-ia badge 'Em Construção', got %q", g.Badge)
-			}
-			if g.MinPlayers != 2 || g.MaxPlayers != 4 {
-				t.Errorf("expected players 2-4 for banco-imobiliario-ia, got %d-%d", g.MinPlayers, g.MaxPlayers)
-			}
-			if g.Route != "/banco-imobiliario" {
-				t.Errorf("expected banco-imobiliario-ia route '/banco-imobiliario', got %q", g.Route)
-			}
-			if g.Title != "Banco Imobiliário IA" {
-				t.Errorf("expected banco-imobiliario-ia title 'Banco Imobiliário IA', got %q", g.Title)
-			}
+		gamesByID[g.ID] = struct {
+			status             string
+			badge              string
+			route              string
+			icon               string
+			customizableFields []string
+		}{
+			status:             g.Status,
+			badge:              g.Badge,
+			route:              g.Route,
+			icon:               g.Icon,
+			customizableFields: g.CustomizableFields,
 		}
 	}
-	if !bancoFound {
-		t.Errorf("banco-imobiliario-ia not found in hub games")
+
+	for id, expected := range expectedGames {
+		actual, found := gamesByID[id]
+		if !found {
+			t.Errorf("game %q not found in hub catalog", id)
+			continue
+		}
+		if actual.status != expected.status {
+			t.Errorf("game %q status: expected %q, got %q", id, expected.status, actual.status)
+		}
+		if actual.badge != expected.badge {
+			t.Errorf("game %q badge: expected %q, got %q", id, expected.badge, actual.badge)
+		}
+		if actual.route != expected.route {
+			t.Errorf("game %q route: expected %q, got %q", id, expected.route, actual.route)
+		}
+		if actual.icon != expected.icon {
+			t.Errorf("game %q icon: expected %q, got %q", id, expected.icon, actual.icon)
+		}
+	}
+
+	// Validate customizable_fields in Detetive IA
+	detetiveFields := gamesByID["detetive-ia"].customizableFields
+	if len(detetiveFields) == 0 {
+		t.Errorf("expected customizable_fields populated for detetive-ia")
 	}
 }
 

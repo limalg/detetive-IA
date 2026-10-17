@@ -120,17 +120,36 @@ type Verdict struct {
 
 // BoardGame represents a tabletop board game in the AI games hub catalog.
 type BoardGame struct {
-	ID          string `json:"id"`
-	Title       string `json:"title"`
-	Subtitle    string `json:"subtitle"`
-	Description string `json:"description"`
-	Genre       string `json:"genre"`
-	MinPlayers  int    `json:"min_players"`
-	MaxPlayers  int    `json:"max_players"`
-	Difficulty  string `json:"difficulty"`
-	Status      string `json:"status"` // active, in_construction
-	Badge       string `json:"badge"`  // Disponível, Em Construção
-	Route       string `json:"route"`
-	Icon        string `json:"icon"`
+	ID                 string   `json:"id"`
+	Title              string   `json:"title"`
+	Subtitle           string   `json:"subtitle"`
+	Description        string   `json:"description"`
+	Genre              string   `json:"genre"`
+	MinPlayers         int      `json:"min_players"`
+	MaxPlayers         int      `json:"max_players"`
+	Difficulty         string   `json:"difficulty"`
+	Status             string   `json:"status"` // active, in_construction
+	Badge              string   `json:"badge"`  // Disponível, Em Construção
+	Route              string   `json:"route"`
+	Icon               string   `json:"icon"`
+	CustomizableFields []string `json:"customizable_fields,omitempty"`
 }
+
+// CustomInvestigationParams represents user-provided parameters to tailor a procedural mystery or game.
+type CustomInvestigationParams struct {
+	City         string   `json:"city,omitempty"`
+	Age          int      `json:"age,omitempty"`
+	SchoolGrade  string   `json:"school_grade,omitempty"`
+	Difficulty   string   `json:"difficulty,omitempty"` // "facil", "medio", "dificil"
+	Friends      []string `json:"friends,omitempty"`
+	Theme        string   `json:"theme,omitempty"`
+	ThemeID      string   `json:"theme_id,omitempty"` // alias for compatibility
+	FocusSubject string   `json:"focus_subject,omitempty"`
+	Genre        string   `json:"genre,omitempty"`
+	Tone         string   `json:"tone,omitempty"`
+	Pace         string   `json:"pace,omitempty"`
+	WeatherEra   string   `json:"weather_era,omitempty"`
+	SuspectCount int      `json:"suspect_count,omitempty"`
+}
+
 

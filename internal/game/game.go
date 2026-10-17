@@ -376,15 +376,28 @@ func (s *Service) SubmitAccusation(userID int64, caseID int64, accusedSuspectID 
 
 // CreateInvestigationForCase creates a fresh in-progress investigation with 420 minutes and 2 warrants for the given user and case.
 func (s *Service) CreateInvestigationForCase(userID int64, caseID int64) (*models.Investigation, error) {
+	return s.CreateInvestigationWithLimits(userID, caseID, 420, 2)
+}
+
+
+// CreateInvestigationWithLimits initializes an investigation with custom time and warrant limits.
+func (s *Service) CreateInvestigationWithLimits(userID int64, caseID int64, timeMinutes int, warrants int) (*models.Investigation, error) {
 	var userVal interface{} = userID
 	if userID <= 0 {
 		userVal = nil
 	}
 
+	if timeMinutes <= 0 {
+		timeMinutes = 420
+	}
+	if warrants <= 0 {
+		warrants = 2
+	}
+
 	res, err := s.db.Exec(`
 		INSERT INTO investigations (user_id, case_id, status, time_remaining_minutes, warrants_remaining)
-		VALUES (?, ?, 'in_progress', 420, 2)
-	`, userVal, caseID)
+		VALUES (?, ?, 'in_progress', ?, ?)
+	`, userVal, caseID, timeMinutes, warrants)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create investigation: %w", err)
 	}
@@ -398,8 +411,8 @@ func (s *Service) CreateInvestigationForCase(userID int64, caseID int64) (*model
 		UserID:               userID,
 		CaseID:               caseID,
 		Status:               "in_progress",
-		TimeRemainingMinutes: 420,
-		WarrantsRemaining:    2,
+		TimeRemainingMinutes: timeMinutes,
+		WarrantsRemaining:    warrants,
 	}, nil
 }
 
@@ -476,6 +489,43 @@ func (s *Service) StartSoloGame(userID int64, themeID string, suspectCount int) 
 
 	return details, inv, nil
 }
+
+// StartCustomInvestigation starts a procedural investigation tailored by custom parameters.
+func (s *Service) StartCustomInvestigation(userID int64, params models.CustomInvestigationParams) (*models.CaseDetails, *models.Investigation, error) {
+	weaver := NewWeaver(s.db)
+	res, err := weaver.WeaveCustomCase(params)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to weave custom case: %w", err)
+	}
+
+	details, err := s.GetCaseDetails(res.CaseID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get case details: %w", err)
+	}
+
+	timeMinutes := 420
+	warrants := 2
+	diff := strings.ToLower(strings.TrimSpace(params.Difficulty))
+	switch diff {
+	case "facil", "easy", "iniciante", "leve":
+		timeMinutes = 540
+		warrants = 3
+	case "dificil", "hard", "avancado", "perito":
+		timeMinutes = 300
+		warrants = 1
+	default:
+		timeMinutes = 420
+		warrants = 2
+	}
+
+	inv, err := s.CreateInvestigationWithLimits(userID, res.CaseID, timeMinutes, warrants)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create custom investigation: %w", err)
+	}
+
+	return details, inv, nil
+}
+
 
 
 // GetInvestigation retrieves an investigation by ID.
