@@ -1,7 +1,7 @@
 {
-  "name": "Detetive IA - Agência de Investigações",
-  "short_name": "Detetive IA",
-  "description": "Jogo investigativo interativo com IA, interrogatórios e atmosfera Noir clássica.",
+  "name": "Tabuleiro IA - Clube Clássico de Jogos & Inteligência Artificial",
+  "short_name": "Tabuleiro IA",
+  "description": "Plataforma de jogos clássicos de tabuleiro com inteligência artificial, dedução e estratégia.",
   "start_url": "/",
   "display": "standalone",
   "orientation": "any",
