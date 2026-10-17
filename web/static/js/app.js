@@ -88,6 +88,13 @@
     playersList: document.getElementById('players-list'),
     btnStartGame: document.getElementById('btn-start-game'),
 
+    // Game Start Modes (Bots vs Invite Friends)
+    botsStartPanel: document.getElementById('bots-start-panel'),
+    btnStartBots: document.getElementById('btn-start-bots'),
+    btnOpenCustomFromLobby: document.getElementById('btn-open-custom-from-lobby'),
+    inviteLinkBox: document.getElementById('invite-link-box'),
+    inviteLinkInput: document.getElementById('invite-link-input'),
+
     // Navigation
     navTabBtns: document.querySelectorAll('.nav-tab-btn'),
     tabPanes: document.querySelectorAll('.tab-pane'),
@@ -793,6 +800,14 @@
     state.currentRoom = { code, isHost, players: players || [] };
     if (el.roomDisplayCode) el.roomDisplayCode.textContent = code;
     if (el.roomWaitingArea) el.roomWaitingArea.style.display = 'block';
+    if (el.inviteLinkBox) {
+      if (code && code !== 'SOLO') {
+        if (el.inviteLinkInput) el.inviteLinkInput.value = `${window.location.origin}/?room=${code}`;
+        el.inviteLinkBox.style.display = 'flex';
+      } else {
+        el.inviteLinkBox.style.display = 'none';
+      }
+    }
     renderLobbyPlayers();
   }
 
@@ -827,26 +842,33 @@
       });
     }
 
-    // Mode Solo
+    // Mode Solo (Bots)
     if (el.btnModeSolo) {
       el.btnModeSolo.addEventListener('click', () => {
         state.gameMode = 'solo';
         el.btnModeSolo.classList.add('active');
         if (el.btnModeMulti) el.btnModeMulti.classList.remove('active');
         if (el.multiplayerRoomArea) el.multiplayerRoomArea.style.display = 'none';
+        if (el.botsStartPanel) el.botsStartPanel.style.display = 'block';
+        if (typeof playPaper === 'function') playPaper();
         setupDefaultSoloLobby();
       });
     }
 
-    // Mode Multi
+    // Mode Multi (Invite Friends)
     if (el.btnModeMulti) {
       el.btnModeMulti.addEventListener('click', () => {
         state.gameMode = 'multi';
         el.btnModeMulti.classList.add('active');
         if (el.btnModeSolo) el.btnModeSolo.classList.remove('active');
         if (el.multiplayerRoomArea) el.multiplayerRoomArea.style.display = 'block';
-        if (el.roomWaitingArea) el.roomWaitingArea.style.display = 'none';
-        state.currentRoom = null;
+        if (el.botsStartPanel) el.botsStartPanel.style.display = 'none';
+        if (typeof playPaper === 'function') playPaper();
+        // Auto-create the room (or reveal the active one) so the invite link is ready
+        const needsRoom = !state.currentRoom || !state.currentRoom.code || state.currentRoom.code === 'SOLO';
+        if (needsRoom) {
+          createRoom();
+        }
       });
     }
 
@@ -900,13 +922,12 @@
       });
     }
 
-    // Create Room
-    if (el.btnCreateRoom) {
-      el.btnCreateRoom.addEventListener('click', async () => {
-        savePersonaFromInputs();
-        const pName = state.persona.name || (state.currentUser ? state.currentUser.username : 'Investigador');
-        const pRole = state.persona.role || 'Detetive Particular';
-        const pSecret = state.persona.secret || '';
+    // Create Room (shared by button and auto-invite flow)
+    async function createRoom() {
+      savePersonaFromInputs();
+      const pName = state.persona.name || (state.currentUser ? state.currentUser.username : 'Investigador');
+      const pRole = state.persona.role || 'Detetive Particular';
+      const pSecret = state.persona.secret || '';
 
         try {
           let res;
@@ -938,8 +959,13 @@
           ]);
         }
         if (el.btnStartGame) {
-          el.btnStartGame.textContent = '🚨 Iniciar Investigação da Sala';
+          el.btnStartGame.textContent = '🚨 Iniciar Jogo com os Amigos';
         }
+    }
+
+    if (el.btnCreateRoom) {
+      el.btnCreateRoom.addEventListener('click', () => {
+        if (typeof createRoom === 'function') createRoom();
       });
     }
 
@@ -976,20 +1002,21 @@
           ]);
         }
         if (el.btnStartGame) {
-          el.btnStartGame.textContent = '🚨 Iniciar Investigação da Sala';
+          el.btnStartGame.textContent = '🚨 Iniciar Jogo com os Amigos';
         }
       });
     }
 
-    // Copy Room Link
+    // Copy Invite Link (with diegetic sound and visual feedback)
     if (el.btnCopyRoomLink) {
       el.btnCopyRoomLink.addEventListener('click', () => {
         if (!state.currentRoom) return;
         const url = `${window.location.origin}/?room=${state.currentRoom.code}`;
         navigator.clipboard.writeText(url).then(() => {
-          el.btnCopyRoomLink.textContent = '✅ Copiado!';
+          if (typeof playPaper === 'function') playPaper();
+          el.btnCopyRoomLink.textContent = '✅ Link Copiado!';
           setTimeout(() => {
-            el.btnCopyRoomLink.textContent = '📋 Copiar Link';
+            el.btnCopyRoomLink.textContent = '📋 Copiar Link de Convite';
           }, 1500);
         }).catch(() => {
           prompt('Copie o link da sala:', url);
@@ -997,36 +1024,66 @@
       });
     }
 
-    // Start Game
+    // Start Game (room or solo-with-bots)
     if (el.btnStartGame) {
       el.btnStartGame.addEventListener('click', async () => {
         savePersonaFromInputs();
         if (state.currentRoom && state.currentRoom.code && state.currentRoom.code !== 'SOLO') {
-          try {
-            await api(`/api/room/${state.currentRoom.code}/start`, { method: 'POST' });
-          } catch (_) {}
-          showGameView();
-          loadCaseData();
+          await startRoomGame();
         } else {
-          const themeId = (el.themeSelect && el.themeSelect.value) || 'mansion';
-          const suspectCount = el.suspectCountSelect ? parseInt(el.suspectCountSelect.value, 10) : 4;
-          try {
-            const res = await api('/api/game/solo/start', {
-              method: 'POST',
-              body: JSON.stringify({
-                theme_id: themeId,
-                suspect_count: suspectCount
-              })
-            });
-            applyCaseResponse(res);
-          } catch (err) {
-            console.warn('[Game] Erro ao iniciar caso solo via API, fallback:', err);
-            showGameView();
-            loadCaseData();
-          }
+          await startSoloGame();
         }
       });
     }
+
+    // Start with Bots (quick action from the bots panel)
+    if (el.btnStartBots) {
+      el.btnStartBots.addEventListener('click', () => {
+        startWithBots();
+      });
+    }
+
+    // Personalize with AI shortcut (from the bots panel)
+    if (el.btnOpenCustomFromLobby) {
+      el.btnOpenCustomFromLobby.addEventListener('click', () => {
+        openCustomInvestigation();
+      });
+    }
+  }
+
+  async function startRoomGame() {
+    try {
+      await api(`/api/room/${state.currentRoom.code}/start`, { method: 'POST' });
+    } catch (_) {}
+    if (typeof playStamp === 'function') playStamp();
+    showGameView();
+    loadCaseData();
+  }
+
+  async function startSoloGame() {
+    const themeId = (el.themeSelect && el.themeSelect.value) || 'mansion';
+    const suspectCount = el.suspectCountSelect ? parseInt(el.suspectCountSelect.value, 10) : 4;
+    try {
+      const res = await api('/api/game/solo/start', {
+        method: 'POST',
+        body: JSON.stringify({
+          theme_id: themeId,
+          suspect_count: suspectCount
+        })
+      });
+      applyCaseResponse(res);
+    } catch (err) {
+      console.warn('[Game] Erro ao iniciar caso solo via API, fallback:', err);
+      showGameView();
+      loadCaseData();
+    }
+  }
+
+  function startWithBots() {
+    savePersonaFromInputs();
+    if (typeof playStamp === 'function') playStamp();
+    state.gameMode = 'solo';
+    startSoloGame();
   }
 
 

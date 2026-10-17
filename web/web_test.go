@@ -862,3 +862,86 @@ func TestCustomInvestigationFrontend(t *testing.T) {
 		}
 	}
 }
+
+func TestLobbyGameStartModes(t *testing.T) {
+	// 1. index.html: escolha de modo em destaque no início do lobby — Bots ou Sala Online
+	htmlFile, err := web.Assets.Open("templates/index.html")
+	if err != nil {
+		t.Fatalf("failed to open templates/index.html: %v", err)
+	}
+	defer htmlFile.Close()
+
+	htmlBytes, err := io.ReadAll(htmlFile)
+	if err != nil {
+		t.Fatalf("failed to read templates/index.html: %v", err)
+	}
+	html := string(htmlBytes)
+
+	requiredElements := []string{
+		`id="lobby-mode-heading"`,
+		"Como deseja iniciar a partida?",
+		"Iniciar com Bots (IA)",
+		"Partida imediata: a Inteligência Artificial assume os demais papéis e bots na mesa investigativa.",
+		"Convidar Amigos (Sala Online)",
+		"Gere uma sala e envie o link de convite para seus amigos entrarem pelo celular ou computador.",
+		`id="bots-start-panel"`,
+		`id="btn-start-bots"`,
+		"🚀 Iniciar com Bots",
+		"Personalizar com IA",
+		`id="invite-link-box"`,
+		"📋 Copiar Link de Convite",
+		"🚨 Iniciar Jogo com os Amigos",
+		`id="btn-join-room"`,
+	}
+
+	for _, elem := range requiredElements {
+		if !strings.Contains(html, elem) {
+			t.Errorf("templates/index.html missing lobby start-mode element: %s", elem)
+		}
+	}
+
+	// 2. style.css: sistema visual do destaque de escolha e painel de bots
+	cssFile, err := web.Assets.Open("static/css/style.css")
+	if err != nil {
+		t.Fatalf("failed to open static/css/style.css: %v", err)
+	}
+	defer cssFile.Close()
+
+	cssBytes, err := io.ReadAll(cssFile)
+	if err != nil {
+		t.Fatalf("failed to read static/css/style.css: %v", err)
+	}
+	css := string(cssBytes)
+
+	for _, rule := range []string{".bot-chip", ".invite-link-box", ".lobby-mode-heading", ".bots-start-panel"} {
+		if !strings.Contains(css, rule) {
+			t.Errorf("static/css/style.css missing lobby start-mode rule: %s", rule)
+		}
+	}
+
+	// 3. app.js: fluxos solo(com bots) e sala online reutilizáveis, convite com som
+	jsFile, err := web.Assets.Open("static/js/app.js")
+	if err != nil {
+		t.Fatalf("failed to open static/js/app.js: %v", err)
+	}
+	defer jsFile.Close()
+
+	jsBytes, err := io.ReadAll(jsFile)
+	if err != nil {
+		t.Fatalf("failed to read static/js/app.js: %v", err)
+	}
+	js := string(jsBytes)
+
+	for _, snippet := range []string{
+		"startSoloGame()",
+		"async function createRoom()",
+		"/?room=",
+		"openCustomInvestigation()",
+		"startWithBots()",
+		"✅ Link Copiado!",
+	} {
+		if !strings.Contains(js, snippet) {
+			t.Errorf("static/js/app.js missing lobby start-mode logic: %s", snippet)
+		}
+	}
+}

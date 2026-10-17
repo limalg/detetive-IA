@@ -2121,3 +2121,82 @@ body::after {
     grid-column: span 1;
   }
 }
+
+/* ==========================================================================
+   Lobby v2 — Escolha de Modo no Topo (Bots vs Convidar Amigos)
+   ========================================================================== */
+
+.lobby-mode-heading {
+  font-family: var(--font-typewriter);
+  font-size: 1.3rem;
+  color: var(--accent-amber);
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  text-align: center;
+  margin-bottom: 1.1rem;
+  text-shadow: 0 2px 5px rgba(0, 0, 0, 0.8);
+}
+
+/* Painel de bots da partida solo */
+.bots-start-panel {
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--border-noir);
+  border-radius: 4px;
+  padding: 0.85rem 0.9rem;
+  margin-top: 0.25rem;
+}
+
+.bots-start-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  justify-content: center;
+  margin-bottom: 0.85rem;
+}
+
+.bot-chip {
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.45);
+  color: var(--accent-green);
+  font-family: var(--font-typewriter);
+  font-size: 0.74rem;
+  padding: 0.22rem 0.55rem;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+#btn-start-bots {
+  font-size: 1rem;
+  background: linear-gradient(135deg, var(--accent-crimson), var(--accent-blood));
+}
+
+/* Caixa de link de convite da sala */
+.invite-link-box {
+  display: none;
+  align-items: center;
+  gap: 0.6rem;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px dashed rgba(245, 158, 11, 0.5);
+  border-radius: 4px;
+  padding: 0.5rem 0.7rem;
+  margin-bottom: 1rem;
+}
+
+.invite-link-label {
+  font-family: var(--font-typewriter);
+  font-size: 0.78rem;
+  color: var(--accent-amber);
+  white-space: nowrap;
+}
+
+.invite-link-input {
+  flex: 1;
+  min-width: 0;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--border-noir);
+  border-radius: 3px;
+  color: var(--text-main);
+  font-family: var(--font-typewriter);
+  font-size: 0.78rem;
+  padding: 0.35rem 0.5rem;
+}
