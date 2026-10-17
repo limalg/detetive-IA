@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"detetive-ia/internal/models"
@@ -29,6 +30,7 @@ type AIConfig struct {
 
 // UniversalAIClient implements AIClient supporting OpenAI-compatible routers and Gemini.
 type UniversalAIClient struct {
+	mu         sync.RWMutex
 	config     AIConfig
 	httpClient *http.Client
 }
@@ -52,13 +54,17 @@ func NewUniversalAIClient(cfg AIConfig) *UniversalAIClient {
 	}
 }
 
-// UpdateConfig hot-reloads the AI client configuration.
+// UpdateConfig hot-reloads the AI client configuration in a thread-safe manner.
 func (u *UniversalAIClient) UpdateConfig(cfg AIConfig) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
 	u.config = cfg
 }
 
-// GetConfig returns the active AI configuration.
+// GetConfig returns the active AI configuration in a thread-safe manner.
 func (u *UniversalAIClient) GetConfig() AIConfig {
+	u.mu.RLock()
+	defer u.mu.RUnlock()
 	return u.config
 }
 
@@ -66,12 +72,13 @@ func (u *UniversalAIClient) GenerateResponse(ctx context.Context, prompt string)
 	startTime := time.Now()
 	traceID := "ai-" + fmt.Sprintf("%d", startTime.UnixNano())
 
-	if u.config.APIKey == "" {
+	cfg := u.GetConfig()
+	if cfg.APIKey == "" {
 		return "", errors.New("ai api key is not configured")
 	}
 
-	if u.config.Provider == "gemini" {
-		url := fmt.Sprintf("%s/models/%s:generateContent?key=%s", strings.TrimRight(u.config.URL, "/"), u.config.Model, u.config.APIKey)
+	if cfg.Provider == "gemini" {
+		url := fmt.Sprintf("%s/models/%s:generateContent?key=%s", strings.TrimRight(cfg.URL, "/"), cfg.Model, cfg.APIKey)
 		reqBody := map[string]interface{}{
 			"contents": []map[string]interface{}{
 				{"parts": []map[string]string{{"text": prompt}}},
@@ -114,14 +121,14 @@ func (u *UniversalAIClient) GenerateResponse(ctx context.Context, prompt string)
 	}
 
 	// OpenAI-compatible endpoint (e.g. router.ofertasshow.shop/v1)
-	baseURL := strings.TrimRight(u.config.URL, "/")
+	baseURL := strings.TrimRight(cfg.URL, "/")
 	endpoint := baseURL
 	if !strings.HasSuffix(endpoint, "/chat/completions") {
 		endpoint = baseURL + "/chat/completions"
 	}
 
 	reqBody := map[string]interface{}{
-		"model": u.config.Model,
+		"model": cfg.Model,
 		"messages": []map[string]string{
 			{"role": "user", "content": prompt},
 		},
@@ -139,7 +146,7 @@ func (u *UniversalAIClient) GenerateResponse(ctx context.Context, prompt string)
 		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+u.config.APIKey)
+	req.Header.Set("Authorization", "Bearer "+cfg.APIKey)
 
 	resp, err := u.httpClient.Do(req)
 	durationMs := time.Since(startTime).Milliseconds()
@@ -265,62 +272,37 @@ func GenerateFallbackResponse(suspect *models.Suspect, question string) string {
 		if suspect.Tier1Alibi != "" {
 			return suspect.Tier1Alibi
 		}
-		if strings.Contains(suspect.Name, "Julian") {
-			return "Detetive, como já afirmei à polícia, passei a noite inteira na sala de música. Dedilhava o piano de cauda com uma taça de conhaque ao meu lado. Não saí de lá até ouvir a comoção."
-		} else if strings.Contains(suspect.Name, "Elena") {
-			return "Estava no meu laboratório particular, catalogando dosagens e amostras botânicas. A ciência exige precisão e isolamento. Ninguém entrou ou saiu enquanto eu preparava os frascos."
-		} else {
-			return "Eu me encontrava na adega principal, senhor. Arthur exigia o inventário anual das safras raras de Bordeaux. Posso apresentar as notas fiscais e registros de temperatura se assim desejar."
+		if suspect.Alibi != "" {
+			return suspect.Alibi
 		}
+		return fmt.Sprintf("Como %s, permaneci em meus aposentos cumprindo minhas obrigações. Não tenho qualquer envolvimento com este crime.", suspect.Role)
 
 	// Questions about the murder weapon, dagger, poison, blood
-	case containsAny(q, "arma", "adaga", "punhal", "faca", "veneno", "sangue", "morte", "matou", "assassin"):
-		if strings.Contains(suspect.Name, "Julian") {
-			return "Uma adaga cerimonial veneziana? Ora, Arthur tinha centenas de relíquias grotescas espalhadas pela casa. Por que eu tocaria em algo tão bárbaro quando herdei toda a linhagem Pendelton?"
-		} else if strings.Contains(suspect.Name, "Elena") {
-			return "Como médica legista e pesquisadora, observei o corte limpo e profundo na carótida. Foi obra de alguém com pulso firme e lâmina afiada. Meus bisturis permanecem trancados sob chave."
-		} else {
-			return "A adaga pertencia à coleção privada de antiguidades da família há três gerações. Ficava exposta na vitrine da biblioteca. Notei sua ausência apenas quando o corpo foi descoberto."
+	case containsAny(q, "arma", "adaga", "punhal", "faca", "veneno", "sangue", "morte", "matou", "assassin", "castiçal", "navalha"):
+		if suspect.IsCulprit && suspect.Tier2PettyCrime != "" {
+			return fmt.Sprintf("Arma do crime? Detetive, você está perdendo seu tempo comigo. %s", suspect.Tier2PettyCrime)
 		}
+		return fmt.Sprintf("Como %s, não ando armado e repudio essa violência brutal. Meus instrumentos de trabalho são outros.", suspect.Role)
 
 	// Questions about motive, money, will, inheritance, debts
 	case containsAny(q, "motivo", "dinheiro", "testamento", "dívida", "herança", "fortuna", "segredo", "por que"):
-		if strings.Contains(suspect.Name, "Julian") {
-			return "Isso é um ultraje! Minhas finanças são assuntos estritamente pessoais da alta sociedade. Arthur era meu tio e me prometeu tudo... ele não teria coragem de me deserdar por causa de especulações tolas de cassino!"
-		} else if strings.Contains(suspect.Name, "Elena") {
-			return "Arthur financiava minhas pesquisas médicas. Tínhamos divergências sobre a aplicação dos orçamentos, mas o trabalho era vital. Jamais destruiria a fonte dos meus estudos."
-		} else {
-			return "Sir Arthur era um homem exigente e por vezes tempestuoso. Eu conhecia todos os seus segredos e correspondências confidenciais, mas minha lealdade à casa Pendelton foi inabalável por quarenta anos."
+		if suspect.Tier2PettyCrime != "" {
+			return fmt.Sprintf("Todo mundo tem assuntos que prefere manter em segredo... %s Mas disso a um homicídio há um abismo!", suspect.Tier2PettyCrime)
 		}
-
-	// Questions about other suspects
-	case strings.Contains(q, "elena"):
-		if strings.Contains(suspect.Name, "Julian") {
-			return "A Dra. Rostov sempre teve um olhar calculista demais para alguém que cuida de vidas humanas. Ela sussurrava com Arthur a portas fechadas com frequência incomum."
+		if suspect.Secret != "" {
+			return "Meus assuntos particulares não dizem respeito a este inquérito, detetive. Minha conduta perante a vítima sempre foi profissional."
 		}
-		return "A doutora mantém uma postura rigorosa, mas notei seu nervosismo recente nos corredores."
-
-	case strings.Contains(q, "barnaby"):
-		if strings.Contains(suspect.Name, "Julian") {
-			return "O velho Barnaby conhece cada fresta e passagem secreta desta mansão. Uma sombra que ouve tudo e guarda rancores antigos."
-		}
-		return "Barnaby é discreto como convém a um bom mordomo, mas sabe mais do que aparenta revelar."
-
-	case strings.Contains(q, "julian"):
-		if strings.Contains(suspect.Name, "Elena") {
-			return "Lorde Julian é um dândi irresponsável, afundado em dívidas de jogo. Ouvi uma discussão acalorada entre ele e Arthur na véspera do crime."
-		}
-		return "O jovem mestre Julian sempre foi perdulário. Os credores têm rondado a propriedade nas últimas semanas."
+		return "Não tenho nenhum motivo para desejar a morte da vítima. Minha relação era estritamente formal."
 
 	// Default in-character response
 	default:
-		if strings.Contains(suspect.Name, "Julian") {
-			return "Meça suas palavras, detetive. Acusações infundadas contra a aristocracia custam caro. O que mais deseja saber para encerrar este incômodo?"
-		} else if strings.Contains(suspect.Name, "Elena") {
-			return "Os fatos e a evidência material falarão mais alto do que conjecturas dramáticas. Tem alguma pergunta concreta para mim?"
-		} else {
-			return "Estou à inteira disposição da investigação, senhor. Apenas desejo que a justiça por Sir Arthur seja feita com a devida sobriedade."
+		if strings.TrimSpace(suspect.CrossSuspicion) != "" {
+			return fmt.Sprintf("Detetive, meça suas insinuações. Sou %s. %s", suspect.Role, suspect.CrossSuspicion)
 		}
+		if suspect.Personality != "" {
+			return fmt.Sprintf("Sou %s. %s Já respondi a tudo o que a polícia tinha direito de saber.", suspect.Role, suspect.Personality)
+		}
+		return fmt.Sprintf("Sou %s. Estou à inteira disposição da investigação, desde que não façam ilações infundadas.", suspect.Role)
 	}
 }
 

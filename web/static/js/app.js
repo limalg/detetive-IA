@@ -1293,9 +1293,11 @@
     if (grid) {
       grid.innerHTML = '';
       weapons.forEach((w) => {
-        const item = document.createElement('div');
+        const item = document.createElement('button');
+        item.type = 'button';
         item.className = 'weapon-card-item';
         item.dataset.weaponName = w.name;
+        item.setAttribute('aria-label', `Selecionar arma: ${w.label}`);
         item.innerHTML = `
           <div class="weapon-card-thumb">
             <img src="${w.file}" alt="${escapeHtml(w.name)}">
@@ -1346,6 +1348,9 @@
       label = `${clamped}% (EM PÂNICO / ÁLIBI QUEBRADO!)`;
       if (portraitFrame) portraitFrame.classList.add('high-stress');
       if (sweatDrops) sweatDrops.style.display = 'block';
+      if (window.NoirAudio && window.NoirAudio.playHeartbeat) {
+        window.NoirAudio.playHeartbeat();
+      }
     } else if (clamped > 35) {
       el.suspectStressMeter.classList.add('nervous');
       label = `${clamped}% (Nervoso / Inseguro)`;

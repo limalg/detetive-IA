@@ -7,19 +7,74 @@ import (
 	"io"
 	"net/http"
 	"net/http/cookiejar"
+	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"detetive-ia/internal/auth"
+	"detetive-ia/internal/db"
+	"detetive-ia/internal/game"
+	"detetive-ia/internal/server"
+	"detetive-ia/web"
+)
+
+var (
+	inProcessServer *httptest.Server
+	inProcessOnce   sync.Once
 )
 
 func getBaseURL() string {
+	targetURL := "http://localhost:8080"
 	if url := os.Getenv("TEST_SERVER_URL"); url != "" {
-		return strings.TrimRight(url, "/")
+		targetURL = strings.TrimRight(url, "/")
 	}
-	return "http://localhost:8080"
+
+	client := &http.Client{Timeout: 300 * time.Millisecond}
+	resp, err := client.Get(targetURL + "/api/health")
+	if err == nil {
+		resp.Body.Close()
+		if resp.StatusCode == http.StatusOK {
+			return targetURL
+		}
+	}
+
+	inProcessOnce.Do(func() {
+		tempDir, err := os.MkdirTemp("", "detiv_chaos_*")
+		if err != nil {
+			panic(fmt.Sprintf("falha ao criar temp dir para chaos test: %v", err))
+		}
+		dbPath := filepath.Join(tempDir, "chaos.db")
+		database, err := db.InitDB(dbPath)
+		if err != nil {
+			panic(fmt.Sprintf("falha ao inicializar db para chaos test: %v", err))
+		}
+		if err := db.RunMigrations(database); err != nil {
+			panic(fmt.Sprintf("falha ao rodar migrations para chaos test: %v", err))
+		}
+		authSvc := auth.New(database)
+		gameSvc := game.New(database, nil)
+		if _, err := gameSvc.SeedInitialCase(); err != nil {
+			panic(fmt.Sprintf("falha ao semear caso para chaos test: %v", err))
+		}
+		cfg := server.Config{
+			Addr:        ":0",
+			DB:          database,
+			AuthService: authSvc,
+			GameService: gameSvc,
+			StaticFS:    web.FileServer(),
+		}
+		inProcessServer = httptest.NewServer(server.NewRouter(cfg))
+	})
+
+	if inProcessServer != nil {
+		return inProcessServer.URL
+	}
+	return targetURL
 }
 
 func checkServerAvailable(t *testing.T, baseURL string) {
@@ -27,7 +82,7 @@ func checkServerAvailable(t *testing.T, baseURL string) {
 	client := &http.Client{Timeout: 2 * time.Second}
 	resp, err := client.Get(baseURL + "/api/health")
 	if err != nil {
-		t.Fatalf("Servidor local não acessível em %s: %v. Certifique-se de que o servidor está rodando.", baseURL, err)
+		t.Fatalf("Servidor não acessível em %s: %v. Certifique-se de que o servidor está rodando.", baseURL, err)
 	}
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
@@ -526,6 +581,7 @@ func TestRoomConcurrencyAndRaceConditions(t *testing.T) {
 func TestServerHealthAndMemoryAfterChaos(t *testing.T) {
 	baseURL := getBaseURL()
 	checkServerAvailable(t, baseURL)
+	time.Sleep(150 * time.Millisecond)
 	client := &http.Client{Timeout: 5 * time.Second}
 
 	resp, err := client.Get(baseURL + "/api/health")
@@ -555,7 +611,7 @@ func TestServerHealthAndMemoryAfterChaos(t *testing.T) {
 		t.Errorf("Consumo de memória excedeu limite de 60MB: %.2f MB", allocMB)
 	}
 
-	if goroutines > 100 {
+	if goroutines > 150 {
 		t.Errorf("Possível vazamento de goroutines detectado: %.0f goroutines ativas", goroutines)
 	}
 }

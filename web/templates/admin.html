@@ -60,6 +60,10 @@
       font-family: var(--font-typewriter);
       border-radius: 4px 4px 0 0;
       color: var(--text-muted);
+      background: transparent;
+      border: none;
+      min-height: 44px;
+      transition: all 0.2s;
     }
     .admin-tab.active {
       color: var(--accent-amber);
@@ -82,16 +86,16 @@
       background: rgba(0,0,0,0.6);
       color: var(--accent-amber);
     }
-    .level-INFO { color: #52c41a; }
-    .level-WARN { color: #faad14; }
-    .level-ERROR { color: #ff4d4f; font-weight: bold; }
+    .level-INFO { color: var(--accent-green, #6b8f71); }
+    .level-WARN { color: var(--accent-gold, #d4a373); }
+    .level-ERROR { color: var(--accent-crimson, #9e2a2b); font-weight: bold; }
     .test-output-box {
       background: #000;
       border: 1px solid var(--border-noir);
       padding: 0.75rem;
       font-family: monospace;
       font-size: 0.85rem;
-      color: #73d13d;
+      color: var(--accent-amber, #e09f3e);
       margin-top: 1rem;
       min-height: 50px;
       border-radius: 4px;
@@ -137,9 +141,9 @@
 
     <!-- Tabs -->
     <div class="admin-tabs">
-      <div class="admin-tab active" data-tab="ai-settings">🤖 Configuração de IA</div>
-      <div class="admin-tab" data-tab="opentelemetry">📊 Logs & OpenTelemetry</div>
-      <div class="admin-tab" data-tab="spans">⚡ Spans de Execução</div>
+      <button type="button" class="admin-tab active" data-tab="ai-settings">🤖 Configuração de IA</button>
+      <button type="button" class="admin-tab" data-tab="opentelemetry">📊 Logs & OpenTelemetry</button>
+      <button type="button" class="admin-tab" data-tab="spans">⚡ Spans de Execução</button>
     </div>
 
     <div id="alert-box" class="auth-alert" style="display: none;"></div>
@@ -280,7 +284,7 @@
         if (resp.ok) {
           const data = await resp.json();
           el.aiUrl.value = data.url || 'https://router.ofertasshow.shop/v1';
-          el.aiApiKey.value = data.api_key || 'sk-9dbb0f812cc53bea-3xozko-bdd21088';
+          el.aiApiKey.value = data.api_key || '';
           el.aiModel.value = data.model || 'ondegastei';
           el.aiProvider.value = data.provider || 'openai_compatible';
         }

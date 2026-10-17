@@ -439,6 +439,14 @@ func (h *Handler) HandleInterrogate(w http.ResponseWriter, r *http.Request) {
 				reply = fmt.Sprintf("O suspeito analisa a evidência (%s) com sobrancelhas erguidas e desdém frio: 'Uma peça intrigante, detetive, mas absolutamente inútil contra mim. Meu álibi é de ferro.'", clueName)
 			}
 
+			// Consult AI client if available, using the rich fallback as default
+			if h.cfg.GameService != nil {
+				confrontPrompt := fmt.Sprintf("[O detetive confronta você com a evidência '%s' (%s)]. Pergunta: %s", clueName, clueDesc, req.Question)
+				if aiReply, err := h.cfg.GameService.InterrogateWithStress(sessionID, req.SuspectID, confrontPrompt, stressLevel); err == nil && aiReply != "" {
+					reply = aiReply
+				}
+			}
+
 			// Persist dialogue exchange
 			_, _ = h.cfg.DB.Exec(`
 				INSERT INTO interrogation_messages (session_id, suspect_id, sender, message)
@@ -553,7 +561,7 @@ func (h *Handler) HandleAccuse(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	verdict, err := h.cfg.GameService.SubmitAccusation(userID, req.CaseID, req.SuspectID, req.Weapon, req.Motive)
+	verdict, err := h.cfg.GameService.SubmitAccusation(userID, req.CaseID, req.SuspectID, req.Weapon, req.Motive, req.ClueIDs...)
 	if err != nil {
 		if strings.Contains(err.Error(), "no rows") {
 			h.error(w, http.StatusBadRequest, "suspect not found: "+err.Error())
@@ -697,11 +705,17 @@ func (h *Handler) HandleJoinRoom(w http.ResponseWriter, r *http.Request) {
 	}
 
 	user, _ := h.getAuthenticatedUser(r)
-	userID := int64(2)
+	var userID int64
 	username := "Investigador"
 	if user != nil {
 		userID = user.ID
 		username = user.Username
+	} else {
+		// Unique negative ID for unauthenticated guests so distinct guests don't collide
+		userID = -time.Now().UnixNano()
+		if req.PersonaName != "" {
+			username = req.PersonaName
+		}
 	}
 
 	personaName := strings.TrimSpace(req.PersonaName)
@@ -823,12 +837,9 @@ func (h *Handler) HandleAdminSettings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	user, err := h.getAuthenticatedUser(r)
-	if err != nil || (!user.IsAdmin && user.Username != "admin") {
-		// Se não for admin autenticado, verifica se há admin key ou se é o único usuário
-		if r.Header.Get("X-Admin-Key") != "detetive-admin-key" && (user == nil || !user.IsAdmin) {
-			h.error(w, http.StatusForbidden, "acesso restrito apenas para administradores")
-			return
-		}
+	if err != nil || user == nil || (!user.IsAdmin && user.Username != "admin") {
+		h.error(w, http.StatusForbidden, "acesso restrito apenas para administradores")
+		return
 	}
 
 	if r.Method == http.MethodGet {
@@ -843,16 +854,18 @@ func (h *Handler) HandleAdminSettings(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
-		// Mascarar parte da chave se não for super admin
+		// Mascarar chave para proteção em trânsito
 		maskedKey := settings["ai_api_key"]
 		if len(maskedKey) > 8 {
 			maskedKey = maskedKey[:4] + "••••••••" + maskedKey[len(maskedKey)-4:]
+		} else if len(maskedKey) > 0 {
+			maskedKey = "••••••••"
 		}
 		h.json(w, http.StatusOK, map[string]interface{}{
 			"url":         settings["ai_url"],
 			"model":       settings["ai_model"],
 			"provider":    settings["ai_provider"],
-			"api_key":     settings["ai_api_key"],
+			"api_key":     maskedKey,
 			"masked_key":  maskedKey,
 		})
 		return
@@ -911,6 +924,12 @@ func (h *Handler) HandleAdminSettings(w http.ResponseWriter, r *http.Request) {
 
 // HandleAdminLogs retrieves the live OpenTelemetry structured logs.
 func (h *Handler) HandleAdminLogs(w http.ResponseWriter, r *http.Request) {
+	user, err := h.getAuthenticatedUser(r)
+	if err != nil || user == nil || (!user.IsAdmin && user.Username != "admin") {
+		h.error(w, http.StatusForbidden, "acesso restrito para administradores")
+		return
+	}
+
 	limitStr := r.URL.Query().Get("limit")
 	limit := 50
 	if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
@@ -927,6 +946,12 @@ func (h *Handler) HandleAdminLogs(w http.ResponseWriter, r *http.Request) {
 
 // HandleAdminTelemetry retrieves system performance metrics and OpenTelemetry traces.
 func (h *Handler) HandleAdminTelemetry(w http.ResponseWriter, r *http.Request) {
+	user, err := h.getAuthenticatedUser(r)
+	if err != nil || user == nil || (!user.IsAdmin && user.Username != "admin") {
+		h.error(w, http.StatusForbidden, "acesso restrito para administradores")
+		return
+	}
+
 	metrics := telemetry.Metrics()
 	spans := telemetry.GetCollector().GetRecentSpans(30)
 
@@ -940,6 +965,12 @@ func (h *Handler) HandleAdminTelemetry(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) HandleAdminTestAI(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		h.error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	user, err := h.getAuthenticatedUser(r)
+	if err != nil || user == nil || (!user.IsAdmin && user.Username != "admin") {
+		h.error(w, http.StatusForbidden, "acesso restrito para administradores")
 		return
 	}
 
@@ -1025,12 +1056,7 @@ func (h *Handler) HandleDetectiveNightCatalog(w http.ResponseWriter, r *http.Req
 // HandleAdminPage serves the admin dashboard only to authenticated admin users.
 func (h *Handler) HandleAdminPage(w http.ResponseWriter, r *http.Request) {
 	user, err := h.getAuthenticatedUser(r)
-	adminKey := r.Header.Get("X-Admin-Key")
-	if adminKey == "" {
-		adminKey = r.URL.Query().Get("key")
-	}
-
-	isAdmin := (err == nil && user != nil && user.IsAdmin) || adminKey == "detetive-admin-key"
+	isAdmin := err == nil && user != nil && (user.IsAdmin || user.Username == "admin")
 	if !isAdmin {
 		if user == nil {
 			http.Redirect(w, r, "/?auth=login_required&redirect=/admin", http.StatusFound)

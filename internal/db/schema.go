@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"os"
 )
 
 // Schema contains the DDL for the Detetive IA database.
@@ -121,10 +122,19 @@ func RunMigrations(database *sql.DB) error {
 		_, _ = database.Exec(q)
 	}
 
-	// Inserir configurações padrão da IA vindas do Maestri
+	// Inserir configurações padrão da IA (chaves vindas do ambiente ou configuradas via painel)
+	aiURL := os.Getenv("AI_ROUTER_URL")
+	if aiURL == "" {
+		aiURL = "https://router.ofertasshow.shop/v1"
+	}
+	aiKey := os.Getenv("AI_API_KEY")
+	if aiKey == "" {
+		aiKey = os.Getenv("DETETIVE_AI_KEY")
+	}
+
 	defaultSettings := map[string]string{
-		"ai_url":      "https://router.ofertasshow.shop/v1",
-		"ai_api_key":  "sk-9dbb0f812cc53bea-3xozko-bdd21088",
+		"ai_url":      aiURL,
+		"ai_api_key":  aiKey,
 		"ai_model":    "ondegastei",
 		"ai_provider": "openai_compatible",
 	}

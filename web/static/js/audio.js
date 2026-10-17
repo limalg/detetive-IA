@@ -30,6 +30,24 @@
     return ctx;
   }
 
+  var compressor = null;
+  function getMasterNode(c) {
+    if (!compressor && c) {
+      try {
+        compressor = c.createDynamicsCompressor();
+        compressor.threshold.setValueAtTime(-18, c.currentTime);
+        compressor.knee.setValueAtTime(12, c.currentTime);
+        compressor.ratio.setValueAtTime(6, c.currentTime);
+        compressor.attack.setValueAtTime(0.003, c.currentTime);
+        compressor.release.setValueAtTime(0.25, c.currentTime);
+        compressor.connect(c.destination);
+      } catch (e) {
+        return c.destination;
+      }
+    }
+    return compressor || c.destination;
+  }
+
   function updateToggleUI() {
     var btn = document.getElementById('sound-toggle');
     if (btn) {
@@ -126,7 +144,7 @@
 
       noise.connect(filter);
       filter.connect(noiseGain);
-      noiseGain.connect(c.destination);
+      noiseGain.connect(getMasterNode(c));
       noise.start(t);
 
       // 2. Metallic resonant ping
@@ -140,7 +158,7 @@
       oscGain.gain.exponentialRampToValueAtTime(0.001, t + 0.025);
 
       osc.connect(oscGain);
-      oscGain.connect(c.destination);
+      oscGain.connect(getMasterNode(c));
       osc.start(t);
       osc.stop(t + 0.03);
     },
@@ -171,7 +189,7 @@
 
       osc.connect(filter);
       filter.connect(gain);
-      gain.connect(c.destination);
+      gain.connect(getMasterNode(c));
 
       osc.start(t);
       osc.stop(t + 0.025);
@@ -198,7 +216,7 @@
       oscGain.gain.exponentialRampToValueAtTime(0.001, t + 0.14);
 
       osc.connect(oscGain);
-      oscGain.connect(c.destination);
+      oscGain.connect(getMasterNode(c));
       osc.start(t);
       osc.stop(t + 0.15);
 
@@ -223,7 +241,7 @@
 
       noise.connect(noiseFilter);
       noiseFilter.connect(noiseGain);
-      noiseGain.connect(c.destination);
+      noiseGain.connect(getMasterNode(c));
       noise.start(t);
     },
 
@@ -261,9 +279,51 @@
 
       noise.connect(filter);
       filter.connect(gain);
-      gain.connect(c.destination);
+      gain.connect(getMasterNode(c));
 
       noise.start(t);
+    },
+
+    /**
+     * Diegetic low-frequency double heartbeat thump under stress
+     */
+    playHeartbeat: function () {
+      if (muted) return;
+      var c = getAudioContext();
+      if (!c) return;
+
+      var t = c.currentTime;
+      var dest = getMasterNode(c);
+
+      // Thump 1 (Lub)
+      var osc1 = c.createOscillator();
+      osc1.type = 'sine';
+      osc1.frequency.setValueAtTime(68, t);
+      osc1.frequency.exponentialRampToValueAtTime(32, t + 0.08);
+
+      var g1 = c.createGain();
+      g1.gain.setValueAtTime(0.35, t);
+      g1.gain.exponentialRampToValueAtTime(0.001, t + 0.09);
+
+      osc1.connect(g1);
+      g1.connect(dest);
+      osc1.start(t);
+      osc1.stop(t + 0.1);
+
+      // Thump 2 (Dub)
+      var osc2 = c.createOscillator();
+      osc2.type = 'sine';
+      osc2.frequency.setValueAtTime(56, t + 0.12);
+      osc2.frequency.exponentialRampToValueAtTime(28, t + 0.22);
+
+      var g2 = c.createGain();
+      g2.gain.setValueAtTime(0.26, t + 0.12);
+      g2.gain.exponentialRampToValueAtTime(0.001, t + 0.23);
+
+      osc2.connect(g2);
+      g2.connect(dest);
+      osc2.start(t + 0.12);
+      osc2.stop(t + 0.24);
     }
   };
 

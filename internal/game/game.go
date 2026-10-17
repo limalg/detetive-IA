@@ -294,7 +294,7 @@ func (s *Service) InterrogateWithStress(sessionID string, suspectID int64, quest
 }
 
 // SubmitAccusation evaluates the detective's deduction and records the investigation outcome.
-func (s *Service) SubmitAccusation(userID int64, caseID int64, accusedSuspectID int64, accusedWeapon string, accusedMotive string) (*models.Verdict, error) {
+func (s *Service) SubmitAccusation(userID int64, caseID int64, accusedSuspectID int64, accusedWeapon string, accusedMotive string, clueIDs ...int64) (*models.Verdict, error) {
 	var solSuspectID int64
 	var solWeapon, solMotive string
 	err := s.db.QueryRow(`
@@ -303,6 +303,15 @@ func (s *Service) SubmitAccusation(userID int64, caseID int64, accusedSuspectID 
 	`, caseID).Scan(&solSuspectID, &solWeapon, &solMotive)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch case solution: %w", err)
+	}
+
+	// Validate clue grounding if clues were provided
+	if len(clueIDs) >= 2 && s.db != nil {
+		var clueCount int
+		_ = s.db.QueryRow(`SELECT count(*) FROM clues WHERE case_id = ? AND id IN (?, ?)`, caseID, clueIDs[0], clueIDs[1]).Scan(&clueCount)
+		if clueCount < 2 {
+			return nil, fmt.Errorf("evidências inválidas ou desconectadas deste caso criminal")
+		}
 	}
 
 	var suspName string

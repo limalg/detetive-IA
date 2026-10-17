@@ -91,16 +91,26 @@ func TestAdminSettingsAndTelemetry(t *testing.T) {
 		t.Fatalf("expected status 200 on POST /api/admin/settings, got %d: %s", wPost.Code, wPost.Body.String())
 	}
 
-	// 3. Test GET /api/admin/telemetry
+	// 3. Test GET /api/admin/telemetry (Authenticated)
 	reqTel := httptest.NewRequest(http.MethodGet, "/api/admin/telemetry", nil)
+	reqTel.AddCookie(&http.Cookie{Name: "session_token", Value: token})
 	wTel := httptest.NewRecorder()
 	router.ServeHTTP(wTel, reqTel)
 	if wTel.Code != http.StatusOK {
 		t.Fatalf("expected status 200 on /api/admin/telemetry, got %d", wTel.Code)
 	}
 
-	// 4. Test GET /api/admin/logs
+	// 3.1 Verify unauthenticated request to /api/admin/telemetry is rejected with 403 Forbidden
+	reqTelUnauth := httptest.NewRequest(http.MethodGet, "/api/admin/telemetry", nil)
+	wTelUnauth := httptest.NewRecorder()
+	router.ServeHTTP(wTelUnauth, reqTelUnauth)
+	if wTelUnauth.Code != http.StatusForbidden {
+		t.Fatalf("expected status 403 on unauthenticated /api/admin/telemetry, got %d", wTelUnauth.Code)
+	}
+
+	// 4. Test GET /api/admin/logs (Authenticated)
 	reqLogs := httptest.NewRequest(http.MethodGet, "/api/admin/logs?limit=20", nil)
+	reqLogs.AddCookie(&http.Cookie{Name: "session_token", Value: token})
 	wLogs := httptest.NewRecorder()
 	router.ServeHTTP(wLogs, reqLogs)
 	if wLogs.Code != http.StatusOK {

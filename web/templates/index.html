@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Detetive IA - Agência de Investigações</title>
   
   <!-- PWA Meta Tags -->
@@ -31,21 +31,21 @@
       
       <div class="header-actions">
         <!-- Relógio da Madrugada (21:00 às 04:00) -->
-        <div id="night-clock" class="night-clock" title="Relógio da Madrugada: resolva antes das 04:00">
+        <div id="night-clock" class="night-clock" role="timer" aria-live="polite" title="Relógio da Madrugada: resolva antes das 04:00">
           <span class="clock-icon">🕰️</span>
           <span id="clock-display">21:00</span>
           <span class="clock-sub">(Tempo: <span id="clock-remaining">7h 00m</span>)</span>
         </div>
 
         <!-- Contador de Mandados -->
-        <div id="warrants-badge" class="warrants-badge" title="Mandados de Prisão Restantes">
+        <div id="warrants-badge" class="warrants-badge" role="status" aria-live="polite" title="Mandados de Prisão Restantes">
           <span class="badge-icon">⭐</span>
           <span id="warrants-count">2/2</span>
           <span class="badge-label">Mandados</span>
         </div>
 
         <!-- Controle de Áudio Diegético -->
-        <button id="sound-toggle" class="btn btn-secondary" style="padding: 0.35rem 0.6rem; font-size: 0.8rem;" title="Alternar Som">🔊 Som: Ativo</button>
+        <button id="sound-toggle" class="btn btn-secondary" style="padding: 0.35rem 0.6rem; font-size: 0.8rem;" aria-label="Alternar som diegético" title="Alternar Som">🔊 Som: Ativo</button>
 
         <button id="pwa-install-btn" class="btn-pwa-install">📲 Instalar App</button>
         <div class="agent-status">
@@ -60,8 +60,8 @@
     <section id="auth-section">
       <div class="auth-wrapper">
         <div class="auth-tabs">
-          <div id="tab-login" class="auth-tab active">Entrar no Quartel</div>
-          <div id="tab-register" class="auth-tab">Novo Investigador</div>
+          <button type="button" id="tab-login" class="auth-tab active">Entrar no Quartel</button>
+          <button type="button" id="tab-register" class="auth-tab">Novo Investigador</button>
         </div>
 
         <div id="auth-alert" class="auth-alert"></div>
@@ -371,66 +371,71 @@
       <div class="modal-card modal-card-interrogate">
         <div class="modal-header">
           <h3 id="interrogate-modal-title" class="modal-title">Sala de Interrogatório</h3>
-          <button id="close-interrogation-btn" class="modal-close">&times;</button>
+          <button id="close-interrogation-btn" class="modal-close" aria-label="Fechar sala de interrogatório">&times;</button>
         </div>
-        <div class="modal-body">
-          <!-- Centralized Interrogation Stage with Layered Noir Portrait -->
-          <div class="interrogate-stage">
-            <div class="suspect-spotlight"></div>
-            <div class="suspect-portrait-frame">
-              <img id="interrogate-portrait-img" class="suspect-portrait-img" src="/static/assets/suspect_magnate.webp" alt="Suspeito Sob Interrogatório">
-              <div class="smoke-particles"></div>
-              <div id="interrogate-sweat-drops" class="sweat-drops" style="display: none;">💦</div>
-            </div>
-
-            <div id="interrogate-suspect-name" class="suspect-stage-name">Suspeito</div>
-            <div id="interrogate-suspect-profile" class="suspect-stage-profile">
-              <!-- Suspect context -->
-            </div>
-
-            <!-- Stress Meter -->
-            <div id="suspect-stress-container" class="stress-container" style="margin-bottom: 0.75rem; width: 100%; max-width: 420px;">
-              <div style="display: flex; justify-content: space-between; font-size: 0.8rem; font-family: var(--font-typewriter); margin-bottom: 0.25rem;">
-                <span style="color: var(--text-muted);">Nível de Estresse do Suspeito:</span>
-                <span id="suspect-stress-label" style="color: var(--accent-amber); font-weight: bold;">0% (Calmo)</span>
+        <div class="modal-body interrogate-layout-grid">
+          <!-- Coluna 1: Palco do Suspeito, Holofote, Perfil e Polígrafo -->
+          <div class="interrogate-col-stage">
+            <div class="interrogate-stage">
+              <div class="suspect-spotlight"></div>
+              <div class="suspect-portrait-frame">
+                <img id="interrogate-portrait-img" class="suspect-portrait-img" src="/static/assets/suspect_magnate.webp" alt="Suspeito Sob Interrogatório">
+                <div class="smoke-particles"></div>
+                <div id="interrogate-sweat-drops" class="sweat-drops" style="display: none;">💦</div>
               </div>
-              <div class="stress-bar-bg" style="width: 100%; height: 8px; background: rgba(255,255,255,0.08); border-radius: 4px; overflow: hidden; border: 1px solid var(--border-noir);">
-                <div id="suspect-stress-meter" class="stress-bar-fill" style="width: 0%; height: 100%; background: linear-gradient(90deg, var(--accent-green), var(--accent-amber)); transition: width 0.4s ease;"></div>
+
+              <div id="interrogate-suspect-name" class="suspect-stage-name">Suspeito</div>
+              <div id="interrogate-suspect-profile" class="suspect-stage-profile">
+                <!-- Suspect context -->
+              </div>
+
+              <!-- Polígrafo / Medidor de Tensão -->
+              <div id="suspect-stress-container" class="stress-container" style="margin-bottom: 0.75rem; width: 100%; max-width: 420px;">
+                <div style="display: flex; justify-content: space-between; font-size: 0.8rem; font-family: var(--font-typewriter); margin-bottom: 0.25rem;">
+                  <span style="color: var(--text-muted);">Polígrafo de Tensão:</span>
+                  <span id="suspect-stress-label" style="color: var(--accent-amber); font-weight: bold;">0% (Calmo)</span>
+                </div>
+                <div class="stress-bar-bg" style="width: 100%; height: 8px; background: rgba(255,255,255,0.08); border-radius: 4px; overflow: hidden; border: 1px solid var(--border-noir);">
+                  <div id="suspect-stress-meter" class="stress-bar-fill" style="width: 0%; height: 100%; background: linear-gradient(90deg, var(--accent-green), var(--accent-amber)); transition: width 0.4s ease;"></div>
+                </div>
+              </div>
+
+              <!-- Reação em Balão de Fala -->
+              <div id="interrogate-speech-balloon" class="interrogate-speech-balloon">
+                <div class="speech-balloon-tail"></div>
+                <div id="interrogate-speech-text" class="speech-balloon-text">"O que você quer de mim, detetive? Não tenho nada a esconder."</div>
               </div>
             </div>
+          </div>
 
-            <!-- Centered Speech Balloon for Suspect's latest reaction/quote -->
-            <div id="interrogate-speech-balloon" class="interrogate-speech-balloon">
-              <div class="speech-balloon-tail"></div>
-              <div id="interrogate-speech-text" class="speech-balloon-text">"O que você quer de mim, detetive? Não tenho nada a esconder."</div>
+          <!-- Coluna 2: Dossiê de Transcrições, Chips e Pergunta Sticky -->
+          <div class="interrogate-col-dossier">
+            <div id="chat-transcript" class="chat-transcript" role="log" aria-live="polite">
+              <!-- Messages rendered by app.js -->
             </div>
-          </div>
 
-          <div id="chat-transcript" class="chat-transcript">
-            <!-- Messages rendered by app.js -->
-          </div>
+            <div class="prompt-chips">
+              <button type="button" class="chip" data-prompt="Onde você estava na hora do crime?">📍 Onde estava?</button>
+              <button type="button" class="chip" data-prompt="Qual era a sua relação com a vítima?">👤 Relação com a vítima</button>
+              <button type="button" class="chip" data-prompt="O que você sabe sobre a arma do crime?">🗡️ Sabe algo da arma?</button>
+              <button type="button" class="chip" data-prompt="Você tem algum segredo que queira confessar?">🤫 Algum segredo?</button>
+            </div>
 
-          <div class="prompt-chips">
-            <button class="chip" data-prompt="Onde você estava na hora do crime?">📍 Onde estava?</button>
-            <button class="chip" data-prompt="Qual era a sua relação com a vítima?">👤 Relação com a vítima</button>
-            <button class="chip" data-prompt="O que você sabe sobre a arma do crime?">🗡️ Sabe algo da arma?</button>
-            <button class="chip" data-prompt="Você tem algum segredo que queira confessar?">🤫 Algum segredo?</button>
-          </div>
+            <!-- Confront with Clue Selector -->
+            <div class="confront-container" style="margin-bottom: 0.75rem;">
+              <label class="form-label" for="confront-clue-select" style="font-size: 0.75rem; margin-bottom: 0.2rem; color: var(--accent-amber);">
+                ⚔️ Confrontar Suspeito com Evidência Coletada:
+              </label>
+              <select id="confront-clue-select" class="form-input" style="font-size: 0.85rem; padding: 0.5rem;">
+                <option value="">Nenhuma evidência (Pergunta regular)</option>
+              </select>
+            </div>
 
-          <!-- Confront with Clue Selector -->
-          <div style="margin-bottom: 0.75rem;">
-            <label class="form-label" for="confront-clue-select" style="font-size: 0.75rem; margin-bottom: 0.2rem; color: var(--accent-amber);">
-              ⚔️ Confrontar Suspeito com Evidência Coletada:
-            </label>
-            <select id="confront-clue-select" class="form-input" style="font-size: 0.85rem; padding: 0.5rem;">
-              <option value="">Nenhuma evidência (Pergunta regular)</option>
-            </select>
+            <form id="interrogation-form" class="chat-input-wrapper">
+              <input type="text" id="interrogation-input" class="chat-input" placeholder="Digite sua pergunta ao suspeito..." required autocomplete="off">
+              <button type="submit" id="send-question-btn" class="btn btn-primary">Interrogar</button>
+            </form>
           </div>
-
-          <form id="interrogation-form" class="chat-input-wrapper">
-            <input type="text" id="interrogation-input" class="chat-input" placeholder="Digite sua pergunta ao suspeito..." required autocomplete="off">
-            <button type="submit" id="send-question-btn" class="btn btn-primary">Interrogar</button>
-          </form>
         </div>
       </div>
     </div>
@@ -440,7 +445,7 @@
       <div class="modal-card" style="max-width: 500px;">
         <div class="modal-header">
           <h3 class="modal-title">Confirmação de Veredito</h3>
-          <button id="close-accuse-modal-btn" class="modal-close">&times;</button>
+          <button id="close-accuse-modal-btn" class="modal-close" aria-label="Fechar confirmação de mandado">&times;</button>
         </div>
         <div class="modal-body" id="accuse-modal-body">
           <!-- Details filled by app.js -->
@@ -470,7 +475,7 @@
       <div class="modal-card loupe-card" style="max-width: 580px;">
         <div class="modal-header">
           <h3 id="loupe-title" class="modal-title">🔍 Exame Pericial & Balístico</h3>
-          <button id="close-loupe-btn" class="modal-close">&times;</button>
+          <button id="close-loupe-btn" class="modal-close" aria-label="Fechar exame pericial">&times;</button>
         </div>
         <div class="modal-body">
           <div class="loupe-lens-container">

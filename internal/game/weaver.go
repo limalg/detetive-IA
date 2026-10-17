@@ -191,7 +191,7 @@ var themesMap = map[string]themeDefinition{
 		crimeScene:            "Gabinete Privado",
 		contradictionLoc:      "Portaria & Registros de Serviço",
 		contradictionClueName: "Registro de Manutenção e Álibi Falso",
-		contradictionFormat:   "Registro de Manutenção e Testemunho: Todo o salão de música e sua ala estiveram trancados para reparo emergencial de vazamento de gás das 21h às 04h. O álibi alegado por %s contém contradição fatal e é falso.",
+		contradictionFormat:   "Registro de Manutenção e Testemunho: Todo o salão de música e sua ala estiveram trancados para reparo emergencial de vazamento de gás das 21h às 04h. Qualquer pessoa que afirme ter passado a noite neste local sustenta um álibi categoricamente falso.",
 		docLoc:                "Cofre Oculto da Biblioteca",
 		atmosLoc:              "Jardim de Inverno",
 		atmosName:             "Pegadas Úmidas e Cinzas de Charuto",
@@ -207,7 +207,7 @@ var themesMap = map[string]themeDefinition{
 		crimeScene:            "Cabine de Primeira Classe (Vagão Leito A)",
 		contradictionLoc:      "Registro do Condutor & Prancheta de Bordo",
 		contradictionClueName: "Registro de Bordo e Álibi Falso",
-		contradictionFormat:   "Registro de Bordo do Condutor: O vagão-restaurante foi evacuado e trancado às 22h30 devido a um curto-circuito na cozinha. O álibi alegado por %s contém contradição fatal e é falso.",
+		contradictionFormat:   "Registro de Bordo do Condutor: O vagão-restaurante foi evacuado e trancado às 22h30 devido a um curto-circuito na cozinha. Qualquer alegação de permanência no restaurante durante a travessia noturna sustenta um álibi falso.",
 		docLoc:                "Mala Diplomática com Fundo Falso",
 		atmosLoc:              "Plataforma de Conexão Entre Vagões",
 		atmosName:             "Cinzas de Fumo Turco e Vidro Trincado",
@@ -223,7 +223,7 @@ var themesMap = map[string]themeDefinition{
 		crimeScene:            "Camarim Principal do Teatro",
 		contradictionLoc:      "Portaria de Artistas & Quadro de Chaves",
 		contradictionClueName: "Quadro de Chaves e Álibi Falso",
-		contradictionFormat:   "Quadro de Chaves e Registro da Portaria: A cabine de iluminação operou em modo automático e a chave permaneceu lacrada no cofre do contra-regra a noite inteira. O álibi alegado por %s contém contradição fatal e é falso.",
+		contradictionFormat:   "Quadro de Chaves e Registro da Portaria: A cabine de iluminação operou em modo automático e a chave permaneceu lacrada no cofre do contra-regra a noite inteira. Qualquer álibi alegando permanência na cabine é manifestamente falso.",
 		docLoc:                "Partitura Trancada no Fosso da Orquestra",
 		atmosLoc:              "Bastidores do Palco",
 		atmosName:             "Pó de Maquiagem Teatral e Luva de Seda",
@@ -239,7 +239,7 @@ var themesMap = map[string]themeDefinition{
 		crimeScene:            "Sala VIP dos Fundos do Cassino",
 		contradictionLoc:      "Guichê de Câmbio & Livro de Caixas",
 		contradictionClueName: "Livro de Caixas e Álibi Falso",
-		contradictionFormat:   "Livro de Caixas e Depoimento do Chefe de Mesa: A mesa de bacará esteve fechada para recontagem de fichas desde a meia-noite por suspeita de cartas marcadas. O álibi alegado por %s contém contradição fatal e é falso.",
+		contradictionFormat:   "Livro de Caixas e Depoimento do Chefe de Mesa: A mesa de bacará esteve fechada para recontagem de fichas desde a meia-noite por suspeita de cartas marcadas. Qualquer álibi de jogo na mesa de bacará na madrugada é falso.",
 		docLoc:                "Cofre Falso sob a Mesa de Roleta",
 		atmosLoc:              "Beco das Docas Atrás do Cassino",
 		atmosName:             "Fichas Manchadas e Marcas de Pneu",
@@ -376,10 +376,17 @@ func (w *Weaver) WeaveCaseWithTheme(players []room.Player, themeID string, suspe
 	culprit.Alibi = culprit.Tier1Alibi
 	culprit.Tier3Truth = fmt.Sprintf("%s descobriu tudo sobre %s e ia me arruinar perante a sociedade! Quando ele me ameaçou, perdi a cabeça e usei a %s!", theme.victimShort, motive.name, weapon.name)
 
-	// Ensure all innocents have coherent Tier 3 truth
+	// Preserve individual Tier 3 truth for innocents with dynamic victim contextualization
 	for i := range suspectPool {
 		if !suspectPool[i].IsCulprit {
-			suspectPool[i].Tier3Truth = fmt.Sprintf("Posso ter meus pecados e segredos menores, mas sou inocente deste crime horrendo! Jamais assassinaria %s!", theme.victimShort)
+			if suspectPool[i].Tier3Truth != "" {
+				suspectPool[i].Tier3Truth = strings.ReplaceAll(suspectPool[i].Tier3Truth, "Arthur", theme.victimShort)
+				if !strings.Contains(suspectPool[i].Tier3Truth, "inocente") && !strings.Contains(suspectPool[i].Tier3Truth, "matou") {
+					suspectPool[i].Tier3Truth += fmt.Sprintf(" Mas sou inocente da morte de %s!", theme.victimShort)
+				}
+			} else {
+				suspectPool[i].Tier3Truth = fmt.Sprintf("Posso ter meus segredos e deslizes menores, mas sou inocente da morte de %s!", theme.victimShort)
+			}
 		}
 	}
 
@@ -390,7 +397,7 @@ func (w *Weaver) WeaveCaseWithTheme(players []room.Player, themeID string, suspe
 		suspectPool[i].CrossSuspicion = fmt.Sprintf("Desconfio de %s; vi passos apressados perto da cena do crime e discussões tensas a portas fechadas.", other.Name)
 	}
 
-	contradictionText := fmt.Sprintf(theme.contradictionFormat, culprit.Name)
+	contradictionText := theme.contradictionFormat
 
 	victimName := theme.victim
 	caseTitle := theme.title
@@ -458,7 +465,7 @@ func (w *Weaver) WeaveCaseWithTheme(players []room.Player, themeID string, suspe
 			CaseID:      caseID,
 			Location:    theme.docLoc,
 			Name:        "Documento: " + motive.docName,
-			Description: motive.docDesc + fmt.Sprintf(" diretamente conectado a %s.", savedCulprit.Name),
+			Description: motive.docDesc + ", expondo as cobranças e o motivo fatal oculto que levou ao crime.",
 		},
 		// Clue 4: Circumstantial atmospheric clue
 		{
