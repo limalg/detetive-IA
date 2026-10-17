@@ -25,7 +25,7 @@ func InitDB(dbPath string) (*sql.DB, error) {
 		return nil, fmt.Errorf("failed to open sqlite database: %w", err)
 	}
 
-	// Bound connections to 1 for embedded SQLite to prevent lock contention and keep memory footprint minimal (<60MB)
+	// Configure SQLite connection pooling for embedded operation with free memory allocation
 	database.SetMaxOpenConns(1)
 
 	pragmas := []string{

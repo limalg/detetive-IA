@@ -59,6 +59,7 @@ func NewRouter(cfg Config) http.Handler {
 	mux.HandleFunc("/api/game/solo/start", h.HandleStartSoloGame)
 	mux.HandleFunc("/api/game/interrogate", h.HandleInterrogate)
 	mux.HandleFunc("/api/game/accuse", h.HandleAccuse)
+	mux.HandleFunc("/api/game/personas/saved", h.HandleSavedPersonas)
 
 	// Room & Lobby endpoints (plural REST standard)
 	mux.HandleFunc("/api/rooms", h.HandleRooms)

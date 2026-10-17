@@ -3,239 +3,520 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Detetive IA - Painel de Administração & Telemetria</title>
+  <title>Detetive IA - Painel de Administração & Telemetria Forense</title>
   <link rel="stylesheet" href="/static/css/style.css">
   <style>
-    .admin-container {
-      max-width: 1000px;
-      margin: 1.5rem auto;
-      padding: 1.5rem;
-      background: var(--bg-card);
-      border: 1px solid var(--border-noir);
-      border-radius: 6px;
-      box-shadow: var(--shadow-noir);
+    :root {
+      --police-gold: #d4a373;
+      --police-brass: #b45309;
+      --police-amber: #e09f3e;
+      --police-dark: #0a090c;
+      --police-panel: #141218;
+      --police-border: #2e2a36;
+      --police-crt: #0d130e;
+      --police-terminal-green: #4ade80;
     }
-    .admin-header {
+
+    body {
+      background-color: var(--police-dark);
+      background-image: radial-gradient(circle at 50% 10%, rgba(224, 159, 62, 0.05) 0%, transparent 60%),
+                        linear-gradient(180deg, rgba(0,0,0,0.85) 0%, rgba(10,9,12,0.98) 100%);
+      color: #e4e4e7;
+      min-height: 100vh;
+      margin: 0;
+      padding: 1.5rem 1rem;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+
+    .police-station-container {
+      max-width: 1100px;
+      margin: 0 auto;
+      background: var(--police-panel);
+      border: 2px solid var(--police-border);
+      border-radius: 8px;
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.9), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+      overflow: hidden;
+    }
+
+    .police-header {
+      background: linear-gradient(180deg, #1f1b24 0%, #131117 100%);
+      border-bottom: 2px solid var(--police-gold);
+      padding: 1.25rem 1.75rem;
       display: flex;
       justify-content: space-between;
       align-items: center;
-      border-bottom: 2px solid var(--accent-amber);
-      padding-bottom: 1rem;
-      margin-bottom: 1.5rem;
+      flex-wrap: wrap;
+      gap: 1rem;
     }
-    .metric-grid {
+
+    .police-crest-area {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .police-badge-emblem {
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 35% 35%, #fde68a 0%, #d97706 60%, #78350f 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.6), inset 0 1px 2px rgba(255,255,255,0.7);
+      border: 2px solid #78350f;
+    }
+
+    .police-badge-emblem svg {
+      width: 28px;
+      height: 28px;
+      fill: #1c1917;
+    }
+
+    .police-header-title {
+      font-family: var(--font-typewriter, 'Special Elite', monospace);
+      color: var(--police-gold);
+      font-size: 1.25rem;
+      letter-spacing: 1.5px;
+      margin: 0 0 0.25rem 0;
+      text-transform: uppercase;
+    }
+
+    .police-header-sub {
+      font-size: 0.8rem;
+      color: #a1a1aa;
+      letter-spacing: 0.5px;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .status-indicator-dot {
+      display: inline-block;
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: #22c55e;
+      box-shadow: 0 0 8px #22c55e;
+      animation: pulseGreen 2s infinite ease-in-out;
+    }
+
+    @keyframes pulseGreen {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.6; transform: scale(1.15); }
+    }
+
+    /* Radar Metrics */
+    .radar-metrics-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-      gap: 1rem;
-      margin-bottom: 1.5rem;
+      gap: 0.85rem;
+      padding: 1.25rem 1.75rem;
+      background: rgba(0, 0, 0, 0.35);
+      border-bottom: 1px solid var(--police-border);
     }
-    .metric-card {
-      background: rgba(0,0,0,0.4);
-      border: 1px solid var(--border-noir);
-      padding: 1rem;
+
+    .radar-metric-card {
+      background: rgba(18, 16, 22, 0.85);
+      border: 1px solid var(--police-border);
+      border-left: 3px solid var(--police-gold);
       border-radius: 4px;
-      text-align: center;
+      padding: 0.85rem 1rem;
+      transition: transform 0.2s, border-color 0.2s;
     }
-    .metric-val {
-      font-size: 1.8rem;
+
+    .radar-metric-card:hover {
+      transform: translateY(-2px);
+      border-color: var(--police-amber);
+    }
+
+    .radar-metric-value {
+      font-family: var(--font-typewriter, monospace);
+      font-size: 1.65rem;
       font-weight: bold;
-      color: var(--accent-amber);
-      font-family: var(--font-typewriter);
+      color: var(--police-gold);
+      line-height: 1.1;
     }
-    .metric-label {
-      font-size: 0.8rem;
-      color: var(--text-muted);
+
+    .radar-metric-label {
+      font-size: 0.72rem;
       text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: #9ca3af;
+      margin-top: 0.35rem;
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+
+    .memory-free-badge {
+      display: inline-block;
+      font-size: 0.65rem;
+      padding: 0.15rem 0.4rem;
+      background: rgba(34, 197, 94, 0.15);
+      color: #4ade80;
+      border: 1px solid rgba(34, 197, 94, 0.4);
+      border-radius: 3px;
+      font-weight: bold;
       margin-top: 0.25rem;
     }
-    .admin-tabs {
+
+    /* Police Tabs */
+    .police-nav-tabs {
       display: flex;
+      background: rgba(10, 9, 12, 0.95);
+      border-bottom: 1px solid var(--police-border);
+      padding: 0 1.25rem;
       gap: 0.5rem;
-      border-bottom: 1px solid var(--border-noir);
-      margin-bottom: 1.5rem;
+      overflow-x: auto;
     }
-    .admin-tab {
-      padding: 0.6rem 1.2rem;
-      cursor: pointer;
-      font-family: var(--font-typewriter);
-      border-radius: 4px 4px 0 0;
-      color: var(--text-muted);
+
+    .police-nav-tab {
       background: transparent;
       border: none;
-      min-height: 44px;
+      border-bottom: 3px solid transparent;
+      color: #9ca3af;
+      padding: 0.85rem 1.25rem;
+      font-family: var(--font-typewriter, monospace);
+      font-size: 0.85rem;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
       transition: all 0.2s;
+      white-space: nowrap;
     }
-    .admin-tab.active {
-      color: var(--accent-amber);
-      border-bottom: 2px solid var(--accent-amber);
-      background: rgba(212, 163, 89, 0.1);
+
+    .police-nav-tab:hover {
+      color: #f4f4f5;
+      background: rgba(255, 255, 255, 0.03);
+    }
+
+    .police-nav-tab.active {
+      color: var(--police-gold);
+      border-bottom-color: var(--police-gold);
+      background: rgba(212, 163, 89, 0.08);
       font-weight: bold;
     }
-    .log-table {
+
+    /* Content Area */
+    .police-tab-pane {
+      padding: 1.5rem 1.75rem;
+    }
+
+    /* Vintage Typewriter Cards */
+    .command-box {
+      background: rgba(0, 0, 0, 0.25);
+      border: 1px solid var(--police-border);
+      border-radius: 6px;
+      padding: 1.25rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .command-box-title {
+      font-family: var(--font-typewriter, monospace);
+      font-size: 1rem;
+      color: var(--police-gold);
+      margin: 0 0 0.85rem 0;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      border-bottom: 1px dashed var(--police-border);
+      padding-bottom: 0.5rem;
+    }
+
+    /* Police Terminal CRT Output */
+    .police-crt-terminal {
+      background: var(--police-crt);
+      border: 1px solid #1c2e20;
+      border-radius: 4px;
+      padding: 1rem;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 0.85rem;
+      color: var(--police-terminal-green);
+      line-height: 1.5;
+      max-height: 250px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      box-shadow: inset 0 0 15px rgba(0, 0, 0, 0.9);
+      position: relative;
+    }
+
+    .police-crt-terminal::after {
+      content: " ";
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%);
+      background-size: 100% 4px;
+      pointer-events: none;
+      opacity: 0.5;
+    }
+
+    /* Police Logbook Table */
+    .police-logbook-table {
       width: 100%;
       border-collapse: collapse;
-      font-size: 0.85rem;
-      font-family: monospace;
+      font-size: 0.82rem;
+      font-family: 'Courier New', Courier, monospace;
     }
-    .log-table th, .log-table td {
-      border: 1px solid var(--border-noir);
-      padding: 0.5rem;
+
+    .police-logbook-table th {
+      background: #09080b;
+      color: var(--police-gold);
+      border: 1px solid var(--police-border);
+      padding: 0.6rem 0.75rem;
       text-align: left;
+      font-family: var(--font-typewriter, monospace);
+      letter-spacing: 0.5px;
+      font-size: 0.75rem;
     }
-    .log-table th {
-      background: rgba(0,0,0,0.6);
-      color: var(--accent-amber);
+
+    .police-logbook-table td {
+      border: 1px solid var(--police-border);
+      padding: 0.5rem 0.75rem;
+      background: rgba(0, 0, 0, 0.18);
     }
-    .level-INFO { color: var(--accent-green, #6b8f71); }
-    .level-WARN { color: var(--accent-gold, #d4a373); }
-    .level-ERROR { color: var(--accent-crimson, #9e2a2b); font-weight: bold; }
-    .test-output-box {
-      background: #000;
-      border: 1px solid var(--border-noir);
-      padding: 0.75rem;
-      font-family: monospace;
-      font-size: 0.85rem;
-      color: var(--accent-amber, #e09f3e);
-      margin-top: 1rem;
-      min-height: 50px;
-      border-radius: 4px;
-      white-space: pre-wrap;
+
+    .police-logbook-table tr:hover td {
+      background: rgba(212, 163, 89, 0.05);
+    }
+
+    .badge-level {
+      display: inline-block;
+      padding: 0.15rem 0.45rem;
+      border-radius: 3px;
+      font-size: 0.68rem;
+      font-weight: bold;
+      text-transform: uppercase;
+      font-family: sans-serif;
+    }
+
+    .badge-level.level-INFO { background: rgba(34, 197, 94, 0.2); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.4); }
+    .badge-level.level-WARN { background: rgba(245, 158, 11, 0.2); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.4); }
+    .badge-level.level-ERROR { background: rgba(239, 68, 68, 0.25); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.5); }
+
+    .noir-icon, .noir-icon-lg {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      vertical-align: middle;
+      line-height: 1;
     }
   </style>
 </head>
 <body>
-  <div class="admin-container">
-    <div class="admin-header">
-      <div>
-        <h2 style="font-family: var(--font-typewriter); color: var(--accent-amber); margin: 0;">⚙️ Painel de Administração & OpenTelemetry</h2>
-        <div style="font-size: 0.85rem; color: var(--text-muted);">Controle de Modelos de IA e Monitoramento em Tempo Real</div>
-      </div>
-      <div>
-        <a href="/" class="btn btn-secondary">← Voltar ao Quartel do Jogo</a>
-      </div>
-    </div>
+  <!-- Hidden SVG Symbols Master -->
+  <svg style="display: none;">
+    <defs>
+      <symbol id="icon-police-badge" viewBox="0 0 24 24">
+        <path fill="currentColor" d="M12 2L4 5v6.09c0 5.05 3.41 9.76 8 10.91c4.59-1.15 8-5.86 8-10.91V5l-8-3zm0 4a3 3 0 1 1 0 6a3 3 0 0 1 0-6zm3 11H9v-1c0-1.5 2-2.5 3-2.5s3 1 3 2.5v1z"/>
+      </symbol>
+      <symbol id="icon-cpu" viewBox="0 0 24 24">
+        <path fill="currentColor" d="M9 2h6v2h2a2 2 0 0 1 2 2v2h2v2h-2v4h2v2h-2v2a2 2 0 0 1-2 2h-2v2H9v-2H7a2 2 0 0 1-2-2v-2H3v-2h2v-4H3V9h2V7a2 2 0 0 1 2-2h2V2zm-2 5v10h10V7H7zm2 2h6v6H9V9z"/>
+      </symbol>
+      <symbol id="icon-activity" viewBox="0 0 24 24">
+        <path fill="currentColor" d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+      </symbol>
+      <symbol id="icon-terminal" viewBox="0 0 24 24">
+        <path fill="currentColor" d="M20 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zM4 18V8h16v10H4zm2-8h2v2H6zm3 0h2v2H9zm3 0h2v2h-2z"/>
+      </symbol>
+      <symbol id="icon-refresh" viewBox="0 0 24 24">
+        <path fill="currentColor" d="M17.65 6.35A7.958 7.958 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0 1 12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
+      </symbol>
+      <symbol id="icon-back" viewBox="0 0 24 24">
+        <path fill="currentColor" d="M20 11H7.83l5.59-5.59L12 4l-8 8l8 8l1.41-1.41L7.83 13H20v-2z"/>
+      </symbol>
+    </defs>
+  </svg>
 
-    <!-- Live Telemetry Metrics -->
-    <div class="metric-grid">
-      <div class="metric-card">
-        <div class="metric-val" id="metric-requests">-</div>
-        <div class="metric-label">Total Requisições</div>
-      </div>
-      <div class="metric-card">
-        <div class="metric-val" id="metric-ai-calls">-</div>
-        <div class="metric-label">Chamadas IA</div>
-      </div>
-      <div class="metric-card">
-        <div class="metric-val" id="metric-latency">- ms</div>
-        <div class="metric-label">Latência Média</div>
-      </div>
-      <div class="metric-card">
-        <div class="metric-val" id="metric-memory">- MB</div>
-        <div class="metric-label">RAM Alocada (&lt;60MB)</div>
-      </div>
-      <div class="metric-card">
-        <div class="metric-val" id="metric-errors">-</div>
-        <div class="metric-label">Erros Detectados</div>
-      </div>
-    </div>
-
-    <!-- Tabs -->
-    <div class="admin-tabs">
-      <button type="button" class="admin-tab active" data-tab="ai-settings">Configuração de IA</button>
-      <button type="button" class="admin-tab" data-tab="opentelemetry">Logs & OpenTelemetry</button>
-      <button type="button" class="admin-tab" data-tab="spans">Spans de Execução</button>
-    </div>
-
-    <div id="alert-box" class="auth-alert" style="display: none;"></div>
-
-    <!-- Tab 1: AI Settings -->
-    <div id="tab-content-ai-settings">
-      <form id="ai-settings-form">
-        <div class="form-group">
-          <label class="form-label" for="ai-url">Endpoint / URL da API de IA (OpenAI-compatible ou Gemini)</label>
-          <input type="text" id="ai-url" class="form-input" placeholder="https://router.ofertasshow.shop/v1" required>
-          <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Padrão: Router OpenAI-compatible configurado nas credenciais do Maestri.</div>
+  <div class="police-station-container">
+    <!-- Police Station Header -->
+    <header class="police-header">
+      <div class="police-crest-area">
+        <div class="police-badge-emblem" aria-hidden="true">
+          <svg><use href="#icon-police-badge"></use></svg>
         </div>
-
-        <div class="form-group">
-          <label class="form-label" for="ai-api-key">Chave de API (Bearer Token)</label>
-          <input type="password" id="ai-api-key" class="form-input" placeholder="sk-..." required>
-        </div>
-
-        <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 1rem;">
-          <div class="form-group">
-            <label class="form-label" for="ai-model">Nome do Modelo</label>
-            <input type="text" id="ai-model" class="form-input" placeholder="ondegastei" required>
-          </div>
-          <div class="form-group">
-            <label class="form-label" for="ai-provider">Provedor</label>
-            <select id="ai-provider" class="form-input">
-              <option value="openai_compatible" selected>OpenAI Compatible (Router)</option>
-              <option value="gemini">Google Gemini REST</option>
-            </select>
+        <div class="police-title-group">
+          <h1 class="police-header-title">Painel de Administração • Departamento de Polícia</h1>
+          <div class="police-header-sub">
+            <span class="status-indicator-dot"></span>
+            <span>Central de Comando & Telemetria Forense • Distrito Policial Noturno</span>
           </div>
         </div>
+      </div>
+      <div>
+        <a href="/" class="btn btn-secondary" style="font-size: 0.85rem; padding: 0.45rem 0.85rem;">
+          <svg class="noir-icon" aria-hidden="true"><use href="#icon-back"></use></svg>
+          <span>Retornar ao Plantão do Jogo</span>
+        </a>
+      </div>
+    </header>
 
-        <div style="display: flex; gap: 1rem; margin-top: 1rem;">
-          <button type="submit" class="btn btn-primary">Salvar Configurações</button>
-          <button type="button" id="btn-test-ai" class="btn btn-secondary">Testar Conexão com IA</button>
+    <!-- Police Station Radar Metrics -->
+    <section class="radar-metrics-grid" aria-label="Métricas do Distrito">
+      <div class="radar-metric-card">
+        <div class="radar-metric-value" id="metric-requests">-</div>
+        <div class="radar-metric-label">
+          <svg class="noir-icon" aria-hidden="true"><use href="#icon-activity"></use></svg>
+          <span>Total Diligências</span>
         </div>
-      </form>
+      </div>
+      <div class="radar-metric-card">
+        <div class="radar-metric-value" id="metric-ai-calls">-</div>
+        <div class="radar-metric-label">
+          <svg class="noir-icon" aria-hidden="true"><use href="#icon-cpu"></use></svg>
+          <span>Interrogações IA</span>
+        </div>
+      </div>
+      <div class="radar-metric-card">
+        <div class="radar-metric-value" id="metric-latency">- ms</div>
+        <div class="radar-metric-label">Latência do Modelo</div>
+      </div>
+      <div class="radar-metric-card">
+        <div class="radar-metric-value" id="metric-memory">- MB</div>
+        <div class="radar-metric-label">RAM Alocada</div>
+        <div class="memory-free-badge">Memória Livre (Sem Restrições)</div>
+      </div>
+      <div class="radar-metric-card">
+        <div class="radar-metric-value" id="metric-errors">-</div>
+        <div class="radar-metric-label">Autos de Falha</div>
+      </div>
+    </section>
 
-      <div style="margin-top: 1.5rem;">
-        <h4 style="font-family: var(--font-typewriter); color: var(--accent-amber); font-size: 0.95rem;">Resultado do Teste de Conexão:</h4>
-        <div id="test-output" class="test-output-box">Clique em 'Testar Conexão com IA' para validar a chave e o endpoint.</div>
+    <!-- Navigation Tabs -->
+    <nav class="police-nav-tabs">
+      <button type="button" class="police-nav-tab active" data-tab="ai-settings">
+        <svg class="noir-icon" aria-hidden="true"><use href="#icon-cpu"></use></svg>
+        <span>Motores de IA & Playground</span>
+      </button>
+      <button type="button" class="police-nav-tab" data-tab="opentelemetry">
+        <svg class="noir-icon" aria-hidden="true"><use href="#icon-terminal"></use></svg>
+        <span>Autos Policiais & Logs</span>
+      </button>
+      <button type="button" class="police-nav-tab" data-tab="spans">
+        <svg class="noir-icon" aria-hidden="true"><use href="#icon-activity"></use></svg>
+        <span>Spans de Rastreio Forense</span>
+      </button>
+    </nav>
+
+    <div id="alert-box" class="auth-alert" style="display: none; margin: 1rem 1.75rem 0;"></div>
+
+    <!-- Tab 1: AI Settings & Prompt Playground -->
+    <div id="tab-content-ai-settings" class="police-tab-pane">
+      <div class="command-box">
+        <h3 class="command-box-title">
+          <svg class="noir-icon" aria-hidden="true"><use href="#icon-cpu"></use></svg>
+          <span>Configuração dos Motores de IA do Departamento</span>
+        </h3>
+        <form id="ai-settings-form">
+          <div class="form-group" style="margin-bottom: 1rem;">
+            <label class="form-label" for="ai-url">Endpoint / URL da API de Inferência (OpenAI-compatible ou Gemini)</label>
+            <input type="text" id="ai-url" class="form-input" placeholder="https://router.ofertasshow.shop/v1" required>
+            <div style="font-size: 0.72rem; color: #9ca3af; margin-top: 0.25rem;">
+              Padrão Oficial: Router OpenAI-compatible configurado nas credenciais do ecossistema Maestri.
+            </div>
+          </div>
+
+          <div class="form-group" style="margin-bottom: 1rem;">
+            <label class="form-label" for="ai-api-key">Chave de API / Bearer Token da Central</label>
+            <input type="password" id="ai-api-key" class="form-input" placeholder="sk-..." required>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 1rem; margin-bottom: 1.25rem;">
+            <div class="form-group" style="margin-bottom: 0;">
+              <label class="form-label" for="ai-model">Nome do Modelo Operacional</label>
+              <input type="text" id="ai-model" class="form-input" placeholder="ondegastei" required>
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label class="form-label" for="ai-provider">Provedor de Conexão</label>
+              <select id="ai-provider" class="form-input">
+                <option value="openai_compatible" selected>OpenAI Compatible (Router)</option>
+                <option value="gemini">Google Gemini REST</option>
+              </select>
+            </div>
+          </div>
+
+          <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+            <button type="submit" class="btn btn-primary">
+              <svg class="noir-icon" aria-hidden="true"><use href="#icon-police-badge"></use></svg>
+              <span>Salvar Diretrizes de IA</span>
+            </button>
+            <button type="button" id="btn-test-ai" class="btn btn-secondary">
+              <svg class="noir-icon" aria-hidden="true"><use href="#icon-terminal"></use></svg>
+              <span>Testar Conexão Imediata</span>
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <!-- Playground CRT Output -->
+      <div class="command-box">
+        <h3 class="command-box-title">
+          <svg class="noir-icon" aria-hidden="true"><use href="#icon-terminal"></use></svg>
+          <span>Terminal CRT de Teste de Comunicação do Modelo</span>
+        </h3>
+        <div class="form-group" style="margin-bottom: 0.75rem;">
+          <label class="form-label" for="test-prompt-input">Prompt de Teste / Instrução para o Modelo:</label>
+          <input type="text" id="test-prompt-input" class="form-input" value="Diga apenas: Central de Polícia conectada com sucesso ao Detetive IA!">
+        </div>
+        <div id="test-output" class="police-crt-terminal">
+SISTEMA DE TELEMETRIA FORENSE PRONTO.
+Clique em 'Testar Conexão Imediata' para enviar o sinal via rádio-patrulha ao modelo configurado.
+        </div>
       </div>
     </div>
 
     <!-- Tab 2: Logs & OpenTelemetry -->
-    <div id="tab-content-opentelemetry" style="display: none;">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-        <div>
-          <label style="font-size: 0.85rem; color: var(--text-muted);">Filtrar Nível:</label>
-          <select id="log-level-filter" class="form-input" style="width: auto; display: inline-block; padding: 0.2rem 0.5rem;">
-            <option value="">TODOS</option>
-            <option value="INFO">INFO</option>
-            <option value="WARN">WARN</option>
-            <option value="ERROR">ERROR</option>
+    <div id="tab-content-opentelemetry" class="police-tab-pane" style="display: none;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.75rem;">
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+          <label style="font-size: 0.8rem; color: #9ca3af; font-family: var(--font-typewriter, monospace);">Filtrar Nível:</label>
+          <select id="log-level-filter" class="form-input" style="width: auto; padding: 0.25rem 0.65rem; font-size: 0.82rem;">
+            <option value="">TODOS OS AUTOS</option>
+            <option value="INFO">INFO (Operações Regulares)</option>
+            <option value="WARN">WARN (Avisos)</option>
+            <option value="ERROR">ERROR (Infrações / Erros)</option>
           </select>
         </div>
-        <button type="button" id="btn-refresh-logs" class="btn btn-secondary" style="font-size: 0.8rem; padding: 0.35rem 0.75rem;">Atualizar Logs</button>
+        <button type="button" id="btn-refresh-logs" class="btn btn-secondary" style="font-size: 0.8rem; padding: 0.35rem 0.75rem;">
+          <svg class="noir-icon" aria-hidden="true"><use href="#icon-refresh"></use></svg>
+          <span>Atualizar Autos</span>
+        </button>
       </div>
 
-      <div style="max-height: 400px; overflow-y: auto; border: 1px solid var(--border-noir);">
-        <table class="log-table">
+      <div style="max-height: 480px; overflow-y: auto; border: 1px solid var(--police-border); border-radius: 4px;">
+        <table class="police-logbook-table">
           <thead>
             <tr>
-              <th>Hora</th>
-              <th>Nível</th>
-              <th>Componente</th>
-              <th>Trace ID</th>
-              <th>Mensagem</th>
+              <th style="width: 90px;">Hora</th>
+              <th style="width: 80px;">Nível</th>
+              <th style="width: 140px;">Componente</th>
+              <th style="width: 120px;">Trace ID</th>
+              <th>Registro de Ocorrência</th>
             </tr>
           </thead>
           <tbody id="logs-tbody">
-            <tr><td colspan="5" style="text-align: center; color: var(--text-muted);">Carregando logs...</td></tr>
+            <tr><td colspan="5" style="text-align: center; color: #9ca3af;">Carregando autos de ocorrência...</td></tr>
           </tbody>
         </table>
       </div>
     </div>
 
-    <!-- Tab 3: Spans -->
-    <div id="tab-content-spans" style="display: none;">
-      <div style="max-height: 400px; overflow-y: auto; border: 1px solid var(--border-noir);">
-        <table class="log-table">
+    <!-- Tab 3: Spans de Execução Forense -->
+    <div id="tab-content-spans" class="police-tab-pane" style="display: none;">
+      <div style="max-height: 480px; overflow-y: auto; border: 1px solid var(--police-border); border-radius: 4px;">
+        <table class="police-logbook-table">
           <thead>
             <tr>
-              <th>Trace ID</th>
-              <th>Operação</th>
-              <th>Componente</th>
-              <th>Status</th>
-              <th>Duração</th>
+              <th style="width: 130px;">Trace ID</th>
+              <th>Operação / Diligência</th>
+              <th style="width: 140px;">Componente</th>
+              <th style="width: 90px;">Status</th>
+              <th style="width: 90px;">Duração</th>
             </tr>
           </thead>
           <tbody id="spans-tbody">
-            <tr><td colspan="5" style="text-align: center; color: var(--text-muted);">Carregando spans...</td></tr>
+            <tr><td colspan="5" style="text-align: center; color: #9ca3af;">Carregando spans forenses...</td></tr>
           </tbody>
         </table>
       </div>
@@ -249,6 +530,7 @@
       aiModel: document.getElementById('ai-model'),
       aiProvider: document.getElementById('ai-provider'),
       aiForm: document.getElementById('ai-settings-form'),
+      testPromptInput: document.getElementById('test-prompt-input'),
       btnTestAi: document.getElementById('btn-test-ai'),
       testOutput: document.getElementById('test-output'),
       alertBox: document.getElementById('alert-box'),
@@ -264,9 +546,9 @@
     };
 
     // Tab switching
-    document.querySelectorAll('.admin-tab').forEach(tab => {
+    document.querySelectorAll('.police-nav-tab').forEach(tab => {
       tab.addEventListener('click', () => {
-        document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.police-nav-tab').forEach(t => t.classList.remove('active'));
         tab.classList.add('active');
         const target = tab.dataset.tab;
         document.getElementById('tab-content-ai-settings').style.display = target === 'ai-settings' ? 'block' : 'none';
@@ -289,7 +571,7 @@
           el.aiProvider.value = data.provider || 'openai_compatible';
         }
       } catch (err) {
-        console.error('Falha ao carregar configurações:', err);
+        console.error('Falha ao carregar diretrizes da Central:', err);
       }
     }
 
@@ -309,13 +591,13 @@
           if (data.spans && el.spansTbody) {
             el.spansTbody.innerHTML = data.spans.map(s => `
               <tr>
-                <td><code>${s.trace_id}</code></td>
-                <td><strong>${s.name}</strong></td>
-                <td>${s.component}</td>
-                <td><span class="level-${s.status === 'ok' ? 'INFO' : 'ERROR'}">${s.status.toUpperCase()}</span></td>
+                <td><code>${escapeHtml(s.trace_id)}</code></td>
+                <td><strong>${escapeHtml(s.name)}</strong></td>
+                <td>${escapeHtml(s.component)}</td>
+                <td><span class="badge-level level-${s.status === 'ok' ? 'INFO' : 'ERROR'}">${escapeHtml(s.status.toUpperCase())}</span></td>
                 <td>${s.duration_ms} ms</td>
               </tr>
-            `).join('') || '<tr><td colspan="5">Nenhum span registrado</td></tr>';
+            `).join('') || '<tr><td colspan="5" style="text-align: center; color: #9ca3af;">Nenhum span registrado</td></tr>';
           }
         }
 
@@ -327,15 +609,15 @@
           el.logsTbody.innerHTML = (logData.logs || []).map(l => `
             <tr>
               <td>${new Date(l.timestamp).toLocaleTimeString()}</td>
-              <td><span class="level-${l.level}">${l.level}</span></td>
-              <td><strong>${l.component}</strong></td>
-              <td><code>${l.trace_id || '-'}</code></td>
-              <td>${l.message}</td>
+              <td><span class="badge-level level-${escapeHtml(l.level)}">${escapeHtml(l.level)}</span></td>
+              <td><strong>${escapeHtml(l.component)}</strong></td>
+              <td><code>${escapeHtml(l.trace_id || '-')}</code></td>
+              <td>${escapeHtml(l.message)}</td>
             </tr>
-          `).join('') || '<tr><td colspan="5">Nenhum log registrado</td></tr>';
+          `).join('') || '<tr><td colspan="5" style="text-align: center; color: #9ca3af;">Nenhum auto registrado</td></tr>';
         }
       } catch (err) {
-        console.error('Falha ao carregar telemetria:', err);
+        console.error('Falha ao atualizar telemetria da Central:', err);
       }
     }
 
@@ -356,49 +638,60 @@
         const res = await resp.json();
         if (resp.ok) {
           el.alertBox.style.display = 'block';
-          el.alertBox.style.borderColor = 'var(--accent-green, #2e8b57)';
-          el.alertBox.innerText = '✓ ' + (res.message || 'Configurações salvas!');
+          el.alertBox.style.borderColor = 'var(--police-terminal-green)';
+          el.alertBox.innerText = '✓ Diretrizes de IA atualizadas com sucesso pela Central!';
           setTimeout(() => el.alertBox.style.display = 'none', 4000);
           loadTelemetry();
         } else {
           el.alertBox.style.display = 'block';
-          el.alertBox.style.borderColor = 'var(--accent-crimson, #a82020)';
-          el.alertBox.innerText = '✗ Erro: ' + (res.error || 'Falha ao salvar');
+          el.alertBox.style.borderColor = '#ef4444';
+          el.alertBox.innerText = '✗ Erro da Central: ' + (res.error || 'Falha ao salvar');
         }
       } catch (err) {
         el.alertBox.style.display = 'block';
-        el.alertBox.style.borderColor = 'var(--accent-crimson, #a82020)';
-        el.alertBox.innerText = '✗ Erro de conexão: ' + err.message;
+        el.alertBox.style.borderColor = '#ef4444';
+        el.alertBox.innerText = '✗ Falha de conexão: ' + err.message;
       }
     });
 
     el.btnTestAi.addEventListener('click', async () => {
-      el.testOutput.innerText = 'Consultando endpoint do modelo ' + el.aiModel.value + '...';
+      const promptText = (el.testPromptInput && el.testPromptInput.value.trim()) || 'Diga apenas: Central de Polícia conectada com sucesso ao Detetive IA!';
+      el.testOutput.innerText = `[CANAL SEGURO] Disparando sinal ao modelo "${el.aiModel.value}" em ${el.aiUrl.value}...\nAguardando resposta pericial...`;
       try {
         const resp = await fetch('/api/admin/test-ai', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt: 'Diga apenas: Conexão bem sucedida com o Detetive IA!' })
+          body: JSON.stringify({ prompt: promptText })
         });
         const data = await resp.json();
         if (data.status === 'ok') {
-          el.testOutput.innerHTML = `<span style="color:var(--accent-green, #2e8b57);">✓ SUCESSO (${data.duration_ms}ms)</span>\nResposta do Modelo:\n"${data.response}"`;
+          el.testOutput.innerHTML = `✓ TRANSMISSÃO BEM-SUCEDIDA (${data.duration_ms} ms)\n\n[RESPOSTA RECEBIDA DO MODELO]:\n"${escapeHtml(data.response)}"`;
         } else {
-          el.testOutput.innerHTML = `<span style="color:var(--accent-crimson, #a82020);">✗ ERRO (${data.duration_ms}ms)</span>\n${data.error}`;
+          el.testOutput.innerHTML = `✗ FALHA NA TRANSMISSÃO (${data.duration_ms} ms)\n\n[ERRO REPORTADO]:\n${escapeHtml(data.error || 'Sem resposta')}`;
         }
         loadTelemetry();
       } catch (err) {
-        el.testOutput.innerHTML = `<span style="color:var(--accent-crimson, #a82020);">✗ FALHA DE REDE</span>\n${err.message}`;
+        el.testOutput.innerHTML = `✗ FALHA DE REDE CRÍTICA:\n${escapeHtml(err.message)}`;
       }
     });
 
     el.logLevelFilter.addEventListener('change', loadTelemetry);
     el.btnRefreshLogs.addEventListener('click', loadTelemetry);
 
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
     // Initial load
     loadSettings();
     loadTelemetry();
-    setInterval(loadTelemetry, 5000); // 5s auto-refresh
+    setInterval(loadTelemetry, 5000);
   </script>
 </body>
 </html>

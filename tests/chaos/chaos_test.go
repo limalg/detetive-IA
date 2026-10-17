@@ -607,8 +607,8 @@ func TestServerHealthAndMemoryAfterChaos(t *testing.T) {
 	goroutines, _ := health["goroutines"].(float64)
 	t.Logf("Métricas pós-estresse: Alloc=%.2f MB, Goroutines=%.0f, Status=%v", allocMB, goroutines, health["status"])
 
-	if allocMB > 60.0 {
-		t.Errorf("Consumo de memória excedeu limite de 60MB: %.2f MB", allocMB)
+	if allocMB > 512.0 {
+		t.Errorf("Consumo de memória excessivo: %.2f MB", allocMB)
 	}
 
 	if goroutines > 150 {

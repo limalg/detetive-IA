@@ -230,13 +230,13 @@ func TestSubmitAccusation_WrongWeapon(t *testing.T) {
 func TestInvestigationTimeAndWarrants(t *testing.T) {
 	service, caseID, userID := setupTestGame(t)
 
-	// 1. New investigation initializes with 420 min and 2 warrants
+	// 1. New investigation initializes with 40 min default and 2 warrants
 	inv, err := service.GetOrCreateInvestigation(userID, caseID)
 	if err != nil {
 		t.Fatalf("GetOrCreateInvestigation failed: %v", err)
 	}
-	if inv.TimeRemainingMinutes != 420 {
-		t.Errorf("expected 420 minutes initially, got %d", inv.TimeRemainingMinutes)
+	if inv.TimeRemainingMinutes != 40 {
+		t.Errorf("expected 40 minutes initially, got %d", inv.TimeRemainingMinutes)
 	}
 	if inv.WarrantsRemaining != 2 {
 		t.Errorf("expected 2 warrants initially, got %d", inv.WarrantsRemaining)
@@ -250,8 +250,8 @@ func TestInvestigationTimeAndWarrants(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DeductTime failed: %v", err)
 	}
-	if remaining != 405 {
-		t.Errorf("expected 405 minutes remaining, got %d", remaining)
+	if remaining != 25 {
+		t.Errorf("expected 25 minutes remaining, got %d", remaining)
 	}
 
 	// 3. Warrant strikes
@@ -285,9 +285,9 @@ func TestInvestigationTimeAndWarrants(t *testing.T) {
 	if err != nil {
 		t.Fatalf("guest GetOrCreateInvestigation failed: %v", err)
 	}
-	remaining, err = service.DeductTime(inv2.ID, 420)
+	remaining, err = service.DeductTime(inv2.ID, 40)
 	if err != nil {
-		t.Fatalf("DeductTime 420 failed: %v", err)
+		t.Fatalf("DeductTime 40 failed: %v", err)
 	}
 	if remaining != 0 {
 		t.Errorf("expected 0 minutes remaining, got %d", remaining)
@@ -304,12 +304,12 @@ func TestInvestigationTimeAndWarrants(t *testing.T) {
 func TestInvestigationResetOnNewGame(t *testing.T) {
 	service, caseID, userID := setupTestGame(t)
 
-	// 1. Initial investigation is in_progress
+	// 1. Initial investigation is in_progress with 40 min
 	inv1, err := service.GetOrCreateInvestigation(userID, caseID)
 	if err != nil {
 		t.Fatalf("first GetOrCreateInvestigation failed: %v", err)
 	}
-	if inv1.Status != "in_progress" || inv1.WarrantsRemaining != 2 || inv1.TimeRemainingMinutes != 420 {
+	if inv1.Status != "in_progress" || inv1.WarrantsRemaining != 2 || inv1.TimeRemainingMinutes != 40 {
 		t.Fatalf("unexpected initial investigation: %+v", inv1)
 	}
 
@@ -348,8 +348,8 @@ func TestInvestigationResetOnNewGame(t *testing.T) {
 	if inv2.WarrantsRemaining != 2 {
 		t.Errorf("expected 2 warrants remaining, got %d", inv2.WarrantsRemaining)
 	}
-	if inv2.TimeRemainingMinutes != 420 {
-		t.Errorf("expected 420 minutes remaining, got %d", inv2.TimeRemainingMinutes)
+	if inv2.TimeRemainingMinutes != 40 {
+		t.Errorf("expected 40 minutes remaining, got %d", inv2.TimeRemainingMinutes)
 	}
 
 	// 4. Test guest user reset (userID = 0)
@@ -358,7 +358,7 @@ func TestInvestigationResetOnNewGame(t *testing.T) {
 		t.Fatalf("guest GetOrCreateInvestigation failed: %v", err)
 	}
 	// Deduct all time to fail guest investigation
-	_, err = service.DeductTime(guestInv1.ID, 420)
+	_, err = service.DeductTime(guestInv1.ID, 40)
 	if err != nil {
 		t.Fatalf("DeductTime failed: %v", err)
 	}
@@ -383,8 +383,8 @@ func TestInvestigationResetOnNewGame(t *testing.T) {
 	if guestInv2.WarrantsRemaining != 2 {
 		t.Errorf("expected 2 warrants for new guest investigation, got %d", guestInv2.WarrantsRemaining)
 	}
-	if guestInv2.TimeRemainingMinutes != 420 {
-		t.Errorf("expected 420 minutes for new guest investigation, got %d", guestInv2.TimeRemainingMinutes)
+	if guestInv2.TimeRemainingMinutes != 40 {
+		t.Errorf("expected 40 minutes for new guest investigation, got %d", guestInv2.TimeRemainingMinutes)
 	}
 }
 
@@ -404,8 +404,8 @@ func TestStartSoloGame(t *testing.T) {
 	if inv.WarrantsRemaining != 2 {
 		t.Errorf("expected 2 warrants, got %d", inv.WarrantsRemaining)
 	}
-	if inv.TimeRemainingMinutes != 420 {
-		t.Errorf("expected 420 minutes, got %d", inv.TimeRemainingMinutes)
+	if inv.TimeRemainingMinutes != 40 {
+		t.Errorf("expected 40 minutes, got %d", inv.TimeRemainingMinutes)
 	}
 	if len(details.Suspects) != 4 {
 		t.Errorf("expected 4 suspects, got %d", len(details.Suspects))
@@ -413,6 +413,16 @@ func TestStartSoloGame(t *testing.T) {
 	if len(details.Clues) < 4 {
 		t.Errorf("expected at least 4 clues, got %d", len(details.Clues))
 	}
+
+	// Test custom time limit (e.g., 60 minutes)
+	detailsCustom, invCustom, err := service.StartSoloGame(userID, "train", 4, 60)
+	if err != nil {
+		t.Fatalf("StartSoloGame with 60 min failed: %v", err)
+	}
+	if invCustom.TimeRemainingMinutes != 60 || invCustom.TimerLimitMinutes != 60 {
+		t.Errorf("expected 60 minutes, got time=%d, limit=%d", invCustom.TimeRemainingMinutes, invCustom.TimerLimitMinutes)
+	}
+	_ = detailsCustom
 
 	// Test default parameters (empty theme, 0 suspects)
 	details2, inv2, err := service.StartSoloGame(userID, "", 0)

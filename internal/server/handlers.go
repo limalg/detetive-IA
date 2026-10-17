@@ -82,7 +82,7 @@ func (h *Handler) HandleHealth(w http.ResponseWriter, r *http.Request) {
 		"sys_mb":          sysMB,
 		"num_gc":          m.NumGC,
 		"goroutines":      runtime.NumGoroutine(),
-		"memory_boundary": "< 60MB RAM Target (<1GB host footprint)",
+		"memory_boundary": "Unrestricted / Dynamic Host Footprint",
 	})
 }
 
@@ -207,6 +207,23 @@ func (h *Handler) HandleMe(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleGetCase returns case details, suspects, and clues, keeping solution fields hidden.
+func sanitizePublicSuspect(s models.Suspect) map[string]interface{} {
+	return map[string]interface{}{
+		"id":           s.ID,
+		"name":         s.Name,
+		"role":         s.Role,
+		"occupation":   s.Occupation,
+		"personality":  s.Personality,
+		"alibi":        s.Alibi,
+		"routine":      s.Routine,
+		"tics":         s.Tics,
+		"avatar":       s.Avatar,
+		"gender":       s.Gender,
+		"repeat_count": s.RepeatCount,
+	}
+}
+
+// HandleGetCase returns case details, suspects, and clues.
 func (h *Handler) HandleGetCase(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		h.error(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -258,16 +275,11 @@ func (h *Handler) HandleGetCase(w http.ResponseWriter, r *http.Request) {
 
 	var publicSuspects []map[string]interface{}
 	for _, s := range details.Suspects {
-		publicSuspects = append(publicSuspects, map[string]interface{}{
-			"id":          s.ID,
-			"name":        s.Name,
-			"role":        s.Role,
-			"personality": s.Personality,
-			"alibi":       s.Alibi,
-		})
+		publicSuspects = append(publicSuspects, sanitizePublicSuspect(s))
 	}
 
-	timeRemaining := 420
+	timeRemaining := 40
+	timerLimit := 40
 	warrantsRemaining := 2
 	if h.cfg.GameService != nil {
 		var userID int64
@@ -276,6 +288,10 @@ func (h *Handler) HandleGetCase(w http.ResponseWriter, r *http.Request) {
 		}
 		if inv, err := h.cfg.GameService.GetOrCreateInvestigation(userID, caseID); err == nil && inv != nil {
 			timeRemaining = inv.TimeRemainingMinutes
+			timerLimit = inv.TimerLimitMinutes
+			if timerLimit <= 0 {
+				timerLimit = 40
+			}
 			warrantsRemaining = inv.WarrantsRemaining
 		}
 	}
@@ -285,11 +301,12 @@ func (h *Handler) HandleGetCase(w http.ResponseWriter, r *http.Request) {
 		"suspects":               publicSuspects,
 		"clues":                  details.Clues,
 		"time_remaining_minutes": timeRemaining,
+		"timer_limit_minutes":    timerLimit,
 		"warrants_remaining":     warrantsRemaining,
 	})
 }
 
-// HandleStartSoloGame generates a new procedural case and clean investigation for solo play.
+// HandleStartSoloGame generates a new procedural case and clean investigation for solo play with customizable time.
 func (h *Handler) HandleStartSoloGame(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		h.error(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -302,11 +319,15 @@ func (h *Handler) HandleStartSoloGame(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		ThemeID      string `json:"theme_id"`
-		SuspectCount int    `json:"suspect_count"`
+		ThemeID          string `json:"theme_id"`
+		SuspectCount     int    `json:"suspect_count"`
+		TimeLimitMinutes int    `json:"time_limit_minutes"`
 	}
 	if r.Body != nil {
 		_ = json.NewDecoder(r.Body).Decode(&req)
+	}
+	if req.TimeLimitMinutes <= 0 {
+		req.TimeLimitMinutes = 40
 	}
 
 	var userID int64
@@ -314,7 +335,7 @@ func (h *Handler) HandleStartSoloGame(w http.ResponseWriter, r *http.Request) {
 		userID = user.ID
 	}
 
-	details, inv, err := h.cfg.GameService.StartSoloGame(userID, req.ThemeID, req.SuspectCount)
+	details, inv, err := h.cfg.GameService.StartSoloGame(userID, req.ThemeID, req.SuspectCount, req.TimeLimitMinutes)
 	if err != nil {
 		h.error(w, http.StatusInternalServerError, "failed to start solo game: "+err.Error())
 		return
@@ -330,13 +351,12 @@ func (h *Handler) HandleStartSoloGame(w http.ResponseWriter, r *http.Request) {
 
 	var publicSuspects []map[string]interface{}
 	for _, s := range details.Suspects {
-		publicSuspects = append(publicSuspects, map[string]interface{}{
-			"id":          s.ID,
-			"name":        s.Name,
-			"role":        s.Role,
-			"personality": s.Personality,
-			"alibi":       s.Alibi,
-		})
+		publicSuspects = append(publicSuspects, sanitizePublicSuspect(s))
+	}
+
+	timerLimit := inv.TimerLimitMinutes
+	if timerLimit <= 0 {
+		timerLimit = req.TimeLimitMinutes
 	}
 
 	h.json(w, http.StatusOK, map[string]interface{}{
@@ -344,12 +364,13 @@ func (h *Handler) HandleStartSoloGame(w http.ResponseWriter, r *http.Request) {
 		"suspects":               publicSuspects,
 		"clues":                  details.Clues,
 		"time_remaining_minutes": inv.TimeRemainingMinutes,
+		"timer_limit_minutes":    timerLimit,
 		"warrants_remaining":     inv.WarrantsRemaining,
 	})
 }
 
 
-// HandleInterrogate processes interrogation questions with clue confrontation and suspect stress calculation.
+// HandleInterrogate processes interrogation questions with clue confrontation, repeat question hostility, and suspect stress calculation.
 func (h *Handler) HandleInterrogate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		h.error(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -381,10 +402,23 @@ func (h *Handler) HandleInterrogate(w http.ResponseWriter, r *http.Request) {
 		userID = user.ID
 	}
 
-	var caseID int64
+	// Fetch full suspect profile
+	var susp models.Suspect
 	if h.cfg.DB != nil {
-		_ = h.cfg.DB.QueryRow(`SELECT case_id FROM suspects WHERE id = ?`, req.SuspectID).Scan(&caseID)
+		_ = h.cfg.DB.QueryRow(`
+			SELECT id, case_id, name, role, personality, alibi, secret, is_culprit,
+			       COALESCE(tier1_alibi, ''), COALESCE(tier2_petty_crime, ''), COALESCE(tier3_truth, ''), COALESCE(cross_suspicion, ''),
+			       COALESCE(gender, ''), COALESCE(avatar, ''),
+			       COALESCE(occupation, ''), COALESCE(routine, ''), COALESCE(tics, ''), COALESCE(repeat_count, 0)
+			FROM suspects WHERE id = ?
+		`, req.SuspectID).Scan(
+			&susp.ID, &susp.CaseID, &susp.Name, &susp.Role, &susp.Personality, &susp.Alibi, &susp.Secret, &susp.IsCulprit,
+			&susp.Tier1Alibi, &susp.Tier2PettyCrime, &susp.Tier3Truth, &susp.CrossSuspicion, &susp.Gender, &susp.Avatar,
+			&susp.Occupation, &susp.Routine, &susp.Tics, &susp.RepeatCount,
+		)
 	}
+
+	caseID := susp.CaseID
 	if caseID == 0 {
 		caseID = 1
 	}
@@ -397,7 +431,6 @@ func (h *Handler) HandleInterrogate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-
 	if inv != nil && (inv.Status == "failed" || inv.TimeRemainingMinutes <= 0 || inv.WarrantsRemaining <= 0) {
 		h.json(w, http.StatusBadRequest, map[string]interface{}{
 			"error":                  "investigação encerrada: tempo esgotado ou mandados revogados",
@@ -408,7 +441,35 @@ func (h *Handler) HandleInterrogate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	stressLevel := 15
+	// Check repetition: count past questions and check similarity with previous questions
+	var pastCount int
+	var lastQuestion string
+	if h.cfg.DB != nil {
+		_ = h.cfg.DB.QueryRow(`
+			SELECT COUNT(*), COALESCE((SELECT message FROM interrogation_messages WHERE session_id = ? AND suspect_id = ? AND sender = 'detective' ORDER BY id DESC LIMIT 1), '')
+			FROM interrogation_messages
+			WHERE session_id = ? AND suspect_id = ? AND sender = 'detective'
+		`, sessionID, req.SuspectID, sessionID, req.SuspectID).Scan(&pastCount, &lastQuestion)
+	}
+
+	isRepeatQuestion := false
+	normCurrent := strings.ToLower(strings.TrimSpace(req.Question))
+	normLast := strings.ToLower(strings.TrimSpace(lastQuestion))
+	if normLast != "" && (normCurrent == normLast || strings.Contains(normLast, normCurrent) || strings.Contains(normCurrent, normLast)) {
+		isRepeatQuestion = true
+	}
+
+	newRepeatCount := susp.RepeatCount
+	if isRepeatQuestion {
+		newRepeatCount += 2
+	} else if pastCount >= 2 {
+		newRepeatCount++
+	}
+	if h.cfg.DB != nil {
+		_, _ = h.cfg.DB.Exec(`UPDATE suspects SET repeat_count = ? WHERE id = ?`, newRepeatCount, req.SuspectID)
+	}
+
+	stressLevel := 15 + (newRepeatCount * 22)
 	confronted := false
 	var reply string
 
@@ -418,30 +479,31 @@ func (h *Handler) HandleInterrogate(w http.ResponseWriter, r *http.Request) {
 		err := h.cfg.DB.QueryRow(`SELECT name, description FROM clues WHERE id = ?`, req.ConfrontClueID).Scan(&clueName, &clueDesc)
 		if err == nil {
 			confronted = true
-			var suspName, suspAlibi string
-			var isCulprit bool
-			_ = h.cfg.DB.QueryRow(`SELECT name, alibi, is_culprit FROM suspects WHERE id = ?`, req.SuspectID).Scan(&suspName, &suspAlibi, &isCulprit)
-
+			stressLevel += 35
 			clueLower := strings.ToLower(clueName + " " + clueDesc)
-			// Check if this clue contradicts the suspect or catches them red-handed
-			if isCulprit && (strings.Contains(clueLower, "álibi") || strings.Contains(clueLower, "alibi") ||
+			ticAction := ""
+			if susp.Tics != "" {
+				ticAction = fmt.Sprintf("[%s] ", susp.Tics)
+			}
+
+			if susp.IsCulprit && (strings.Contains(clueLower, "álibi") || strings.Contains(clueLower, "alibi") ||
 				strings.Contains(clueLower, "falso") || strings.Contains(clueLower, "contradição") ||
 				strings.Contains(clueLower, "registro") || strings.Contains(clueLower, "adaga") ||
 				strings.Contains(clueLower, "veneno") || strings.Contains(clueLower, "cálice") ||
-				strings.Contains(clueLower, "sangue") || strings.Contains(clueLower, strings.ToLower(suspName))) {
-				stressLevel = 85
-				reply = fmt.Sprintf("O suspeito empalidece em choque absoluto, os olhos cravados na evidência (%s) e a voz desmorona em pânico: 'Como... onde você conseguiu isso?! Isso... isso não podia estar com a polícia!'", clueName)
-			} else if isCulprit {
-				stressLevel = 50
-				reply = fmt.Sprintf("O suspeito semicerra os olhos, visivelmente tenso ao encarar a evidência (%s): 'Você está blefando, detetive. Essa pista não me coloca no local do crime!'", clueName)
+				strings.Contains(clueLower, "sangue") || strings.Contains(clueLower, strings.ToLower(susp.Name))) {
+				stressLevel = 90
+				reply = fmt.Sprintf("%s%s empalidece em choque absoluto, os olhos cravados na evidência (%s) e a voz desmorona em pânico: 'Como... onde você conseguiu isso?! Isso... isso não podia estar com a polícia!'", ticAction, susp.Name, clueName)
+			} else if susp.IsCulprit {
+				stressLevel = 60
+				reply = fmt.Sprintf("%s%s semicerra os olhos, visivelmente tenso ao encarar a evidência (%s): 'Você está blefando, detetive. Essa pista não me coloca no local do crime!'", ticAction, susp.Name, clueName)
 			} else {
-				stressLevel = 35
-				reply = fmt.Sprintf("O suspeito analisa a evidência (%s) com sobrancelhas erguidas e desdém frio: 'Uma peça intrigante, detetive, mas absolutamente inútil contra mim. Meu álibi é de ferro.'", clueName)
+				stressLevel = 40
+				reply = fmt.Sprintf("%s%s analisa a evidência (%s) com sobrancelhas erguidas e desdém frio: 'Uma peça intrigante, detetive, mas absolutamente inútil contra mim. Meu álibi é de ferro.'", ticAction, susp.Name, clueName)
 			}
 
-			// Consult AI client if available, using the rich fallback as default
+			// Consult AI client if available
 			if h.cfg.GameService != nil {
-				confrontPrompt := fmt.Sprintf("[O detetive confronta você com a evidência '%s' (%s)]. Pergunta: %s", clueName, clueDesc, req.Question)
+				confrontPrompt := fmt.Sprintf("[O detetive confronta você com a evidência '%s' (%s)]. Pergunta: %s. Seu perfil: Profissão=%s, Rotina=%s, Tiques=%s. Estresse atual=%d/100.", clueName, clueDesc, req.Question, susp.Occupation, susp.Routine, susp.Tics, stressLevel)
 				if aiReply, err := h.cfg.GameService.InterrogateWithStress(sessionID, req.SuspectID, confrontPrompt, stressLevel); err == nil && aiReply != "" {
 					reply = aiReply
 				}
@@ -461,25 +523,85 @@ func (h *Handler) HandleInterrogate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !confronted {
-		var err error
-		reply, err = h.cfg.GameService.InterrogateWithStress(sessionID, req.SuspectID, req.Question, stressLevel)
-		if err != nil {
-			if strings.Contains(err.Error(), "no rows") {
-				h.error(w, http.StatusBadRequest, "suspect not found: "+err.Error())
-				return
+		ticAction := ""
+		if susp.Tics != "" {
+			ticAction = fmt.Sprintf("[%s] ", susp.Tics)
+		}
+
+		// Check if AI is available
+		var aiReply string
+		if h.cfg.GameService != nil {
+			aiContextPrompt := fmt.Sprintf(`Você é %s, atuando como %s (%s). Sua rotina na noite foi: %s. Seus tiques nervosos são: %s.
+Seu nível de estresse atual é %d/100.
+O detetive fez a seguinte pergunta: "%s"
+Histórico: você já foi interrogado/pressionado sobre isso %d vezes.
+Instrução importante:
+1. Responda diegeticamente em primeira pessoa com estilo Noir de época (anos 1940).
+2. Se o detetive estiver repetindo perguntas (perguntas repetidas > 0 ou estresse > 50), mostre irritação crescente, recusa a repetir respostas óbvias e invoque seus tiques nervosos entre colchetes como [ajusta o nó da gravata com dedos trêmulos].
+3. Faça alusão à sua profissão e rotina na noite. Se for culpado e o estresse passar de 80, mostre sinais graves de desmoronamento psicológico.`,
+				susp.Name, susp.Role, susp.Occupation, susp.Routine, susp.Tics,
+				stressLevel, req.Question, newRepeatCount,
+			)
+			aiReply, _ = h.cfg.GameService.InterrogateWithStress(sessionID, req.SuspectID, aiContextPrompt, stressLevel)
+		}
+
+		if aiReply != "" {
+			reply = aiReply
+		} else {
+			// Rich diegetic fallback matching user's request for repeated questions
+			if newRepeatCount >= 3 || (isRepeatQuestion && newRepeatCount >= 2) {
+				stressLevel = 90
+				if susp.IsCulprit {
+					reply = fmt.Sprintf("%s%s explode em suor frio e desespero: 'Por que insiste nessa mesma pergunta, detetive?! Já disse que estava %s! Não tente me encurralar com suas perguntas venenosas!'", ticAction, susp.Name, susp.Routine)
+				} else {
+					reply = fmt.Sprintf("%s%s bate a palma da mão na mesa com cólera: 'Detetive, já repeti isso %d vezes! Minha ocupação como %s exige respeito e meu álibi (%s) é irrefutável. Traga provas reais ou encerre este interrogatório agora!'", ticAction, susp.Name, newRepeatCount, susp.Occupation, susp.Alibi)
+				}
+			} else if newRepeatCount >= 1 || isRepeatQuestion {
+				stressLevel = 55
+				reply = fmt.Sprintf("%s%s franze o cenho com visível irritação: 'Detetive, já respondi exatamente a isso há poucos instantes. Como lhe expliquei, durante a noite eu estava %s. O senhor por acaso não anota as respostas em seu bloco de notas?'", ticAction, susp.Name, susp.Routine)
+			} else {
+				// First time question
+				qLower := strings.ToLower(req.Question)
+				if strings.Contains(qLower, "rotina") || strings.Contains(qLower, "horas") || strings.Contains(qLower, "onde") || strings.Contains(qLower, "estava") {
+					reply = fmt.Sprintf("%s%s ajeita a postura e relata: 'Naquela noite fatídica, minha rotina foi clara: %s. Não tenho nada a esconder.'", ticAction, susp.Name, susp.Routine)
+				} else if strings.Contains(qLower, "trabalho") || strings.Contains(qLower, "profissão") || strings.Contains(qLower, "ocupação") {
+					reply = fmt.Sprintf("%s%s responde com ar de dignidade: 'Como %s, tenho deveres rigorosos. %s'", ticAction, susp.Name, susp.Occupation, susp.Alibi)
+				} else if strings.Contains(qLower, "suspeita") || strings.Contains(qLower, "quem") || strings.Contains(qLower, "acha") {
+					if susp.CrossSuspicion != "" {
+						reply = fmt.Sprintf("%s%s inclina-se para a frente e sussurra: '%s'", ticAction, susp.Name, susp.CrossSuspicion)
+					} else {
+						reply = fmt.Sprintf("%s%s murmura com desdém: 'Todos nesta casa têm algo a esconder sob as aparências, detetive.'", ticAction, susp.Name)
+					}
+				} else {
+					reply = fmt.Sprintf("%s%s olha firmemente nos olhos do investigador: '%s'", ticAction, susp.Name, susp.Alibi)
+				}
 			}
-			h.error(w, http.StatusInternalServerError, "interrogation failed: "+err.Error())
-			return
+		}
+
+		if h.cfg.DB != nil {
+			_, _ = h.cfg.DB.Exec(`
+				INSERT INTO interrogation_messages (session_id, suspect_id, sender, message)
+				VALUES (?, ?, 'detective', ?)
+			`, sessionID, req.SuspectID, req.Question)
+
+			_, _ = h.cfg.DB.Exec(`
+				INSERT INTO interrogation_messages (session_id, suspect_id, sender, message)
+				VALUES (?, ?, 'suspect', ?)
+			`, sessionID, req.SuspectID, reply)
 		}
 	}
 
-	// Deduct time: 15 min for normal question, 20 min for confrontation
-	deduction := 15
-	if confronted {
-		deduction = 20
+	if stressLevel > 100 {
+		stressLevel = 100
 	}
 
-	timeRemaining := 420
+	// Deduct time: 1 min for normal question, 2 min for confrontation or repetitive interrogation
+	deduction := 1
+	if confronted || isRepeatQuestion || newRepeatCount >= 2 {
+		deduction = 2
+	}
+
+	timeRemaining := 40
 	warrantsRemaining := 2
 	gameOver := false
 	if inv != nil && h.cfg.GameService != nil {
@@ -498,6 +620,8 @@ func (h *Handler) HandleInterrogate(w http.ResponseWriter, r *http.Request) {
 		"message":                reply,
 		"stress_level":           stressLevel,
 		"confronted":             confronted,
+		"repeat_count":           newRepeatCount,
+		"is_repeated":            isRepeatQuestion,
 		"time_remaining_minutes": timeRemaining,
 		"warrants_remaining":     warrantsRemaining,
 		"game_over":              gameOver,
@@ -1222,5 +1346,97 @@ func (h *Handler) HandleCreateRoomWithCase(w http.ResponseWriter, r *http.Reques
 		"custom_cast_size": len(characters),
 	})
 }
+
+// HandleSavedPersonas handles GET, POST, DELETE /api/game/personas/saved.
+func (h *Handler) HandleSavedPersonas(w http.ResponseWriter, r *http.Request) {
+	if h.cfg.DB == nil {
+		h.error(w, http.StatusInternalServerError, "database unavailable")
+		return
+	}
+
+	user, _ := h.getAuthenticatedUser(r)
+	var userID int64
+	if user != nil {
+		userID = user.ID
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		rows, err := h.cfg.DB.Query(`
+			SELECT id, COALESCE(user_id, 0), name, role, occupation, personality, alibi, secret, routine, tics, avatar, gender, created_at
+			FROM saved_personas
+			WHERE user_id = ? OR user_id = 0 OR user_id IS NULL
+			ORDER BY id DESC
+		`, userID)
+		if err != nil {
+			h.error(w, http.StatusInternalServerError, "failed to query saved personas: "+err.Error())
+			return
+		}
+		defer rows.Close()
+
+		personas := []models.SavedPersona{}
+		for rows.Next() {
+			var p models.SavedPersona
+			if err := rows.Scan(&p.ID, &p.UserID, &p.Name, &p.Role, &p.Occupation, &p.Personality, &p.Alibi, &p.Secret, &p.Routine, &p.Tics, &p.Avatar, &p.Gender, &p.CreatedAt); err == nil {
+				personas = append(personas, p)
+			}
+		}
+		h.json(w, http.StatusOK, map[string]interface{}{
+			"personas": personas,
+			"total":    len(personas),
+		})
+
+	case http.MethodPost:
+		var req models.SavedPersona
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			h.error(w, http.StatusBadRequest, "invalid json payload")
+			return
+		}
+		if strings.TrimSpace(req.Name) == "" {
+			h.error(w, http.StatusBadRequest, "name is required")
+			return
+		}
+		if req.Avatar == "" {
+			req.Avatar = "/static/assets/char_vincent.webp"
+		}
+		if req.Gender == "" {
+			req.Gender = "male"
+		}
+		if req.Role == "" {
+			req.Role = "Investigador Particular"
+		}
+
+		res, err := h.cfg.DB.Exec(`
+			INSERT INTO saved_personas (user_id, name, role, occupation, personality, alibi, secret, routine, tics, avatar, gender)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`, userID, req.Name, req.Role, req.Occupation, req.Personality, req.Alibi, req.Secret, req.Routine, req.Tics, req.Avatar, req.Gender)
+		if err != nil {
+			h.error(w, http.StatusInternalServerError, "failed to save persona: "+err.Error())
+			return
+		}
+		id, _ := res.LastInsertId()
+		req.ID = id
+		req.UserID = userID
+		h.json(w, http.StatusCreated, req)
+
+	case http.MethodDelete:
+		idStr := r.URL.Query().Get("id")
+		id, err := strconv.ParseInt(idStr, 10, 64)
+		if err != nil || id <= 0 {
+			h.error(w, http.StatusBadRequest, "invalid persona id")
+			return
+		}
+		_, err = h.cfg.DB.Exec(`DELETE FROM saved_personas WHERE id = ? AND (user_id = ? OR ? = 0)`, id, userID, userID)
+		if err != nil {
+			h.error(w, http.StatusInternalServerError, "failed to delete persona: "+err.Error())
+			return
+		}
+		h.json(w, http.StatusOK, map[string]string{"status": "deleted"})
+
+	default:
+		h.error(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
 
 

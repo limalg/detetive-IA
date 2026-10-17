@@ -16,10 +16,12 @@
     currentRoom: null,
     gameMode: 'solo', // 'solo' | 'multi'
     persona: { name: '', role: '', secret: '' },
-    timeRemainingMinutes: 420, // 21:00 to 04:00 (7 hours = 420 mins)
+    timeRemainingMinutes: 40, // 40 minutes official noir timer
+    timerLimitMinutes: 40,
     warrantsRemaining: 2,
     selectedClueIDs: [],
     customCast: [],
+    savedPersonas: [],
     isGameOver: false,
     deferredPrompt: null
   };
@@ -126,7 +128,30 @@
     gameOverIcon: document.getElementById('game-over-icon'),
     gameOverHeadline: document.getElementById('game-over-headline'),
     gameOverReason: document.getElementById('game-over-reason'),
-    btnRestartGame: document.getElementById('btn-restart-game')
+    btnRestartGame: document.getElementById('btn-restart-game'),
+
+    // Time Limit & Personas Vault (v0.6)
+    timeLimitSelect: document.getElementById('time-limit-select'),
+    customTimeContainer: document.getElementById('custom-time-container'),
+    customTimeInput: document.getElementById('custom-time-input'),
+    btnOpenSavedPersonas: document.getElementById('btn-open-saved-personas'),
+    btnSaveCurrentPersona: document.getElementById('btn-save-current-persona'),
+    savedPersonasCount: document.getElementById('saved-personas-count'),
+    savedPersonasModal: document.getElementById('saved-personas-modal'),
+    closeSavedPersonasBtn: document.getElementById('close-saved-personas-btn'),
+    savedPersonasList: document.getElementById('saved-personas-list'),
+    savedPersonasEmpty: document.getElementById('saved-personas-empty'),
+
+    // Corkboard Pinboard & Animated Strings
+    corkboardSurface: document.getElementById('corkboard-surface'),
+    corkboardStringsSvg: document.getElementById('corkboard-strings-svg'),
+    corkVictimNode: document.getElementById('cork-victim-node'),
+    corkVictimName: document.getElementById('cork-victim-name'),
+    corkVictimSub: document.getElementById('cork-victim-sub'),
+    corkVictimPhoto: document.getElementById('cork-victim-photo'),
+    corkSuspectsLayer: document.getElementById('cork-suspects-layer'),
+    corkCluesLayer: document.getElementById('cork-clues-layer'),
+    btnRealignStrings: document.getElementById('btn-realign-strings')
   };
 
   let authMode = 'login'; // 'login' | 'register'
@@ -627,10 +652,57 @@
       });
     }
 
+    // Time Limit Selector Listener
+    if (el.timeLimitSelect) {
+      el.timeLimitSelect.addEventListener('change', () => {
+        if (el.timeLimitSelect.value === 'custom') {
+          if (el.customTimeContainer) el.customTimeContainer.style.display = 'block';
+        } else {
+          if (el.customTimeContainer) el.customTimeContainer.style.display = 'none';
+          state.timerLimitMinutes = parseInt(el.timeLimitSelect.value, 10) || 40;
+        }
+      });
+    }
+
+    // Saved Personas Vault Modal Listeners
+    if (el.btnOpenSavedPersonas) {
+      el.btnOpenSavedPersonas.addEventListener('click', () => {
+        openSavedPersonasModal();
+      });
+    }
+
+    if (el.closeSavedPersonasBtn) {
+      el.closeSavedPersonasBtn.addEventListener('click', () => {
+        closeSavedPersonasModal();
+      });
+    }
+
+    if (el.btnSaveCurrentPersona) {
+      el.btnSaveCurrentPersona.addEventListener('click', async () => {
+        await saveCurrentPersona();
+      });
+    }
+
     // Start Game
     if (el.btnStartGame) {
       el.btnStartGame.addEventListener('click', async () => {
         savePersonaFromInputs();
+
+        // Calculate time limit from dropdown / custom input (default 40 min)
+        let timeLimit = 40;
+        if (el.timeLimitSelect) {
+          const selVal = el.timeLimitSelect.value;
+          if (selVal === 'custom' && el.customTimeInput) {
+            timeLimit = parseInt(el.customTimeInput.value, 10) || 40;
+          } else {
+            timeLimit = parseInt(selVal, 10) || 40;
+          }
+        }
+        if (timeLimit < 10) timeLimit = 10;
+        if (timeLimit > 180) timeLimit = 180;
+        state.timerLimitMinutes = timeLimit;
+        state.timeRemainingMinutes = timeLimit;
+
         if (state.currentRoom && state.currentRoom.code && state.currentRoom.code !== 'SOLO') {
           try {
             await api(`/api/room/${state.currentRoom.code}/start`, { method: 'POST' });
@@ -645,14 +717,17 @@
               method: 'POST',
               body: JSON.stringify({
                 theme_id: themeId,
-                suspect_count: suspectCount
+                suspect_count: suspectCount,
+                time_limit_minutes: timeLimit
               })
             });
             state.currentCase = res.case || res;
             state.suspects = res.suspects || [];
             state.clues = res.clues || [];
             if (typeof res.time_remaining_minutes === 'number') {
-              updateNightClock(res.time_remaining_minutes);
+              updateNightClock(res.time_remaining_minutes, timeLimit);
+            } else {
+              updateNightClock(timeLimit, timeLimit);
             }
             if (typeof res.warrants_remaining === 'number') {
               updateWarrantsBadge(res.warrants_remaining);
@@ -661,6 +736,7 @@
             renderDossier();
             renderSuspects();
             renderClues();
+            renderCorkboard();
             renderAccusationCluesSelector();
             populateAccusationOptions();
           } catch (err) {
@@ -673,21 +749,21 @@
     }
   }
 
-
-
   // =========================================================================
+  // Night Clock & Warrants (Sprint v0.3 / v0.6 40-Min Countdown)
   // =========================================================================
-  // Night Clock & Warrants (Sprint v0.3)
-  // =========================================================================
-  function updateNightClock(minutesRemaining) {
+  function updateNightClock(minutesRemaining, totalLimitMinutes) {
+    if (typeof totalLimitMinutes === 'number' && totalLimitMinutes > 0) {
+      state.timerLimitMinutes = totalLimitMinutes;
+    }
     const prevMinutes = state.timeRemainingMinutes;
     if (typeof minutesRemaining === 'number') {
       state.timeRemainingMinutes = Math.max(0, minutesRemaining);
-      if (minutesRemaining < prevMinutes && window.NoirAudio) {
+      if (minutesRemaining < prevMinutes && window.NoirAudio && window.NoirAudio.playClockTick) {
         window.NoirAudio.playClockTick();
       }
     }
-    const totalMinutes = 420; // 21:00 to 04:00
+    const totalMinutes = state.timerLimitMinutes || 40;
     const currentMins = state.timeRemainingMinutes;
     const elapsedMinutes = Math.max(0, totalMinutes - currentMins);
 
@@ -704,11 +780,13 @@
     const remHours = Math.floor(currentMins / 60);
     const remMins = currentMins % 60;
     if (el.clockRemaining) {
-      el.clockRemaining.textContent = `${remHours}h ${String(remMins).padStart(2, '0')}m`;
+      el.clockRemaining.textContent = remHours > 0
+        ? `${remHours}h ${String(remMins).padStart(2, '0')}m restantes`
+        : `${remMins} min restantes`;
     }
 
     if (el.nightClock) {
-      if (currentMins <= 60) {
+      if (currentMins <= 10) {
         el.nightClock.classList.add('urgent');
       } else {
         el.nightClock.classList.remove('urgent');
@@ -851,6 +929,7 @@
       renderDossier();
       renderSuspects();
       renderClues();
+      renderCorkboard();
       renderAccusationCluesSelector();
       populateAccusationOptions();
     } catch (err) {
@@ -923,6 +1002,7 @@
     renderDossier();
     renderSuspects();
     renderClues();
+    renderCorkboard();
     populateAccusationOptions();
   }
 
@@ -1297,6 +1377,317 @@
 
       el.cluesList.appendChild(card);
     });
+  // =========================================================================
+  // Corkboard Pinboard & Animated Strings (v0.6)
+  // =========================================================================
+  function renderCorkboard() {
+    if (!state.currentCase || !el.corkboardSurface) return;
+
+    // 1. Central Victim Node
+    if (el.corkVictimName) {
+      el.corkVictimName.textContent = state.currentCase.victim || 'Vítima Não Identificada';
+    }
+    if (el.corkVictimSub) {
+      el.corkVictimSub.textContent = `Caso: ${state.currentCase.title || 'Homicídio Sob Investigação'}`;
+    }
+    if (el.corkVictimPhoto) {
+      el.corkVictimPhoto.src = getThemeScenePhotoUrl(state.currentCase);
+    }
+
+    // 2. Suspects Pin Layer
+    if (el.corkSuspectsLayer) {
+      el.corkSuspectsLayer.innerHTML = '';
+      state.suspects.forEach((suspect, idx) => {
+        const node = document.createElement('div');
+        node.className = 'cork-node cork-node-suspect';
+        node.id = `cork-node-suspect-${suspect.id}`;
+        node.dataset.suspectId = suspect.id;
+
+        const photoUrl = getSuspectPhotoUrl(suspect);
+        const stress = state.suspectStress[suspect.id] || 0;
+
+        node.innerHTML = `
+          <div class="cork-pin brass-pin" id="pin-suspect-${suspect.id}"></div>
+          <div class="cork-suspect-thumb">
+            <img src="${photoUrl}" alt="${escapeHtml(suspect.name)}">
+          </div>
+          <div class="cork-node-title" style="text-align: center;">${escapeHtml(suspect.name)}</div>
+          <div class="cork-suspect-role">${escapeHtml(suspect.role || suspect.occupation || 'Suspeito')}</div>
+          ${suspect.tics ? `<div class="cork-suspect-tics"><strong>Tique:</strong> [${escapeHtml(suspect.tics)}]</div>` : ''}
+          <div class="cork-suspect-stress-badge ${stress >= 60 ? 'high' : ''}" id="cork-stress-badge-${suspect.id}">
+            Nível de Estresse: ${stress}%
+          </div>
+          <button type="button" class="btn btn-primary cork-btn-interrogate" style="width: 100%; margin-top: 0.5rem; font-size: 0.8rem; padding: 0.35rem 0.6rem;">
+            <svg class="noir-icon" aria-hidden="true"><use href="#icon-detective"></use></svg> <span>Interrogar</span>
+          </button>
+        `;
+
+        node.querySelector('.cork-btn-interrogate').addEventListener('click', (e) => {
+          e.stopPropagation();
+          openInterrogation(suspect);
+        });
+
+        node.addEventListener('mouseenter', () => highlightConnectedStrings(`suspect-${suspect.id}`, true));
+        node.addEventListener('mouseleave', () => highlightConnectedStrings(`suspect-${suspect.id}`, false));
+
+        el.corkSuspectsLayer.appendChild(node);
+      });
+    }
+
+    // 3. Evidence / Clues Pin Layer
+    if (el.corkCluesLayer) {
+      el.corkCluesLayer.innerHTML = '';
+      state.clues.forEach((clue, idx) => {
+        const node = document.createElement('div');
+        node.className = 'cork-node cork-node-clue';
+        node.id = `cork-node-clue-${clue.id}`;
+        node.dataset.clueId = clue.id;
+
+        node.innerHTML = `
+          <div class="cork-pin red-pin" id="pin-clue-${clue.id}"></div>
+          <div class="cork-clue-tag">
+            <svg class="noir-icon" aria-hidden="true"><use href="#icon-search"></use></svg>
+            <span>LAUDO PERICIAL #${idx + 1}</span>
+          </div>
+          <div class="cork-clue-name">${escapeHtml(clue.name)}</div>
+          <div class="cork-node-sub" style="color: #854d0e; font-size: 0.72rem; margin-bottom: 0.3rem;">Local: ${escapeHtml(clue.location || 'Local do Crime')}</div>
+          <div class="cork-clue-desc">${escapeHtml(clue.description || '')}</div>
+          <button type="button" class="btn btn-secondary cork-btn-inspect" style="width: 100%; margin-top: 0.5rem; font-size: 0.78rem; padding: 0.35rem 0.5rem;">
+            <svg class="noir-icon" aria-hidden="true"><use href="#icon-loupe"></use></svg> <span>Periciar Laudo</span>
+          </button>
+        `;
+
+        node.querySelector('.cork-btn-inspect').addEventListener('click', (e) => {
+          e.stopPropagation();
+          openForensicLoupe({
+            name: clue.name,
+            location: clue.location,
+            description: clue.description,
+            type: 'clue'
+          });
+        });
+
+        node.addEventListener('mouseenter', () => highlightConnectedStrings(`clue-${clue.id}`, true));
+        node.addEventListener('mouseleave', () => highlightConnectedStrings(`clue-${clue.id}`, false));
+
+        el.corkCluesLayer.appendChild(node);
+      });
+    }
+
+    // Draw string connections after elements layout
+    setTimeout(renderCorkboardStrings, 60);
+  }
+
+  function renderCorkboardStrings() {
+    if (!el.corkboardSurface || !el.corkboardStringsSvg) return;
+
+    const surfaceRect = el.corkboardSurface.getBoundingClientRect();
+    if (surfaceRect.width === 0 || surfaceRect.height === 0) return;
+
+    el.corkboardStringsSvg.setAttribute('width', surfaceRect.width);
+    el.corkboardStringsSvg.setAttribute('height', surfaceRect.height);
+    el.corkboardStringsSvg.style.width = surfaceRect.width + 'px';
+    el.corkboardStringsSvg.style.height = surfaceRect.height + 'px';
+
+    const getPinCoords = (pinEl) => {
+      if (!pinEl) return null;
+      const rect = pinEl.getBoundingClientRect();
+      return {
+        x: (rect.left + rect.width / 2) - surfaceRect.left,
+        y: (rect.top + rect.height / 2) - surfaceRect.top
+      };
+    };
+
+    const victimPin = document.getElementById('pin-victim');
+    const victimCoord = getPinCoords(victimPin);
+    if (!victimCoord) return;
+
+    let svgHtml = '';
+
+    const createYarnPath = (p1, p2, id, type = 'victim-to-suspect') => {
+      const dx = p2.x - p1.x;
+      const dy = p2.y - p1.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const sag = Math.min(50, Math.max(16, dist * 0.12));
+      const midX = (p1.x + p2.x) / 2;
+      const midY = (p1.y + p2.y) / 2 + sag;
+
+      return `<path id="string-${id}" class="yarn-string yarn-${type}" data-string-id="${id}" d="M ${p1.x.toFixed(1)},${p1.y.toFixed(1)} Q ${midX.toFixed(1)},${midY.toFixed(1)} ${p2.x.toFixed(1)},${p2.y.toFixed(1)}" />`;
+    };
+
+    // 1. Strings from Victim Pin to all Suspect Pins
+    state.suspects.forEach(suspect => {
+      const pin = document.getElementById(`pin-suspect-${suspect.id}`);
+      const coord = getPinCoords(pin);
+      if (coord) {
+        svgHtml += createYarnPath(victimCoord, coord, `suspect-${suspect.id}`, 'victim-to-suspect');
+      }
+    });
+
+    // 2. Strings from Suspects to Clues
+    state.clues.forEach((clue, idx) => {
+      const cluePin = document.getElementById(`pin-clue-${clue.id}`);
+      const clueCoord = getPinCoords(cluePin);
+      if (!clueCoord) return;
+
+      if (state.suspects.length > 0) {
+        const suspectIdx = idx % state.suspects.length;
+        const targetSuspect = state.suspects[suspectIdx];
+        const suspPin = document.getElementById(`pin-suspect-${targetSuspect.id}`);
+        const suspCoord = getPinCoords(suspPin);
+        if (suspCoord) {
+          svgHtml += createYarnPath(suspCoord, clueCoord, `clue-${clue.id}`, 'suspect-to-clue');
+        }
+      } else {
+        svgHtml += createYarnPath(victimCoord, clueCoord, `clue-${clue.id}`, 'victim-to-clue');
+      }
+    });
+
+    el.corkboardStringsSvg.innerHTML = svgHtml;
+  }
+
+  function highlightConnectedStrings(targetId, isHighlight) {
+    if (!el.corkboardStringsSvg) return;
+    const str = el.corkboardStringsSvg.querySelector(`[data-string-id="${targetId}"]`);
+    if (str) {
+      if (isHighlight) {
+        str.classList.add('highlighted');
+      } else {
+        str.classList.remove('highlighted');
+      }
+    }
+  }
+
+  // =========================================================================
+  // Saved Personas Vault (Cofre de Personagens Salvos - v0.6)
+  // =========================================================================
+  async function loadSavedPersonas() {
+    try {
+      const res = await api('/api/game/personas/saved');
+      state.savedPersonas = res.personas || [];
+      if (el.savedPersonasCount) {
+        el.savedPersonasCount.textContent = state.savedPersonas.length;
+      }
+      renderSavedPersonas();
+    } catch (err) {
+      console.warn('[Personas] Falha ao carregar personas salvas:', err);
+    }
+  }
+
+  function openSavedPersonasModal() {
+    if (el.savedPersonasModal) {
+      el.savedPersonasModal.classList.add('active');
+      loadSavedPersonas();
+    }
+  }
+
+  function closeSavedPersonasModal() {
+    if (el.savedPersonasModal) {
+      el.savedPersonasModal.classList.remove('active');
+    }
+  }
+
+  async function saveCurrentPersona() {
+    savePersonaFromInputs();
+    const name = state.persona.name;
+    const role = state.persona.role;
+    const secret = state.persona.secret;
+
+    if (!name) {
+      alert('Por favor digite o nome do personagem antes de salvar!');
+      return;
+    }
+
+    try {
+      const payload = {
+        name: name,
+        role: role || 'Investigador',
+        occupation: role || 'Detetive',
+        personality: 'Perfil arquivado pelo investigador.',
+        alibi: 'Estava nos registros do departamento.',
+        secret: secret || 'Nenhum segredo declarado.',
+        routine: 'Turno noturno habitual de diligências.',
+        tics: 'Observa os cantos da sala em silêncio calculista.',
+        gender: 'neutral'
+      };
+      await api('/api/game/personas/saved', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+      if (window.NoirAudio && window.NoirAudio.playPaper) window.NoirAudio.playPaper();
+      if (el.btnSaveCurrentPersona) {
+        el.btnSaveCurrentPersona.innerHTML = '<svg class="noir-icon" aria-hidden="true"><use href="#icon-folder"></use></svg> Salvo!';
+        setTimeout(() => {
+          el.btnSaveCurrentPersona.innerHTML = '<svg class="noir-icon" aria-hidden="true"><use href="#icon-save"></use></svg> Salvar Ficha';
+        }, 1500);
+      }
+      loadSavedPersonas();
+    } catch (err) {
+      alert('Erro ao salvar ficha de personagem: ' + err.message);
+    }
+  }
+
+  async function deleteSavedPersona(id) {
+    if (!confirm('Deseja realmente apagar esta ficha arquivada?')) return;
+    try {
+      await api(`/api/game/personas/saved?id=${id}`, { method: 'DELETE' });
+      loadSavedPersonas();
+    } catch (err) {
+      alert('Erro ao excluir persona: ' + err.message);
+    }
+  }
+
+  function applySavedPersona(p) {
+    if (!p) return;
+    state.persona = {
+      name: p.name || '',
+      role: p.role || p.occupation || '',
+      secret: p.secret || ''
+    };
+    if (el.personaName) el.personaName.value = p.name || '';
+    if (el.personaRole) el.personaRole.value = p.role || p.occupation || '';
+    if (el.personaSecret) el.personaSecret.value = p.secret || '';
+    closeSavedPersonasModal();
+    if (window.NoirAudio && window.NoirAudio.playPaper) window.NoirAudio.playPaper();
+  }
+
+  function renderSavedPersonas() {
+    if (!el.savedPersonasList) return;
+    el.savedPersonasList.innerHTML = '';
+    const list = state.savedPersonas || [];
+    if (list.length === 0) {
+      if (el.savedPersonasEmpty) el.savedPersonasEmpty.style.display = 'block';
+      return;
+    }
+    if (el.savedPersonasEmpty) el.savedPersonasEmpty.style.display = 'none';
+
+    list.forEach(p => {
+      const card = document.createElement('div');
+      card.className = 'saved-persona-card';
+      card.innerHTML = `
+        <div class="saved-persona-header">
+          <div class="saved-persona-name">${escapeHtml(p.name)}</div>
+          <button type="button" class="btn-delete-persona" data-delete-id="${p.id}" title="Excluir Persona">&times;</button>
+        </div>
+        <div class="saved-persona-role">${escapeHtml(p.role || p.occupation || 'Investigador')}</div>
+        <div class="saved-persona-secret"><strong>Segredo:</strong> ${escapeHtml(p.secret || 'Sem segredo registrado')}</div>
+        ${p.routine ? `<div style="font-size: 0.72rem; color: var(--text-muted); margin-bottom: 0.35rem;"><strong>Rotina:</strong> ${escapeHtml(p.routine)}</div>` : ''}
+        ${p.tics ? `<div style="font-size: 0.72rem; color: var(--accent-amber); margin-bottom: 0.6rem;"><strong>Tiques:</strong> [${escapeHtml(p.tics)}]</div>` : ''}
+        <button type="button" class="btn btn-secondary btn-apply-persona" data-apply-id="${p.id}" style="width: 100%; font-size: 0.75rem; padding: 0.35rem 0.5rem;">
+          <svg class="noir-icon" aria-hidden="true"><use href="#icon-folder"></use></svg> Carregar nesta Ficha
+        </button>
+      `;
+
+      card.querySelector('.btn-apply-persona').addEventListener('click', () => {
+        applySavedPersona(p);
+      });
+      card.querySelector('.btn-delete-persona').addEventListener('click', (e) => {
+        e.stopPropagation();
+        deleteSavedPersona(p.id);
+      });
+
+      el.savedPersonasList.appendChild(card);
+    });
   }
 
   function populateAccusationOptions() {
@@ -1607,11 +1998,38 @@
         renderChatTranscript();
         typeSpeechBalloon(`"${reply}"`);
 
-        const currentStress = state.suspectStress[suspectId] || 0;
         const newStress = typeof res.stress_level === 'number'
           ? res.stress_level
-          : (currentStress + (confrontClueId ? 40 : 5));
+          : ((state.suspectStress[suspectId] || 0) + (confrontClueId ? 40 : 5));
         updateStressMeter(suspectId, newStress);
+
+        // Update Corkboard suspect stress badge
+        const corkBadge = document.getElementById(`cork-stress-badge-${suspectId}`);
+        if (corkBadge) {
+          corkBadge.textContent = `Nível de Estresse: ${newStress}%`;
+          if (newStress >= 60) corkBadge.classList.add('high');
+          else corkBadge.classList.remove('high');
+        }
+
+        // Agitation visual shake on repeated question, nervous tics, or high stress
+        if (res.is_repeated || (res.repeat_count && res.repeat_count >= 2) || newStress >= 70) {
+          if (el.suspectPortraitFrame) {
+            el.suspectPortraitFrame.classList.add('portrait-shake');
+            setTimeout(() => {
+              if (el.suspectPortraitFrame) el.suspectPortraitFrame.classList.remove('portrait-shake');
+            }, 800);
+          }
+        }
+
+        if (typeof res.time_remaining_minutes === 'number') {
+          updateNightClock(res.time_remaining_minutes);
+        }
+        if (typeof res.warrants_remaining === 'number') {
+          updateWarrantsBadge(res.warrants_remaining);
+        }
+        if (res.game_over) {
+          showGameOverModal(res.time_remaining_minutes <= 0 ? 'time_out' : 'warrants_exhausted');
+        }
       } catch (err) {
         removeTypingIndicator();
         // Fallback scripted response for offline/fallback mode
@@ -1625,6 +2043,9 @@
         const currentStress = state.suspectStress[suspectId] || 0;
         const newStress = currentStress + (confrontClueId ? 40 : 10);
         updateStressMeter(suspectId, newStress);
+
+        // Deduct 1 min fallback
+        updateNightClock(Math.max(0, state.timeRemainingMinutes - 1));
       }
 
       if (el.confrontClueSelect) el.confrontClueSelect.value = '';
@@ -1768,7 +2189,7 @@
   function setupNavEvents() {
     el.navTabBtns.forEach((btn) => {
       btn.addEventListener('click', () => {
-        if (window.NoirAudio) window.NoirAudio.playPaper();
+        if (window.NoirAudio && window.NoirAudio.playPaper) window.NoirAudio.playPaper();
         const tab = btn.getAttribute('data-tab');
 
         el.navTabBtns.forEach((b) => b.classList.remove('active'));
@@ -1781,7 +2202,27 @@
             pane.style.display = 'none';
           }
         });
+
+        if (tab === 'corkboard') {
+          renderCorkboard();
+          setTimeout(renderCorkboardStrings, 60);
+        }
       });
+    });
+
+    if (el.btnRealignStrings) {
+      el.btnRealignStrings.addEventListener('click', () => {
+        if (window.NoirAudio && window.NoirAudio.playPaper) window.NoirAudio.playPaper();
+        renderCorkboard();
+        setTimeout(renderCorkboardStrings, 60);
+      });
+    }
+
+    window.addEventListener('resize', () => {
+      const corkboardTab = document.getElementById('tab-content-corkboard');
+      if (corkboardTab && corkboardTab.style.display !== 'none') {
+        renderCorkboardStrings();
+      }
     });
   }
 
@@ -1810,8 +2251,9 @@
     setupInterrogationEvents();
     setupAccusationEvents();
     setupGameOverEvents();
-    updateNightClock(420);
+    updateNightClock(40);
     updateWarrantsBadge(2);
+    loadSavedPersonas();
     checkActiveSession();
   }
 

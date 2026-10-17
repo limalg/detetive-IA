@@ -508,8 +508,8 @@ func TestAccuseRequiresTwoClues(t *testing.T) {
 	if res1.WarrantsRemaining != 1 {
 		t.Errorf("expected 1 warrant remaining after strike 1, got %d", res1.WarrantsRemaining)
 	}
-	if res1.TimeRemainingMinutes != 390 {
-		t.Errorf("expected 390 minutes remaining (420 - 30), got %d", res1.TimeRemainingMinutes)
+	if res1.TimeRemainingMinutes != 10 {
+		t.Errorf("expected 10 minutes remaining (40 - 30), got %d", res1.TimeRemainingMinutes)
 	}
 	if res1.GameOver {
 		t.Error("expected gameOver=false after first strike")
@@ -555,7 +555,7 @@ func TestInterrogationTimeDeductions(t *testing.T) {
 	suspectID := details.Suspects[0].ID
 	clueID := details.Clues[0].ID
 
-	// 1. Normal question: deducts 15 min (420 -> 405)
+	// 1. Normal question: deducts 1 min (40 -> 39)
 	q1 := map[string]interface{}{
 		"suspect_id": suspectID,
 		"question":   "Onde você estava?",
@@ -573,11 +573,11 @@ func TestInterrogationTimeDeductions(t *testing.T) {
 		TimeRemainingMinutes int `json:"time_remaining_minutes"`
 	}
 	_ = json.NewDecoder(rec.Body).Decode(&res1)
-	if res1.TimeRemainingMinutes != 405 {
-		t.Errorf("expected 405 minutes remaining after 15 min question, got %d", res1.TimeRemainingMinutes)
+	if res1.TimeRemainingMinutes != 39 {
+		t.Errorf("expected 39 minutes remaining after 1 min question, got %d", res1.TimeRemainingMinutes)
 	}
 
-	// 2. Confrontation question: deducts 20 min (405 -> 385)
+	// 2. Confrontation question: deducts 2 min (39 -> 37)
 	q2 := map[string]interface{}{
 		"suspect_id":       suspectID,
 		"question":         "Como explica isto?",
@@ -596,15 +596,15 @@ func TestInterrogationTimeDeductions(t *testing.T) {
 		TimeRemainingMinutes int `json:"time_remaining_minutes"`
 	}
 	_ = json.NewDecoder(rec.Body).Decode(&res2)
-	if res2.TimeRemainingMinutes != 385 {
-		t.Errorf("expected 385 minutes remaining after 20 min confrontation, got %d", res2.TimeRemainingMinutes)
+	if res2.TimeRemainingMinutes != 37 {
+		t.Errorf("expected 37 minutes remaining after 2 min confrontation, got %d", res2.TimeRemainingMinutes)
 	}
 }
 
 func TestInvestigationResetOnNewGame_API(t *testing.T) {
 	router, _, _ := setupTestServer(t)
 
-	body := `{"theme_id": "mansion", "suspect_count": 4}`
+	body := `{"theme_id": "mansion", "suspect_count": 4, "time_limit_minutes": 40}`
 	req := httptest.NewRequest(http.MethodPost, "/api/game/solo/start", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -619,14 +619,15 @@ func TestInvestigationResetOnNewGame_API(t *testing.T) {
 		Suspects             []map[string]interface{} `json:"suspects"`
 		Clues                []map[string]interface{} `json:"clues"`
 		TimeRemainingMinutes int                      `json:"time_remaining_minutes"`
+		TimerLimitMinutes    int                      `json:"timer_limit_minutes"`
 		WarrantsRemaining    int                      `json:"warrants_remaining"`
 	}
 	if err := json.NewDecoder(rec.Body).Decode(&res); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
 
-	if res.TimeRemainingMinutes != 420 {
-		t.Errorf("expected 420 time_remaining_minutes, got %d", res.TimeRemainingMinutes)
+	if res.TimeRemainingMinutes != 40 {
+		t.Errorf("expected 40 time_remaining_minutes, got %d", res.TimeRemainingMinutes)
 	}
 	if res.WarrantsRemaining != 2 {
 		t.Errorf("expected 2 warrants_remaining, got %d", res.WarrantsRemaining)

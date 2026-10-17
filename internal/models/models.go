@@ -63,8 +63,11 @@ type Suspect struct {
 	CaseID          int64  `json:"case_id"`
 	Name            string `json:"name"`
 	Role            string `json:"role"`
+	Occupation      string `json:"occupation,omitempty"`
 	Personality     string `json:"personality"`
 	Alibi           string `json:"alibi"`
+	Routine         string `json:"routine,omitempty"`
+	Tics            string `json:"tics,omitempty"`
 	Secret          string `json:"secret,omitempty"`
 	IsCulprit       bool   `json:"is_culprit,omitempty"`
 	Tier1Alibi      string `json:"tier1_alibi,omitempty"`
@@ -73,6 +76,25 @@ type Suspect struct {
 	CrossSuspicion  string `json:"cross_suspicion,omitempty"`
 	Gender          string `json:"gender,omitempty"`
 	Avatar          string `json:"avatar,omitempty"`
+	RepeatCount     int    `json:"repeat_count,omitempty"`
+	StressLevel     int    `json:"stress_level,omitempty"`
+}
+
+// SavedPersona represents a saved detective or suspect dossier in the player's vault.
+type SavedPersona struct {
+	ID          int64  `json:"id"`
+	UserID      int64  `json:"user_id,omitempty"`
+	Name        string `json:"name"`
+	Role        string `json:"role"`
+	Occupation  string `json:"occupation,omitempty"`
+	Personality string `json:"personality,omitempty"`
+	Alibi       string `json:"alibi,omitempty"`
+	Secret      string `json:"secret,omitempty"`
+	Routine     string `json:"routine,omitempty"`
+	Tics        string `json:"tics,omitempty"`
+	Avatar      string `json:"avatar,omitempty"`
+	Gender      string `json:"gender,omitempty"`
+	CreatedAt   string `json:"created_at,omitempty"`
 }
 
 // Clue represents physical evidence found at a crime scene.
@@ -100,7 +122,8 @@ type Investigation struct {
 	UserID               int64      `json:"user_id"`
 	CaseID               int64      `json:"case_id"`
 	Status               string     `json:"status"` // in_progress, solved, failed
-	TimeRemainingMinutes int        `json:"time_remaining_minutes"` // default 420 (21:00 to 04:00)
+	TimeRemainingMinutes int        `json:"time_remaining_minutes"` // default 40
+	TimerLimitMinutes    int        `json:"timer_limit_minutes"`    // default 40
 	WarrantsRemaining    int        `json:"warrants_remaining"`     // default 2
 	AccusedSuspectID     *int64     `json:"accused_suspect_id,omitempty"`
 	AccusedWeapon        string     `json:"accused_weapon,omitempty"`

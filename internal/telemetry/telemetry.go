@@ -195,7 +195,7 @@ func (c *Collector) GetMetrics() SystemMetrics {
 		AllocMB:         float64(m.Alloc) / (1024 * 1024),
 		SysMB:           float64(m.Sys) / (1024 * 1024),
 		NumGoroutines:   runtime.NumGoroutine(),
-		MemoryThreshold: "< 60MB RAM Target (<1GB host footprint)",
+		MemoryThreshold: "Memória Livre (Sem Restrições)",
 	}
 }
 

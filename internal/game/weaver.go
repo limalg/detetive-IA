@@ -42,8 +42,11 @@ type botArchetype struct {
 	gender      string
 	avatar      string
 	role        string
+	occupation  string
 	personality string
 	alibi       string
+	routine     string
+	tics        string
 	secret      string
 	tier1Alibi  string
 	tier2Petty  string
@@ -56,84 +59,105 @@ var noirBotPool = []botArchetype{
 		gender:      "female",
 		avatar:      "/static/assets/char_nicole.webp",
 		role:        "Médica Patologista",
+		occupation:  "Médica Patologista e Toxicologista Forense",
 		personality: "Metódica, cínica e fumante inveterada.",
 		alibi:       "Estava no laboratório temporário conferindo laudos toxicológicos.",
+		routine:     "18h00: Dispensário preparando frascos. 20h30: Chegada sob chuva torrencial. 22h00: Discussão tensa sobre livro de receitas ilegais. 00h45: Tentativa de recuperar laudo no cofre; avistou vulto no corredor. 02h15: Chamada para examinar o cadáver.",
+		tics:        "Bate as pontas de cigarros na caixinha de prata antes de acender; Examina as próprias unhas com olhar cirúrgico; Pressiona as têmporas ao ouvir gritos.",
 		secret:      "Prescrevia morfina sob nomes falsos para aristocratas da cidade.",
 		tier1Alibi:  "Estava no laboratório temporário conferindo laudos toxicológicos e dosagens.",
 		tier2Petty:  "Prescrevia morfina e anestésicos sob nomes falsos para clientes ricos da alta sociedade.",
-		tier3Truth:  "Arthur me chantageava com o livro de receitas ilegais e ia cassar minha licença médica!",
+		tier3Truth:  "%s me chantageava com o livro de receitas ilegais e ia cassar minha licença médica!",
 	},
 	{
 		name:        "Vincent Thorne",
 		gender:      "male",
 		avatar:      "/static/assets/char_vincent.webp",
 		role:        "Jornalista Investigativo",
+		occupation:  "Jornalista Investigativo & Correspondente Policial",
 		personality: "Oportunista, sarcástico e atento a sussurros de bastidores.",
 		alibi:       "Fiquei no saguão datilografando notas sobre o baile beneficente.",
+		routine:     "18h30: Café na redação do clarim. 20h45: Entrada pela porta lateral procurando informantes. 22h30: Registro de fotos clandestinas no jardim. 00h40: Datilografando notas no saguão. 02h00: Primeiro repórter na cena.",
+		tics:        "Aciona o obturador metálico da câmera vazia repetidamente; Afrouxa a gravata amarrotada quando nervoso; Mastiga a ponta do lápis copiador.",
 		secret:      "Chantageava personalidades públicas com fotografias clandestinas.",
 		tier1Alibi:  "Fiquei no saguão datilografando notas sobre o baile beneficente até altas horas.",
 		tier2Petty:  "Chantageava personalidades públicas e políticos com fotografias clandestinas do submundo.",
-		tier3Truth:  "Arthur destruiu os negativos de fotos que garantiriam minha fortuna e reputação nacional!",
+		tier3Truth:  "%s destruiu os negativos de fotos que garantiriam minha fortuna e reputação nacional!",
 	},
 	{
 		name:        "Barão Klaus von Berg",
 		gender:      "male",
 		avatar:      "/static/assets/char_klaus.webp",
 		role:        "Magnata & Agiota",
+		occupation:  "Magnata das Ferrovias & Financiador Clandestino",
 		personality: "Arrogante, implacável e impaciente com devedores.",
 		alibi:       "Estava na sala de conferências revisando contratos de hipotecas antigas.",
+		routine:     "17h00: Reunião com agiotas do cais. 20h00: Jantar no salão nobre examinando hipotecas. 22h15: Discussão violenta sobre notas promissórias. 00h30: Na sala de conferências revisando títulos de crédito. 02h20: Exigindo seus advogados perante a polícia.",
+		tics:        "Gira o anel de sinete de ouro no dedo mínimo; Limpa a lapela de veludo com desdém aristocrático; Consulta o relógio de bolso suíço a cada minuto.",
 		secret:      "Financiou contrabando no cais e a vítima ameaçou denunciar às autoridades.",
 		tier1Alibi:  "Estava na sala de conferências revisando contratos de hipotecas e títulos de crédito.",
 		tier2Petty:  "Financiei carregamentos clandestinos no cais e opero uma mesa ilegal de câmbio negro.",
-		tier3Truth:  "Arthur ameaçou entregar meus livros contábeis à receita federal e arruinar meu império!",
+		tier3Truth:  "%s ameaçou entregar meus livros contábeis à receita federal e arruinar meu império!",
 	},
 	{
 		name:        "Clarice Dubois",
 		gender:      "female",
 		avatar:      "/static/assets/char_clarice.webp",
 		role:        "Cantora de Cabaré",
+		occupation:  "Cantora Lírica & Diva Noturna",
 		personality: "Sedutora, melancólica e ardilosa.",
 		alibi:       "Permaneci no camarim ensaiando arranjos de voz ao violino até a madrugada.",
+		routine:     "19h00: Camarim aquecendo a voz com licor. 21h00: Apresentação no salão de festas. 22h45: Encontro tenso no terraço sobre cartas escandalosas. 00h50: Trancada no camarim retocando maquiagem manchada de lágrimas. 02h10: Grito histérico ao ouvir o disparo.",
+		tics:        "Pressiona o lenço de renda umedecido no decote contra o suor frio; Bebe pequenos goles de licor de cereja; Ajeita os cachos postiços com dedos trêmulos.",
 		secret:      "Possuía cartas de amor escandalosas enviadas pela vítima anos atrás.",
 		tier1Alibi:  "Permaneci no camarim ensaiando arranjos de voz ao violino até a madrugada.",
 		tier2Petty:  "Extorquia amantes e guardava joias furtadas de mecenas desavisados em meu camarim.",
-		tier3Truth:  "Arthur ameaçou me expulsar da cidade sem um tostão se eu não lhe devolvesse as cartas íntimas!",
+		tier3Truth:  "%s ameaçou me expulsar da cidade sem um tostão se eu não lhe devolvesse as cartas íntimas!",
 	},
 	{
 		name:        "Barnaby Finch",
 		gender:      "male",
 		avatar:      "/static/assets/char_barnaby.webp",
 		role:        "Mordomo & Guarda-livros",
+		occupation:  "Guarda-livros Chefe & Curador do Gabinete",
 		personality: "Formal, impassível e rigorosamente detalhista.",
 		alibi:       "Conferia o inventário de garrafas e cristais na adega subterrânea.",
+		routine:     "17h30: Conferência de chaves mestras e fechaduras. 20h00: Servindo taças na sala de jantar. 22h00: Na adega subterrânea organizando garrafas e faturas. 00h40: Passos pesados no corredor de serviço. 02h15: Convocando as autoridades sob comando da família.",
+		tics:        "Ajusta os óculos redondos pelo centro da ponte com dedo rígido; Alisa compulsivamente o tecido do colete; Pigarreia seco antes de contestar qualquer acusação.",
 		secret:      "Ocultava recibos contábeis comprometedores da família no forro do teto.",
 		tier1Alibi:  "Conferia o inventário de garrafas e cristais na adega subterrânea da mansão.",
 		tier2Petty:  "Ocultava recibos contábeis comprometedores e desviava pequenos montantes da despensa.",
-		tier3Truth:  "Arthur pretendia me demitir sem pensão após quarenta anos de servidão silenciosa!",
+		tier3Truth:  "%s pretendia me demitir sem pensão após quarenta anos de servidão silenciosa!",
 	},
 	{
 		name:        "Coronel Hector Vance",
 		gender:      "male",
 		avatar:      "/static/assets/char_hector.webp",
 		role:        "Veterano de Guerra & Colecionador de Armas",
+		occupation:  "Veterano de Guerra & Armeiro Pericial",
 		personality: "Rígido, taciturno e observador com olhar penetrante.",
 		alibi:       "Estava no salão de jogos polindo peças de xadrez e fumando cachimbo.",
+		routine:     "18h00: Limpeza e lubrificação de peças de artilharia. 20h30: Sala de jogos com cachimbo e xadrez solitário. 22h10: Ouvindo discussão abafada na biblioteca. 00h45: Caminhada noturna no jardim verificando trincos. 02h20: Organizando o isolamento da cena.",
+		tics:        "Estala os nós dos dedos com estalos secos; Massageia o maxilar como quem ainda sente golpes; Cerra os punhos sob a mesa até as juntas embranquecerem.",
 		secret:      "Vendeu condecorações militares e armas contrabandeadas para saldar penhoras.",
 		tier1Alibi:  "Estava no salão de jogos polindo peças de xadrez e fumando cachimbo na lareira.",
 		tier2Petty:  "Vendi condecorações e armas desativadas sem registro para pagar agiotas.",
-		tier3Truth:  "A vítima descobriu minha desonra militar e pretendia me expor no clube dos oficiais!",
+		tier3Truth:  "%s descobriu minha desonra militar e pretendia me expor no clube dos oficiais!",
 	},
 	{
 		name:        "Madame Genevieve Leclair",
 		gender:      "female",
 		avatar:      "/static/assets/char_genevieve.webp",
 		role:        "Antiquária & Falsificadora",
+		occupation:  "Antiquária & Perita em Artefatos Falsificados",
 		personality: "Refinada, enigmática e atenta a detalhes materiais.",
 		alibi:       "Estava na biblioteca catalogando manuscritos raros e iluminuras antigas.",
+		routine:     "18h00: Avaliando peças de bronze e prataria no depósito. 20h30: Negociando itens venezianos na biblioteca. 22h20: Discussão acalorada sobre a autenticidade de uma joia. 00h40: Escondendo documentos no forro do sobretudo. 02h30: Fingindo indiferença sob interrogatório.",
+		tics:        "Abre e fecha com força o fecho de prata da bolsa de mão; Olha fixamente para as saídas de emergência; Esconde as mãos manchadas de verniz sob a estola.",
 		secret:      "Autenticou artefatos forjados de alta joalheria para leilões da alta sociedade.",
 		tier1Alibi:  "Estava na biblioteca catalogando manuscritos raros e iluminuras antigas até tarde.",
 		tier2Petty:  "Vendi peças renascentistas forjadas e ocultei laudos falsos de autenticidade.",
-		tier3Truth:  "A vítima descobriu as falsificações e pretendia me desmascarar publicamente!",
+		tier3Truth:  "%s descobriu as falsificações e pretendia me desmascarar publicamente!",
 	},
 }
 
@@ -326,8 +350,11 @@ func (w *Weaver) WeaveCaseWithTheme(players []room.Player, themeID string, suspe
 			Suspect: models.Suspect{
 				Name:            persona,
 				Role:            role,
+				Occupation:      role,
 				Personality:     "Observador, reservado e misterioso.",
 				Alibi:           alibi,
+				Routine:         "Visto nos corredores e áreas sociais pouco antes do incidente.",
+				Tics:            "Morde o canto do lábio inferior e ajusta o relógio de pulso.",
 				Secret:          p.Secret,
 				Tier1Alibi:      alibi,
 				Tier2PettyCrime: petty,
@@ -346,8 +373,11 @@ func (w *Weaver) WeaveCaseWithTheme(players []room.Player, themeID string, suspe
 			Suspect: models.Suspect{
 				Name:            bot.name,
 				Role:            bot.role,
+				Occupation:      bot.occupation,
 				Personality:     bot.personality,
 				Alibi:           bot.tier1Alibi,
+				Routine:         bot.routine,
+				Tics:            bot.tics,
 				Secret:          bot.secret,
 				Tier1Alibi:      bot.tier1Alibi,
 				Tier2PettyCrime: bot.tier2Petty,
@@ -426,9 +456,9 @@ func (w *Weaver) WeaveCaseWithTheme(players []room.Player, themeID string, suspe
 	for i, s := range suspectPool {
 		if w.db != nil {
 			sRes, err := w.db.Exec(`
-				INSERT INTO suspects (case_id, name, role, personality, alibi, secret, is_culprit, tier1_alibi, tier2_petty_crime, tier3_truth, cross_suspicion, gender, avatar)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-			`, caseID, s.Name, s.Role, s.Personality, s.Alibi, s.Secret, s.IsCulprit, s.Tier1Alibi, s.Tier2PettyCrime, s.Tier3Truth, s.CrossSuspicion, s.Gender, s.Avatar)
+				INSERT INTO suspects (case_id, name, role, personality, alibi, secret, is_culprit, tier1_alibi, tier2_petty_crime, tier3_truth, cross_suspicion, gender, avatar, occupation, routine, tics)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			`, caseID, s.Name, s.Role, s.Personality, s.Alibi, s.Secret, s.IsCulprit, s.Tier1Alibi, s.Tier2PettyCrime, s.Tier3Truth, s.CrossSuspicion, s.Gender, s.Avatar, s.Occupation, s.Routine, s.Tics)
 			if err != nil {
 				return nil, fmt.Errorf("failed to insert suspect %s: %w", s.Name, err)
 			}

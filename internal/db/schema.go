@@ -93,6 +93,17 @@ CREATE TABLE IF NOT EXISTS case_envelopes (
     content_json TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS saved_personas (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    role TEXT NOT NULL,
+    occupation TEXT DEFAULT '',
+    secret TEXT DEFAULT '',
+    tics TEXT DEFAULT '',
+    avatar TEXT DEFAULT '',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
 CREATE INDEX IF NOT EXISTS idx_suspects_case_id ON suspects(case_id);
 CREATE INDEX IF NOT EXISTS idx_clues_case_id ON clues(case_id);
@@ -108,12 +119,17 @@ func RunMigrations(database *sql.DB) error {
 	}
 	alterQueries := []string{
 		"ALTER TABLE users ADD COLUMN is_admin BOOLEAN DEFAULT 0;",
-		"ALTER TABLE investigations ADD COLUMN time_remaining_minutes INTEGER NOT NULL DEFAULT 420;",
+		"ALTER TABLE investigations ADD COLUMN time_remaining_minutes INTEGER NOT NULL DEFAULT 40;",
+		"ALTER TABLE investigations ADD COLUMN timer_limit_minutes INTEGER NOT NULL DEFAULT 40;",
 		"ALTER TABLE investigations ADD COLUMN warrants_remaining INTEGER NOT NULL DEFAULT 2;",
 		"ALTER TABLE suspects ADD COLUMN tier1_alibi TEXT DEFAULT '';",
 		"ALTER TABLE suspects ADD COLUMN tier2_petty_crime TEXT DEFAULT '';",
 		"ALTER TABLE suspects ADD COLUMN tier3_truth TEXT DEFAULT '';",
 		"ALTER TABLE suspects ADD COLUMN cross_suspicion TEXT DEFAULT '';",
+		"ALTER TABLE suspects ADD COLUMN occupation TEXT DEFAULT '';",
+		"ALTER TABLE suspects ADD COLUMN routine TEXT DEFAULT '';",
+		"ALTER TABLE suspects ADD COLUMN tics TEXT DEFAULT '';",
+		"ALTER TABLE suspects ADD COLUMN repeat_count INTEGER DEFAULT 0;",
 		"ALTER TABLE cases ADD COLUMN category TEXT DEFAULT 'detective_night';",
 		"ALTER TABLE suspects ADD COLUMN gender TEXT DEFAULT '';",
 		"ALTER TABLE suspects ADD COLUMN avatar TEXT DEFAULT '';",
