@@ -59,7 +59,7 @@ func TestGetHubGames_Success(t *testing.T) {
 		icon   string
 	}{
 		"detetive-ia":         {status: "active", badge: "Disponível", route: "/", icon: "search"},
-		"banco-imobiliario-ia": {status: "in_construction", badge: "Em Construção", route: "/banco-imobiliario", icon: "building"},
+		"banco-imobiliario-ia": {status: "active", badge: "Disponível", route: "/banco-imobiliario", icon: "building"},
 		"codenames-ia":        {status: "in_construction", badge: "Em Construção", route: "/codenames", icon: "grid"},
 		"dixit-ia":            {status: "in_construction", badge: "Em Construção", route: "/dixit", icon: "image"},
 		"tabu-ia":             {status: "in_construction", badge: "Em Construção", route: "/tabu", icon: "slash"},

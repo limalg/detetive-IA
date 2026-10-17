@@ -47,9 +47,10 @@ func GetHubGames() []models.BoardGame {
 			MinPlayers:  2,
 			MaxPlayers:  4,
 			Difficulty:  "Avançado",
-			Status:      "in_construction",
-			Badge:       "Em Construção",
+			Status:      "active",
+			Badge:       "Disponível",
 			Route:       "/banco-imobiliario",
+
 			Icon:        "building",
 			CustomizableFields: []string{
 				"city",

@@ -6,19 +6,21 @@ import (
 	"time"
 
 	"detetive-ia/internal/auth"
+	"detetive-ia/internal/banco"
 	"detetive-ia/internal/game"
 	"detetive-ia/internal/room"
 )
 
 // Config holds server dependencies and configuration.
 type Config struct {
-	Addr        string
-	DB          *sql.DB
-	AuthService *auth.Service
-	GameService *game.Service
-	RoomManager *room.Manager
-	Weaver      *game.Weaver
-	StaticFS    http.Handler
+	Addr         string
+	DB           *sql.DB
+	AuthService  *auth.Service
+	GameService  *game.Service
+	RoomManager  *room.Manager
+	Weaver       *game.Weaver
+	BancoManager *banco.Manager
+	StaticFS     http.Handler
 }
 
 // NewServer returns an *http.Server configured with the Detetive IA router and network timeouts.
@@ -41,6 +43,9 @@ func NewRouter(cfg Config) http.Handler {
 	if cfg.Weaver == nil && cfg.DB != nil {
 		cfg.Weaver = game.NewWeaver(cfg.DB)
 	}
+	if cfg.BancoManager == nil {
+		cfg.BancoManager = banco.NewManager()
+	}
 
 	mux := http.NewServeMux()
 	h := NewHandler(cfg)
@@ -51,8 +56,17 @@ func NewRouter(cfg Config) http.Handler {
 	// Hub games catalog
 	mux.HandleFunc("/api/hub/games", h.HandleHubGames)
 
+	// Banco Imobiliário IA endpoints
+	mux.HandleFunc("/api/banco/start", h.HandleBancoStart)
+	mux.HandleFunc("/api/banco/state", h.HandleBancoState)
+	mux.HandleFunc("/api/banco/roll", h.HandleBancoRoll)
+	mux.HandleFunc("/api/banco/buy", h.HandleBancoBuy)
+	mux.HandleFunc("/api/banco/build", h.HandleBancoBuild)
+	mux.HandleFunc("/api/banco/end-turn", h.HandleBancoEndTurn)
+
 	// Authentication endpoints
 	mux.HandleFunc("/api/auth/register", h.HandleRegister)
+
 	mux.HandleFunc("/api/auth/login", h.HandleLogin)
 	mux.HandleFunc("/api/auth/logout", h.HandleLogout)
 	mux.HandleFunc("/api/auth/me", h.HandleMe)
