@@ -48,6 +48,9 @@ func NewRouter(cfg Config) http.Handler {
 	// Healthcheck & memory stats
 	mux.HandleFunc("/api/health", h.HandleHealth)
 
+	// Hub games catalog
+	mux.HandleFunc("/api/hub/games", h.HandleHubGames)
+
 	// Authentication endpoints
 	mux.HandleFunc("/api/auth/register", h.HandleRegister)
 	mux.HandleFunc("/api/auth/login", h.HandleLogin)

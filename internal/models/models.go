@@ -117,3 +117,20 @@ type Verdict struct {
 	ActualWeapon  string `json:"actual_weapon,omitempty"`
 	ActualMotive  string `json:"actual_motive,omitempty"`
 }
+
+// BoardGame represents a tabletop board game in the AI games hub catalog.
+type BoardGame struct {
+	ID          string `json:"id"`
+	Title       string `json:"title"`
+	Subtitle    string `json:"subtitle"`
+	Description string `json:"description"`
+	Genre       string `json:"genre"`
+	MinPlayers  int    `json:"min_players"`
+	MaxPlayers  int    `json:"max_players"`
+	Difficulty  string `json:"difficulty"`
+	Status      string `json:"status"` // active, in_construction
+	Badge       string `json:"badge"`  // Disponível, Em Construção
+	Route       string `json:"route"`
+	Icon        string `json:"icon"`
+}
+
