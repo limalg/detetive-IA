@@ -1028,7 +1028,7 @@ func (h *Handler) HandleDetectiveNightCatalog(w http.ResponseWriter, r *http.Req
 	})
 }
 
-// HandleAdminPage serves the admin dashboard only to authenticated admin users.
+// HandleAdminPage serves the admin dashboard with authentication support (session, Basic Auth, or interactive form).
 func (h *Handler) HandleAdminPage(w http.ResponseWriter, r *http.Request) {
 	user, err := h.getAuthenticatedUser(r)
 	adminKey := r.Header.Get("X-Admin-Key")
@@ -1037,13 +1037,35 @@ func (h *Handler) HandleAdminPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	isAdmin := (err == nil && user != nil && user.IsAdmin) || adminKey == "detetive-admin-key"
+
+	// Support HTTP Basic Auth
+	username, password, hasBasic := r.BasicAuth()
+	if !isAdmin && hasBasic && h.cfg.AuthService != nil {
+		token, err := h.cfg.AuthService.Login(username, password)
+		if err == nil {
+			u, err := h.cfg.AuthService.ValidateSession(token)
+			if err == nil && u != nil && (u.IsAdmin || u.Username == "admin") {
+				isAdmin = true
+				http.SetCookie(w, &http.Cookie{
+					Name:     "session_token",
+					Value:    token,
+					Path:     "/",
+					HttpOnly: true,
+					SameSite: http.SameSiteLaxMode,
+				})
+			}
+		}
+	}
+
 	if !isAdmin {
-		if user == nil {
-			http.Redirect(w, r, "/?auth=login_required&redirect=/admin", http.StatusFound)
+		// If credentials were provided via Basic Auth or if explicitly requested via auth=basic / Authorization header
+		if hasBasic || r.URL.Query().Get("auth") == "basic" || r.Header.Get("Authorization") != "" {
+			w.Header().Set("WWW-Authenticate", `Basic realm="Tabuleiro IA Admin"`)
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
-		h.error(w, http.StatusForbidden, "acesso restrito para administradores")
-		return
+
+		// When unauthenticated browser accesses /admin directly, serve the page (which displays the admin login form)
 	}
 
 	data, err := web.Assets.ReadFile("templates/admin.html")
@@ -1054,6 +1076,7 @@ func (h *Handler) HandleAdminPage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Write(data)
 }
+
 
 // HandleDetectiveNightCaseEnvelopes returns the 3 envelopes for a specific case.
 func (h *Handler) HandleDetectiveNightCaseEnvelopes(w http.ResponseWriter, r *http.Request) {

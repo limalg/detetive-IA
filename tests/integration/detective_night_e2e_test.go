@@ -84,7 +84,7 @@ func TestDetectiveNightAndAdminE2EJourney(t *testing.T) {
 
 	// --- 1. Autenticação de Admin & Acesso ao Painel Admin ---
 	t.Run("Autenticação e Rota /admin", func(t *testing.T) {
-		// Acesso não autenticado à rota /admin (deve redirecionar para login)
+		// Acesso não autenticado à rota /admin (deve servir a página de admin com tela de login, status 200)
 		noAuthClient := &http.Client{
 			CheckRedirect: func(req *http.Request, via []*http.Request) error {
 				return http.ErrUseLastResponse
@@ -95,9 +95,22 @@ func TestDetectiveNightAndAdminE2EJourney(t *testing.T) {
 			t.Fatalf("erro ao acessar /admin não autenticado: %v", err)
 		}
 		resp.Body.Close()
-		if resp.StatusCode != http.StatusFound {
-			t.Fatalf("esperado redirect 302 para login ao acessar /admin sem autenticação, recebido %d", resp.StatusCode)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("esperado status 200 ao acessar /admin sem autenticação (tela de login), recebido %d", resp.StatusCode)
 		}
+
+		// Acesso via Basic Auth ao /admin
+		basicReq, _ := http.NewRequest(http.MethodGet, ts.URL+"/admin", nil)
+		basicReq.SetBasicAuth("admin", "admin1940")
+		basicResp, err := http.DefaultClient.Do(basicReq)
+		if err != nil {
+			t.Fatalf("erro no acesso Basic Auth: %v", err)
+		}
+		basicResp.Body.Close()
+		if basicResp.StatusCode != http.StatusOK {
+			t.Fatalf("esperado status 200 no Basic Auth de /admin, recebido %d", basicResp.StatusCode)
+		}
+
 
 		// Login como admin
 		loginPayload := map[string]string{

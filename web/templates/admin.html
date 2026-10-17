@@ -111,8 +111,37 @@
       </div>
     </div>
 
-    <!-- Live Telemetry Metrics -->
-    <div class="metric-grid">
+    <!-- Admin Login Card (Shown if unauthenticated) -->
+    <div id="admin-login-card" style="display: none; max-width: 440px; margin: 2rem auto; padding: 2rem; background: rgba(0,0,0,0.5); border: 1px solid var(--accent-amber); border-radius: 6px; box-shadow: 0 4px 20px rgba(0,0,0,0.7);">
+      <h3 style="font-family: var(--font-typewriter); color: var(--accent-amber); margin-top: 0; text-align: center;">🔐 Autenticação de Administrador</h3>
+      <p style="font-size: 0.85rem; color: var(--text-muted); text-align: center; margin-bottom: 1.5rem;">Insira as credenciais de administrador para acessar o painel de telemetria e IA.</p>
+      
+      <div id="admin-login-alert" class="auth-alert" style="display: none; margin-bottom: 1rem; padding: 0.75rem; border-radius: 4px; font-size: 0.85rem; background: rgba(0,0,0,0.6); border: 1px solid #ff4d4f;"></div>
+
+      <form id="admin-login-form">
+        <div class="form-group" style="margin-bottom: 1rem;">
+          <label class="form-label" for="admin-user">Usuário Administrador</label>
+          <input type="text" id="admin-user" class="form-input" placeholder="admin" required autocomplete="username">
+        </div>
+
+        <div class="form-group" style="margin-bottom: 1.5rem;">
+          <label class="form-label" for="admin-pass">Senha</label>
+          <input type="password" id="admin-pass" class="form-input" placeholder="••••••••" required autocomplete="current-password">
+        </div>
+
+        <button type="submit" id="btn-admin-login" class="btn btn-primary" style="width: 100%; margin-bottom: 0.75rem;">Entrar no Painel</button>
+      </form>
+
+      <div style="text-align: center; margin-top: 1rem; border-top: 1px solid var(--border-noir); padding-top: 1rem;">
+        <a href="/admin?auth=basic" class="btn btn-secondary" style="font-size: 0.8rem; width: 100%; display: block; text-decoration: none;">🌐 Autenticar via Navegador (HTTP Basic Auth)</a>
+      </div>
+    </div>
+
+    <!-- Admin Dashboard Content -->
+    <div id="admin-dashboard-content" style="display: none;">
+      <!-- Live Telemetry Metrics -->
+      <div class="metric-grid">
+
       <div class="metric-card">
         <div class="metric-val" id="metric-requests">-</div>
         <div class="metric-label">Total Requisições</div>
@@ -236,7 +265,9 @@
         </table>
       </div>
     </div>
-  </div>
+    </div> <!-- /#admin-dashboard-content -->
+  </div> <!-- /.admin-container -->
+
 
   <script>
     const el = {
@@ -391,10 +422,83 @@
     el.logLevelFilter.addEventListener('change', loadTelemetry);
     el.btnRefreshLogs.addEventListener('click', loadTelemetry);
 
-    // Initial load
-    loadSettings();
-    loadTelemetry();
-    setInterval(loadTelemetry, 5000); // 5s auto-refresh
+    function showDashboard() {
+      const loginCard = document.getElementById('admin-login-card');
+      const dashContent = document.getElementById('admin-dashboard-content');
+      if (loginCard) loginCard.style.display = 'none';
+      if (dashContent) dashContent.style.display = 'block';
+      loadSettings();
+      loadTelemetry();
+      if (!window._adminTelemetryInterval) {
+        window._adminTelemetryInterval = setInterval(loadTelemetry, 5000);
+      }
+    }
+
+    function showLogin() {
+      const loginCard = document.getElementById('admin-login-card');
+      const dashContent = document.getElementById('admin-dashboard-content');
+      if (loginCard) loginCard.style.display = 'block';
+      if (dashContent) dashContent.style.display = 'none';
+    }
+
+    async function checkAuthAndInit() {
+      try {
+        const resp = await fetch('/api/auth/me');
+        if (resp.ok) {
+          const data = await resp.json();
+          const user = data.user || data;
+          if (user && (user.is_admin || user.username === 'admin')) {
+            showDashboard();
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn('Checagem de sessão admin falhou:', err);
+      }
+      showLogin();
+    }
+
+    const loginForm = document.getElementById('admin-login-form');
+    if (loginForm) {
+      loginForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const userVal = document.getElementById('admin-user').value.trim();
+        const passVal = document.getElementById('admin-pass').value;
+        const alertEl = document.getElementById('admin-login-alert');
+        alertEl.style.display = 'none';
+
+        try {
+          const resp = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username: userVal, password: passVal })
+          });
+          const data = await resp.json();
+          if (!resp.ok) {
+            alertEl.style.display = 'block';
+            alertEl.style.borderColor = '#ff4d4f';
+            alertEl.innerText = '❌ ' + (data.error || 'Credenciais inválidas');
+            return;
+          }
+          const loggedUser = data.user || data;
+          if (loggedUser && (loggedUser.is_admin || loggedUser.username === 'admin')) {
+            showDashboard();
+          } else {
+            alertEl.style.display = 'block';
+            alertEl.style.borderColor = '#faad14';
+            alertEl.innerText = '⚠️ Usuário autenticado, mas não possui permissão de administrador.';
+          }
+        } catch (err) {
+          alertEl.style.display = 'block';
+          alertEl.style.borderColor = '#ff4d4f';
+          alertEl.innerText = '❌ Erro de conexão ao autenticar: ' + err.message;
+        }
+      });
+    }
+
+    // Initial check
+    checkAuthAndInit();
   </script>
+
 </body>
 </html>

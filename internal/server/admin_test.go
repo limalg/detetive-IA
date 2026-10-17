@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+
 
 	"detetive-ia/internal/auth"
 	"detetive-ia/internal/db"
@@ -159,3 +161,93 @@ func TestAdminSettingsAndTelemetry(t *testing.T) {
 		t.Errorf("expected custom cast size 2, got %d", roomResp.CustomCastSize)
 	}
 }
+
+func TestAdminPage_BasicAuth_Success(t *testing.T) {
+	router, _, _ := setupAdminTestServer(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/admin", nil)
+	req.SetBasicAuth("admin", "admin12345")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200 on /admin with valid Basic Auth, got %d. Body: %s", w.Code, w.Body.String())
+	}
+
+	contentType := w.Header().Get("Content-Type")
+	if !strings.Contains(contentType, "text/html") {
+		t.Errorf("expected Content-Type text/html, got %s", contentType)
+	}
+
+	// Verify session cookie was set
+	cookies := w.Result().Cookies()
+	var hasSessionCookie bool
+	for _, c := range cookies {
+		if c.Name == "session_token" && c.Value != "" {
+			hasSessionCookie = true
+			break
+		}
+	}
+	if !hasSessionCookie {
+		t.Errorf("expected session_token cookie to be set upon successful Basic Auth")
+	}
+}
+
+func TestAdminPage_BasicAuth_InvalidCredentials(t *testing.T) {
+	router, _, _ := setupAdminTestServer(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/admin", nil)
+	req.SetBasicAuth("admin", "wrongpass")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status 401 Unauthorized for invalid Basic Auth, got %d", w.Code)
+	}
+
+	authHeader := w.Header().Get("WWW-Authenticate")
+	if authHeader != `Basic realm="Tabuleiro IA Admin"` {
+		t.Errorf("expected header WWW-Authenticate: Basic realm=\"Tabuleiro IA Admin\", got %q", authHeader)
+	}
+}
+
+func TestAdminPage_QueryAuthBasic_Unauthorized(t *testing.T) {
+	router, _, _ := setupAdminTestServer(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/admin?auth=basic", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status 401 Unauthorized for /admin?auth=basic, got %d", w.Code)
+	}
+
+	authHeader := w.Header().Get("WWW-Authenticate")
+	if authHeader != `Basic realm="Tabuleiro IA Admin"` {
+		t.Errorf("expected header WWW-Authenticate: Basic realm=\"Tabuleiro IA Admin\", got %q", authHeader)
+	}
+}
+
+func TestAdminPage_UnauthenticatedBrowser_ServesAdminPage(t *testing.T) {
+	router, _, _ := setupAdminTestServer(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/admin", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200 OK serving admin page for browser, got %d", w.Code)
+	}
+
+	contentType := w.Header().Get("Content-Type")
+	if !strings.Contains(contentType, "text/html") {
+		t.Errorf("expected Content-Type text/html, got %s", contentType)
+	}
+
+	// Must NOT redirect (302) to /?auth=login_required
+	location := w.Header().Get("Location")
+	if location != "" {
+		t.Errorf("expected no redirect location, got %s", location)
+	}
+}
+
