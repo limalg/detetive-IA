@@ -105,6 +105,7 @@
               <span class="hub-tag">🧩 Dificuldade: Médio</span>
             </div>
             <button type="button" class="hub-card-btn" data-hub-action="open-detective">Investigar / Abrir Dossiê</button>
+            <button type="button" class="hub-card-btn-sub" data-hub-action="open-custom-investigation">🧬 Personalizar Caso com IA</button>
           </article>
 
           <!-- Fallback card: Banco Imobiliário IA (provisional art / under construction) -->
@@ -120,7 +121,7 @@
               <span class="hub-tag">👥 2–4 jogadores</span>
               <span class="hub-tag">🧩 Dificuldade: Avançado (em breve)</span>
             </div>
-            <button type="button" class="hub-card-btn" data-hub-action="open-monopoly-preview">Ver Conceito do Jogo</button>
+            <button type="button" class="hub-card-btn" data-hub-action="open-game-preview">Ver Conceito do Jogo</button>
           </article>
         </div>
       </div>
@@ -511,31 +512,98 @@
       </div>
     </div>
 
-    <!-- Monopoly Preview Modal (Conceito de Banco Imobiliário IA) -->
-    <div id="monopoly-preview-modal" class="modal-overlay">
+    <!-- Preview Modal Geral (Conceito de Qualquer Jogo do Hub) -->
+    <div id="hub-game-preview-modal" class="modal-overlay">
       <div class="modal-card monopoly-preview-card" style="max-width: 560px;">
         <div class="modal-header">
-          <h3 class="modal-title">🏛️ Banco Imobiliário IA — Conceito</h3>
-          <button id="close-monopoly-preview-btn" class="modal-close">&times;</button>
+          <h3 id="hub-preview-title" class="modal-title">Conceito do Jogo</h3>
+          <button id="close-hub-preview-btn" class="modal-close">&times;</button>
         </div>
-        <div class="modal-body monopoly-preview-body">
-          <div class="monopoly-deco-banner" aria-hidden="true">
-            <span class="deco-line"></span><span class="deco-star">✦</span><span class="deco-line"></span>
-          </div>
-          <p class="monopoly-tagline" style="font-family: var(--font-typewriter); text-align: center; color: var(--accent-amber); letter-spacing: 2px; text-transform: uppercase; font-size: 0.9rem;">
-            Monte seu império imobiliário. Negoceie com máquinas sem escrúpulos.
+        <div class="modal-body monopoly-preview-body" id="hub-preview-body">
+          <!-- Preenchido dinamicamente por app.js (openGamePreview) -->
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal: Personalizar Caso com IA (Detetive IA) -->
+    <div id="custom-investigation-modal" class="modal-overlay custom-investigation-modal">
+      <div class="modal-card" style="max-width: 540px;">
+        <div class="modal-header">
+          <h3 class="modal-title">🧬 Personalizar Caso com IA</h3>
+          <button id="close-custom-invest-btn" class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p class="custom-invest-intro" style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">
+            Monte o dossiê sob medida: a IA adapta cidade, elenco, cenário e conteúdo pedagógico às suas escolhas.
           </p>
-          <p style="font-size: 0.92rem; color: var(--text-main); line-height: 1.7; margin-bottom: 1rem;">
-            Um jogo de <strong>Estratégia & Economia</strong> para <strong>2–4 jogadores</strong> onde a banca, os moradores e o mercado são agentes autônomos de IA com personalidades próprias — <em>homens de negócio fazem acordos em escritórios escuros e honram contratos com a honestidade afiada dos anos 1930</em>.
-          </p>
-          <ul class="monopoly-concept-list">
-            <li><strong>🔨 Leilões Peremptórios:</strong> propriedades vão a pregões velozs com lances em tempo real e IA licitando contra você.</li>
-            <li><strong>🤝 Negociação Imobiliária:</strong> acordos de compra/venda, hipotecas e monopólios negociados com agentes autônomos que lembram de cada aperto de mão dado e insulto proferido.</li>
-            <li><strong>🏙️ Império Art Déco:</strong> construa casas e hotéis no skyline vintage da cidade enquanto a economia reage ao seu estilo de gestor.</li>
-          </ul>
-          <div class="monopoly-preview-note" style="margin-top: 1.25rem; padding: 0.6rem 0.8rem; background: rgba(245, 158, 11, 0.08); border: 1px dashed var(--accent-amber); border-radius: 4px; font-size: 0.85rem; color: var(--accent-amber); text-align: center;">
-            🚧 <strong>Em Construção</strong> — previsão: nunca se sabe. Negoceie enquanto investiga na mesa ao lado.
-          </div>
+
+          <div id="custom-invest-alert" class="custom-invest-alert" style="display: none;"></div>
+
+          <form id="custom-investigation-form">
+            <div class="custom-invest-form-grid">
+              <div class="form-group">
+                <label class="form-label" for="custom-city">🏙️ Cidade do Caso</label>
+                <input type="text" id="custom-city" class="form-input" placeholder="Ex: São Paulo" required>
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="custom-age">🎂 Idade do Jogador</label>
+                <input type="number" id="custom-age" class="form-input" min="8" max="99" value="12" required>
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="custom-school-grade">🎓 Série Escolar</label>
+                <select id="custom-school-grade" class="form-input">
+                  <option value="3º Ano">3º Ano (Fund. I)</option>
+                  <option value="5º Ano">5º Ano (Fund. I)</option>
+                  <option value="7º Ano">7º Ano (Fund. II)</option>
+                  <option value="8º Ano" selected>8º Ano (Fund. II)</option>
+                  <option value="9º Ano">9º Ano (Fund. II)</option>
+                  <option value="1º Ano EM">1º Ano Ensino Médio</option>
+                  <option value="3º Ano EM">3º Ano Ensino Médio</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="custom-difficulty">⚙️ Dificuldade</label>
+                <select id="custom-difficulty" class="form-input">
+                  <option value="facil">Fácil</option>
+                  <option value="medio" selected>Médio</option>
+                  <option value="dificil">Difícil</option>
+                </select>
+              </div>
+              <div class="form-group custom-invest-span2">
+                <label class="form-label" for="custom-friends">👥 Amigos para o Elenco (separados por vírgula)</label>
+                <input type="text" id="custom-friends" class="form-input" placeholder="Ex: Lucas, Sofia"
+                       autocomplete="off">
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="custom-theme">🎬 Tema / Cenário</label>
+                <select id="custom-theme" class="form-input">
+                  <option value="fazenda_coracao">Fazenda Coração da Serra</option>
+                  <option value="sherlock_holmes">Baker Street, 1895</option>
+                  <option value="carga_479">Porto de Santos</option>
+                  <option value="estrela_fria">Laboratório Estrela Fria</option>
+                  <option value="mansion" selected>Mansão do Vale das Sombras</option>
+                  <option value="train">Expresso da Meia-Noite</option>
+                  <option value="opera">Última Ária na Ópera</option>
+                  <option value="casino">Cassino Clandestino</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="custom-focus">🔬 Conteúdo em Foco (opcional)</label>
+                <select id="custom-focus" class="form-input">
+                  <option value="" selected>Livre</option>
+                  <option value="ciencias">Ciências</option>
+                  <option value="historia">História</option>
+                  <option value="geografia">Geografia</option>
+                  <option value="matematica">Matemática</option>
+                  <option value="quimica">Química</option>
+                </select>
+              </div>
+            </div>
+
+            <button type="submit" id="btn-generate-investigation" class="btn btn-danger" style="width: 100%; font-family: var(--font-typewriter); letter-spacing: 1px;">
+              🚨 Gerar Investigação Personalizada com IA
+            </button>
+          </form>
         </div>
       </div>
     </div>

@@ -43,8 +43,24 @@
     hubSection: document.getElementById('hub-section'),
     hubGamesGrid: document.getElementById('hub-games-grid'),
     btnHubNav: document.getElementById('btn-hub-nav'),
-    monopolyPreviewModal: document.getElementById('monopoly-preview-modal'),
-    closeMonopolyPreviewBtn: document.getElementById('close-monopoly-preview-btn'),
+    hubPreviewModal: document.getElementById('hub-game-preview-modal'),
+    hubPreviewTitle: document.getElementById('hub-preview-title'),
+    hubPreviewBody: document.getElementById('hub-preview-body'),
+    closeHubPreviewBtn: document.getElementById('close-hub-preview-btn'),
+
+    // Custom AI Investigation Modal
+    customInvestigationModal: document.getElementById('custom-investigation-modal'),
+    closeCustomInvestBtn: document.getElementById('close-custom-invest-btn'),
+    customInvestigationForm: document.getElementById('custom-investigation-form'),
+    customCity: document.getElementById('custom-city'),
+    customAge: document.getElementById('custom-age'),
+    customSchoolGrade: document.getElementById('custom-school-grade'),
+    customDifficulty: document.getElementById('custom-difficulty'),
+    customFriends: document.getElementById('custom-friends'),
+    customTheme: document.getElementById('custom-theme'),
+    customFocus: document.getElementById('custom-focus'),
+    btnGenerateInvestigation: document.getElementById('btn-generate-investigation'),
+    customInvestAlert: document.getElementById('custom-invest-alert'),
     networkStatus: document.getElementById('network-status'),
     pwaInstallBtn: document.getElementById('pwa-install-btn'),
 
@@ -381,7 +397,51 @@
     }
   }
 
-  const HUB_ICONS = { search: '🕵️', building: '🏛️' };
+  const HUB_ICONS = {
+    search: '🕵️',
+    building: '🏛️',
+    grid: '🔐',
+    image: '🎨',
+    slash: '🗣️',
+    users: '🎭',
+    compass: '🚆',
+    dice: '🎲'
+  };
+
+  const HUB_FIELD_LABELS = {
+    city: '🏙️ Cidade do Caso',
+    age: '🎂 Idade do Jogador',
+    school_grade: '🎓 Série Escolar',
+    difficulty: '⚙️ Nível de Dificuldade',
+    friends: '👥 Amigos no Elenco',
+    theme: '🎬 Tema / Cenário',
+    focus_subject: '🔬 Conteúdo em Foco',
+    genre: '🎭 Gênero Narrativo',
+    tone: '🎙️ Tom da Narrativa',
+    pace: '⏱️ Ritmo da Partida',
+    weather_era: '🌦️ Época / Clima'
+  };
+
+  function applyCaseResponse(res) {
+    state.currentCase = res.case || res;
+    state.suspects = res.suspects || [];
+    state.clues = res.clues || [];
+    if (typeof res.time_remaining_minutes === 'number') {
+      updateNightClock(res.time_remaining_minutes);
+    }
+    if (typeof res.warrants_remaining === 'number') {
+      updateWarrantsBadge(res.warrants_remaining);
+    }
+    state.isGameOver = false;
+    if (el.gameOverModal) el.gameOverModal.classList.remove('active');
+    showGameView();
+    renderDossier();
+    renderSuspects();
+    renderClues();
+    renderAccusationCluesSelector();
+    populateAccusationOptions();
+    if (typeof playStamp === 'function') playStamp();
+  }
 
   function renderHubCard(game) {
     const icon = HUB_ICONS[game.icon] || '🎲';
@@ -399,12 +459,13 @@
       return `
       <article class="hub-card hub-card-active" data-game-id="${escapeHtml(game.id)}">
         <div class="hub-card-icon">${icon}</div>
-        <span class="hub-badge hub-badge-active">Disponível</span>
+        <span class="hub-badge hub-badge-active">${escapeHtml(game.badge || 'Disponível')}</span>
         <h3 class="hub-card-title">${title}</h3>
         <p class="hub-card-subtitle">${subtitle}</p>
         <p class="hub-card-desc">${description}</p>
         <div class="hub-card-tags">${playersTag}${difficultyTag}</div>
         <button type="button" class="hub-card-btn" data-hub-action="open-detective">Investigar / Abrir Dossiê</button>
+        <button type="button" class="hub-card-btn-sub" data-hub-action="open-custom-investigation">🧬 Personalizar Caso com IA</button>
       </article>`;
     }
 
@@ -418,8 +479,39 @@
         <p class="hub-card-subtitle">${subtitle}</p>
         <p class="hub-card-desc">${description}</p>
         <div class="hub-card-tags">${playersTag}${difficultyTag}</div>
-        <button type="button" class="hub-card-btn" data-hub-action="open-monopoly-preview">Ver Conceito do Jogo</button>
+        <button type="button" class="hub-card-btn" data-hub-action="open-game-preview">Ver Conceito do Jogo</button>
       </article>`;
+  }
+
+  function findHubGame(gameId) {
+    const all = (state.hubGames && state.hubGames.length) ? state.hubGames : HUB_FALLBACK_GAMES;
+    return all.find((g) => g.id === gameId);
+  }
+
+  function gamePreviewHTML(game) {
+    const icon = HUB_ICONS[game.icon] || '🎲';
+    const players = (game.min_players && game.max_players)
+      ? `${game.min_players}–${game.max_players} jogadores`
+      : 'jogadores a combinar';
+    const customFields = Array.isArray(game.customizable_fields) ? game.customizable_fields : [];
+    const fieldItems = customFields
+      .map((f) => `<li class="hub-preview-field"><span>${escapeHtml(HUB_FIELD_LABELS[f] || '🎲 ' + f)}</span> adapta cartas, tabuleiro e narrativa em tempo real pela IA.</li>`)
+      .join('\n');
+    return `
+      <div class="monopoly-deco-banner" aria-hidden="true">
+        <span class="deco-line"></span><span class="deco-star">${icon}</span><span class="deco-line"></span>
+      </div>
+      <p class="monopoly-tagline" style="font-family: var(--font-typewriter); text-align: center; color: var(--accent-amber); letter-spacing: 2px; text-transform: uppercase; font-size: 0.9rem;">${escapeHtml(game.subtitle || '')}</p>
+      <div class="hub-preview-meta">
+        <span class="hub-tag">🎞️ ${escapeHtml(game.genre || 'Dedução')}</span>
+        <span class="hub-tag">👥 ${escapeHtml(players)}</span>
+        <span class="hub-tag">🧩 ${escapeHtml(game.difficulty || 'Médio')}</span>
+      </div>
+      <p style="font-size: 0.92rem; color: var(--text-main); line-height: 1.7; margin-bottom: 1rem;">${escapeHtml(game.description || '')}</p>
+      ${fieldItems ? `<h4 class="hub-preview-subtitle">✨ Como a IA vai personalizar para você</h4><ul class="hub-preview-fields">${fieldItems}</ul>` : ''}
+      <div class="monopoly-preview-note" style="margin-top: 1.25rem; padding: 0.6rem 0.8rem; background: rgba(245, 158, 11, 0.08); border: 1px dashed var(--accent-amber); border-radius: 4px; font-size: 0.85rem; color: var(--accent-amber); text-align: center;">
+        🚧 <strong>Em Construção</strong> — o tabuleiro está na bancada da agência. Investigue no Detetive IA enquanto a oficina entrega esta mesa.
+      </div>`;
   }
 
   function renderHubGames(games) {
@@ -435,6 +527,7 @@
     try {
       const data = await api('/api/hub/games');
       if (data && Array.isArray(data.games) && data.games.length > 0) {
+        state.hubGames = data.games;
         renderHubGames(data.games);
         hubGamesLoaded = true;
       }
@@ -443,15 +536,75 @@
     }
   }
 
-  function openMonopolyPreview() {
-    if (!el.monopolyPreviewModal) return;
-    el.monopolyPreviewModal.classList.add('active');
+  function openGamePreview(gameId) {
+    const game = findHubGame(gameId);
+    if (!game || !el.hubPreviewModal) return;
+    if (el.hubPreviewTitle) el.hubPreviewTitle.innerHTML = `${HUB_ICONS[game.icon] || '🎲'} ${escapeHtml(game.title || 'Jogo')} — Conceito`;
+    if (el.hubPreviewBody) el.hubPreviewBody.innerHTML = gamePreviewHTML(game);
+    el.hubPreviewModal.classList.add('active');
     if (typeof playTypewriter === 'function') playTypewriter();
   }
 
-  function closeMonopolyPreview() {
-    if (!el.monopolyPreviewModal) return;
-    el.monopolyPreviewModal.classList.remove('active');
+  function closeGamePreview() {
+    if (!el.hubPreviewModal) return;
+    el.hubPreviewModal.classList.remove('active');
+  }
+
+  function closeCustomInvestigation() {
+    if (!el.customInvestigationModal) return;
+    el.customInvestigationModal.classList.remove('active');
+    if (el.customInvestAlert) el.customInvestAlert.style.display = 'none';
+  }
+
+  function openCustomInvestigation() {
+    if (!el.customInvestigationModal) return;
+    if (el.customInvestAlert) el.customInvestAlert.style.display = 'none';
+    el.customInvestigationModal.classList.add('active');
+    if (typeof playPaper === 'function') playPaper();
+  }
+
+  function showCustomInvestAlert(msg) {
+    if (!el.customInvestAlert) return;
+    el.customInvestAlert.textContent = msg;
+    el.customInvestAlert.style.display = 'block';
+  }
+
+  async function loadCustomInvestigation() {
+    const payload = {
+      city: (el.customCity && el.customCity.value.trim()) || '',
+      age: el.customAge ? parseInt(el.customAge.value, 10) : 12,
+      school_grade: (el.customSchoolGrade && el.customSchoolGrade.value) || '8º Ano',
+      difficulty: (el.customDifficulty && el.customDifficulty.value) || 'medio',
+      friends: (el.customFriends && el.customFriends.value)
+        ? el.customFriends.value.split(',').map((n) => n.trim()).filter(Boolean).slice(0, 6)
+        : [],
+      theme: (el.customTheme && el.customTheme.value) || 'mansion'
+    };
+    if (el.customFocus && el.customFocus.value) {
+      payload.focus_subject = el.customFocus.value;
+    }
+
+    if (el.btnGenerateInvestigation) {
+      el.btnGenerateInvestigation.disabled = true;
+      el.btnGenerateInvestigation.textContent = '⏳ Consultando a IA...';
+    }
+    try {
+      const res = await api('/api/game/custom-investigation', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+      closeCustomInvestigation();
+      applyCaseResponse(res);
+    } catch (err) {
+      console.warn('[Game] Erro na investigação personalizada:', err);
+      showCustomInvestAlert(`⚠️ A IA não conseguiu montar o dossiê: ${err.message || 'erro desconhecido'}. Tente novamente.`);
+      if (typeof playStamp === 'function') playStamp();
+    } finally {
+      if (el.btnGenerateInvestigation) {
+        el.btnGenerateInvestigation.disabled = false;
+        el.btnGenerateInvestigation.textContent = '🚨 Gerar Investigação Personalizada com IA';
+      }
+    }
   }
 
   function setupHubEvents() {
@@ -464,36 +617,82 @@
 
     if (el.hubGamesGrid) {
       el.hubGamesGrid.addEventListener('click', (e) => {
+        const actionBtn = e.target.closest('[data-hub-action]');
+        if (actionBtn) {
+          e.stopPropagation();
+          const action = actionBtn.dataset.hubAction;
+          const card = actionBtn.closest('.hub-card');
+          const gameId = card ? card.dataset.gameId : 'detetive-ia';
+          if (action === 'open-detective') {
+            // Mid-investigation? Return straight to the desk. Otherwise open the lobby.
+            if (state.currentCase && !state.isGameOver) {
+              showGameView();
+            } else {
+              showLobbyView();
+            }
+            if (typeof playStamp === 'function') playStamp();
+          } else if (action === 'open-custom-investigation') {
+            openCustomInvestigation();
+          } else if (action === 'open-game-preview') {
+            openGamePreview(gameId);
+          }
+          return;
+        }
+        // Click on the card body
         const card = e.target.closest('.hub-card');
         if (!card) return;
         const gameId = card.dataset.gameId;
-        if (gameId === 'detetive-ia') {
-          // Mid-investigation? Return straight to the desk. Otherwise open the lobby.
+        const game = findHubGame(gameId);
+        if (game && game.status === 'active') {
           if (state.currentCase && !state.isGameOver) {
             showGameView();
           } else {
             showLobbyView();
           }
           if (typeof playStamp === 'function') playStamp();
-        } else if (gameId === 'banco-imobiliario-ia') {
-          openMonopolyPreview();
+        } else if (gameId) {
+          openGamePreview(gameId);
         }
       });
     }
 
-    if (el.closeMonopolyPreviewBtn) {
-      el.closeMonopolyPreviewBtn.addEventListener('click', closeMonopolyPreview);
+    if (el.closeHubPreviewBtn) {
+      el.closeHubPreviewBtn.addEventListener('click', closeGamePreview);
     }
-    if (el.monopolyPreviewModal) {
-      el.monopolyPreviewModal.addEventListener('click', (e) => {
-        if (e.target === el.monopolyPreviewModal) {
-          closeMonopolyPreview();
+    if (el.hubPreviewModal) {
+      el.hubPreviewModal.addEventListener('click', (e) => {
+        if (e.target === el.hubPreviewModal) {
+          closeGamePreview();
         }
       });
     }
+
+    if (el.closeCustomInvestBtn) {
+      el.closeCustomInvestBtn.addEventListener('click', closeCustomInvestigation);
+    }
+    if (el.customInvestigationModal) {
+      el.customInvestigationModal.addEventListener('click', (e) => {
+        if (e.target === el.customInvestigationModal) {
+          closeCustomInvestigation();
+        }
+      });
+    }
+    if (el.customInvestigationForm) {
+      el.customInvestigationForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        if (el.btnGenerateInvestigation && el.btnGenerateInvestigation.disabled) return;
+        loadCustomInvestigation();
+      });
+    }
+
     window.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && el.monopolyPreviewModal && el.monopolyPreviewModal.classList.contains('active')) {
-        closeMonopolyPreview();
+      if (e.key === 'Escape') {
+        if (el.hubPreviewModal && el.hubPreviewModal.classList.contains('active')) {
+          closeGamePreview();
+        }
+        if (el.customInvestigationModal && el.customInvestigationModal.classList.contains('active')) {
+          closeCustomInvestigation();
+        }
       }
     });
 
@@ -819,21 +1018,7 @@
                 suspect_count: suspectCount
               })
             });
-            state.currentCase = res.case || res;
-            state.suspects = res.suspects || [];
-            state.clues = res.clues || [];
-            if (typeof res.time_remaining_minutes === 'number') {
-              updateNightClock(res.time_remaining_minutes);
-            }
-            if (typeof res.warrants_remaining === 'number') {
-              updateWarrantsBadge(res.warrants_remaining);
-            }
-            showGameView();
-            renderDossier();
-            renderSuspects();
-            renderClues();
-            renderAccusationCluesSelector();
-            populateAccusationOptions();
+            applyCaseResponse(res);
           } catch (err) {
             console.warn('[Game] Erro ao iniciar caso solo via API, fallback:', err);
             showGameView();

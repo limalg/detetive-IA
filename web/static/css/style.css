@@ -1993,3 +1993,131 @@ body::after {
     grid-template-columns: 1fr;
   }
 }
+
+/* ==========================================================================
+   Hub v2 — Botão Secundário, Preview por Jogo e Personalização com IA
+   ========================================================================== */
+
+/* Botão secundário diegético no card ativo */
+.hub-card-btn-sub {
+  margin-top: 0.4rem;
+  width: 100%;
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--accent-amber);
+  border: 1px dashed rgba(245, 158, 11, 0.55);
+  font-family: var(--font-typewriter);
+  font-weight: bold;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  padding: 0.55rem 0.85rem;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.2s ease, transform 0.15s ease, box-shadow 0.2s ease;
+}
+
+.hub-card-btn-sub:hover {
+  background: rgba(245, 158, 11, 0.12);
+  transform: translateY(-1px);
+  box-shadow: 0 3px 10px rgba(245, 158, 11, 0.12);
+}
+
+/* Preview do jogo (art déco) */
+.hub-preview-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  justify-content: center;
+  margin-bottom: 0.9rem;
+}
+
+.hub-preview-subtitle {
+  font-family: var(--font-typewriter);
+  font-size: 0.95rem;
+  color: var(--accent-amber);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  margin: 0.4rem 0 0.6rem;
+}
+
+.hub-preview-fields {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.hub-preview-field {
+  display: block;
+  font-size: 0.84rem;
+  color: var(--text-muted);
+  line-height: 1.55;
+  padding: 0.5rem 0.7rem;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid var(--border-noir);
+  border-left: 3px solid var(--accent-amber);
+  border-radius: 3px;
+}
+
+.hub-preview-field span {
+  color: var(--text-main);
+  font-family: var(--font-typewriter);
+  font-weight: bold;
+}
+
+@keyframes hubPreviewIn {
+  from { opacity: 0; transform: translateY(14px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+#hub-game-preview-modal .modal-card,
+.custom-investigation-modal .modal-card {
+  animation: hubPreviewIn 0.35s ease both;
+}
+
+/* Modal de Personalização com IA */
+.custom-invest-intro {
+  font-family: var(--font-typewriter);
+  letter-spacing: 0.3px;
+}
+
+.custom-invest-alert {
+  padding: 0.6rem 0.8rem;
+  background: rgba(220, 38, 38, 0.12);
+  border: 1px solid var(--accent-crimson);
+  border-radius: 4px;
+  font-size: 0.85rem;
+  color: #fca5a5;
+  margin-bottom: 0.9rem;
+}
+
+.custom-invest-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+
+.custom-invest-span2 {
+  grid-column: span 2;
+}
+
+.custom-investigation-modal .form-input {
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--border-noir);
+}
+
+.custom-investigation-modal .form-input:focus {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.15);
+}
+
+@media (max-width: 640px) {
+  .custom-invest-form-grid {
+    grid-template-columns: 1fr;
+  }
+  .custom-invest-span2 {
+    grid-column: span 1;
+  }
+}

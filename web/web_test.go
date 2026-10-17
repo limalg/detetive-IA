@@ -677,9 +677,9 @@ func TestBoardGameHub(t *testing.T) {
 	requiredHubHTML := []string{
 		`id="hub-section"`,
 		`id="hub-games-grid"`,
+		`id="hub-game-preview-modal"`,
+		`id="close-hub-preview-btn"`,
 		`id="btn-hub-nav"`,
-		`id="monopoly-preview-modal"`,
-		`id="close-monopoly-preview-btn"`,
 		"detetive-ia",
 		"banco-imobiliario-ia",
 		"Detetive IA",
@@ -724,6 +724,8 @@ func TestBoardGameHub(t *testing.T) {
 	css := string(cssBytes)
 
 	requiredHubCSS := []string{
+		".hub-card-btn-sub",
+		".custom-investigation-modal",
 		".hub-felt-table",
 		".hub-games-grid",
 		".hub-card",
@@ -756,11 +758,14 @@ func TestBoardGameHub(t *testing.T) {
 
 	requiredHubJS := []string{
 		"/api/hub/games",
+		"/api/game/custom-investigation",
+		"applyCaseResponse",
+		"openCustomInvestigation",
 		"showHubView",
 		"setupHubEvents",
 		"renderHubGames",
-		"openMonopolyPreview",
-		"closeMonopolyPreview",
+		"openGamePreview",
+		"closeGamePreview",
 	}
 
 	for _, snippet := range requiredHubJS {
@@ -774,6 +779,86 @@ func TestBoardGameHub(t *testing.T) {
 	for _, marker := range fallbackMarkers {
 		if !strings.Contains(js, marker) {
 			t.Errorf("static/js/app.js missing hub static fallback: %s", marker)
+		}
+	}
+}
+
+func TestCustomInvestigationFrontend(t *testing.T) {
+	// 1. index.html: modal de personalização com campos diegéticos
+	htmlFile, err := web.Assets.Open("templates/index.html")
+	if err != nil {
+		t.Fatalf("failed to open templates/index.html: %v", err)
+	}
+	defer htmlFile.Close()
+
+	htmlBytes, err := io.ReadAll(htmlFile)
+	if err != nil {
+		t.Fatalf("failed to read templates/index.html: %v", err)
+	}
+	html := string(htmlBytes)
+
+	requiredElements := []string{
+		`id="custom-investigation-modal"`,
+		`id="close-custom-invest-btn"`,
+		`id="custom-investigation-form"`,
+		`id="custom-city"`,
+		`id="custom-age"`,
+		`id="custom-school-grade"`,
+		`id="custom-difficulty"`,
+		`id="custom-friends"`,
+		`id="custom-theme"`,
+		`id="btn-generate-investigation"`,
+		"Gerar Investigação Personalizada com IA",
+	}
+
+	for _, elem := range requiredElements {
+		if !strings.Contains(html, elem) {
+			t.Errorf("templates/index.html missing custom investigation element: %s", elem)
+		}
+	}
+
+	// 2. style.css: sistema visual do modal de personalização
+	cssFile, err := web.Assets.Open("static/css/style.css")
+	if err != nil {
+		t.Fatalf("failed to open static/css/style.css: %v", err)
+	}
+	defer cssFile.Close()
+
+	cssBytes, err := io.ReadAll(cssFile)
+	if err != nil {
+		t.Fatalf("failed to read static/css/style.css: %v", err)
+	}
+	css := string(cssBytes)
+
+	for _, rule := range []string{".custom-invest-form-grid", ".hub-preview-field", "@keyframes hubPreviewIn"} {
+		if !strings.Contains(css, rule) {
+			t.Errorf("static/css/style.css missing rule: %s", rule)
+		}
+	}
+
+	// 3. app.js: campo city enviado no POST e resposta aplicada ao estado do jogo
+	jsFile, err := web.Assets.Open("static/js/app.js")
+	if err != nil {
+		t.Fatalf("failed to open static/js/app.js: %v", err)
+	}
+	defer jsFile.Close()
+
+	jsBytes, err := io.ReadAll(jsFile)
+	if err != nil {
+		t.Fatalf("failed to read static/js/app.js: %v", err)
+	}
+	js := string(jsBytes)
+
+	for _, snippet := range []string{
+		"custom-city",
+		"school_grade: ",
+		"focus_subject",
+		"applyCaseResponse",
+		"renderDossier()",
+		"Gerar Investigação Personalizada",
+	} {
+		if !strings.Contains(js, snippet) {
+			t.Errorf("static/js/app.js missing custom investigation logic: %s", snippet)
 		}
 	}
 }
