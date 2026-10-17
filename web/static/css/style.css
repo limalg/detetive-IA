@@ -106,7 +106,12 @@ button:active, .btn:active, .chip:active, .polaroid-card:active, .weapon-card-it
 }
 
 body {
-  background-color: var(--bg-primary);
+  background-color: #08070a;
+  background-image: 
+    radial-gradient(circle at 50% 25%, rgba(224, 159, 62, 0.08) 0%, transparent 60%),
+    radial-gradient(circle at 12% 8%, rgba(70, 95, 130, 0.12) 0%, transparent 50%),
+    radial-gradient(circle at 88% 85%, rgba(168, 32, 32, 0.05) 0%, transparent 55%),
+    linear-gradient(180deg, rgba(8, 7, 10, 0.94) 0%, rgba(14, 13, 17, 0.98) 100%);
   color: var(--text-main);
   font-family: var(--font-sans);
   line-height: 1.6;
@@ -115,6 +120,90 @@ body {
   overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* Atmospheric Cinematic Dust Motes Floating */
+.cinematic-bg-effects {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+}
+
+.spotlight-cone {
+  position: absolute;
+  top: -10%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 900px;
+  height: 900px;
+  background: radial-gradient(ellipse at 50% 0%, rgba(224, 159, 62, 0.1) 0%, rgba(224, 159, 62, 0.02) 45%, transparent 70%);
+  filter: blur(40px);
+  pointer-events: none;
+  animation: ambientSpotlightBreathe 8s infinite alternate ease-in-out;
+}
+
+@keyframes ambientSpotlightBreathe {
+  0% { opacity: 0.65; transform: translateX(-50%) scale(0.95); }
+  100% { opacity: 1; transform: translateX(-50%) scale(1.05); }
+}
+
+.dust-mote {
+  position: absolute;
+  border-radius: 50%;
+  background: rgba(224, 159, 62, 0.5);
+  box-shadow: 0 0 6px rgba(224, 159, 62, 0.7);
+  pointer-events: none;
+}
+
+.mote-1 {
+  width: 3px;
+  height: 3px;
+  top: 18%;
+  left: 22%;
+  animation: floatMote 14s infinite ease-in-out;
+}
+
+.mote-2 {
+  width: 4px;
+  height: 4px;
+  top: 42%;
+  left: 74%;
+  animation: floatMote 18s infinite ease-in-out 3s;
+}
+
+.mote-3 {
+  width: 2px;
+  height: 2px;
+  top: 72%;
+  left: 32%;
+  animation: floatMote 12s infinite ease-in-out 1.5s;
+}
+
+.mote-4 {
+  width: 3px;
+  height: 3px;
+  top: 28%;
+  left: 82%;
+  animation: floatMote 16s infinite ease-in-out 5s;
+}
+
+.mote-5 {
+  width: 2.5px;
+  height: 2.5px;
+  top: 58%;
+  left: 15%;
+  animation: floatMote 15s infinite ease-in-out 2.5s;
+}
+
+@keyframes floatMote {
+  0% { transform: translateY(0) translateX(0); opacity: 0.15; }
+  50% { transform: translateY(-40px) translateX(25px); opacity: 0.65; }
+  100% { transform: translateY(-80px) translateX(0); opacity: 0.15; }
 }
 
 /* Noir Film Grain / Vignette Overlay */
@@ -126,7 +215,7 @@ body::before {
   width: 100%;
   height: 100%;
   pointer-events: none;
-  background: radial-gradient(circle at center, transparent 40%, rgba(5, 5, 8, 0.85) 100%);
+  background: radial-gradient(circle at center, transparent 40%, rgba(5, 5, 8, 0.88) 100%);
   z-index: 100;
 }
 
@@ -139,9 +228,9 @@ body::after {
   width: 100%;
   height: 100%;
   pointer-events: none;
-  background: linear-gradient(rgba(18, 18, 20, 0) 50%, rgba(0, 0, 0, 0.25) 50%);
+  background: linear-gradient(rgba(18, 18, 20, 0) 50%, rgba(0, 0, 0, 0.2) 50%);
   background-size: 100% 4px;
-  opacity: 0.35;
+  opacity: 0.3;
   z-index: 101;
 }
 
@@ -304,60 +393,389 @@ body::after {
   border-color: var(--accent-amber);
 }
 
-/* Authentication Box */
-.auth-wrapper {
-  max-width: 440px;
-  margin: 3rem auto;
-  background-color: var(--bg-secondary);
+/* ==========================================================================
+   Atmospheric Noir Login & Motion Design (ui-craft / Inspora / Spell.sh)
+   ========================================================================== */
+
+.auth-cinematic-stage {
+  position: relative;
+  padding: 1.5rem 0 2rem;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.auth-spotlight-beam {
+  position: absolute;
+  top: -15px;
+  width: 520px;
+  height: 380px;
+  background: radial-gradient(ellipse at 50% 0%, rgba(224, 159, 62, 0.16) 0%, rgba(224, 159, 62, 0.03) 60%, transparent 80%);
+  filter: blur(30px);
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Dossier Card with Kinetic Spring Reveal */
+@keyframes authDossierEntrance {
+  0% {
+    opacity: 0;
+    transform: translateY(28px) scale(0.96);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.auth-dossier-card {
+  max-width: 480px;
+  width: 100%;
+  margin: 1.5rem auto;
+  background: linear-gradient(180deg, #18161c 0%, #111014 100%);
+  border: 1px solid rgba(212, 163, 89, 0.28);
+  border-radius: 8px;
+  padding: 2.25rem 2rem;
+  box-shadow: 0 24px 60px -12px rgba(0, 0, 0, 0.95), 0 0 30px rgba(224, 159, 62, 0.08);
+  position: relative;
+  z-index: 2;
+  animation: authDossierEntrance 0.75s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  backdrop-filter: blur(14px);
+  overflow: hidden;
+}
+
+/* Card Top Border Ambient Shimmer */
+.auth-dossier-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #e09f3e, #fde68a, #e09f3e, transparent);
+  background-size: 200% 100%;
+  animation: borderShimmer 6s infinite linear;
+}
+
+@keyframes borderShimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* Card Top Header & Police Badge */
+.auth-card-top-header {
+  display: flex;
+  align-items: center;
+  gap: 1.1rem;
+  margin-bottom: 1.5rem;
+  border-bottom: 1px dashed rgba(212, 163, 89, 0.2);
+  padding-bottom: 1.25rem;
+}
+
+.auth-police-emblem {
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #fde68a 0%, #d97706 55%, #78350f 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.6), inset 0 2px 3px rgba(255, 255, 255, 0.75);
+  border: 2px solid #92400e;
+  flex-shrink: 0;
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.auth-police-emblem:hover {
+  transform: scale(1.06) rotate(3deg);
+}
+
+.auth-police-emblem svg {
+  color: #1c1917;
+  filter: drop-shadow(0 1px 1px rgba(255, 255, 255, 0.4));
+}
+
+@keyframes emblemGleam {
+  0%, 80% { transform: translateX(-150%) rotate(45deg); }
+  90%, 100% { transform: translateX(150%) rotate(45deg); }
+}
+
+.auth-police-emblem::after {
+  content: "";
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.5), transparent);
+  transform: rotate(45deg);
+  animation: emblemGleam 6s infinite ease-in-out;
+  pointer-events: none;
+}
+
+.auth-dept-titles {
+  flex: 1;
+}
+
+.auth-confidential-ribbon {
+  display: inline-block;
+  font-family: var(--font-typewriter);
+  font-size: 0.68rem;
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.5);
+  background: rgba(239, 68, 68, 0.08);
+  padding: 1px 6px;
+  border-radius: 2px;
+  letter-spacing: 1.5px;
+  margin-bottom: 0.35rem;
+  text-transform: uppercase;
+}
+
+.auth-main-heading {
+  font-family: var(--font-typewriter);
+  font-size: 1.15rem;
+  color: var(--accent-amber);
+  margin: 0 0 0.2rem 0;
+  letter-spacing: 0.5px;
+}
+
+.auth-sub-heading {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+
+/* Saved Agent Quick Access Banner (Modo de Salvar Usuário) */
+.saved-agent-card {
+  background: rgba(224, 159, 62, 0.08);
+  border: 1px solid var(--accent-amber);
+  border-radius: 6px;
+  padding: 0.75rem 0.9rem;
+  margin-bottom: 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  animation: savedAgentPulse 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes savedAgentPulse {
+  0% { opacity: 0; transform: translateY(-8px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+.saved-agent-avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: rgba(224, 159, 62, 0.2);
+  border: 1px solid var(--accent-amber);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-amber);
+  flex-shrink: 0;
+}
+
+.saved-agent-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.saved-agent-tag {
+  font-family: var(--font-typewriter);
+  font-size: 0.65rem;
+  color: var(--accent-amber);
+  letter-spacing: 0.8px;
+  font-weight: bold;
+}
+
+.saved-agent-name {
+  font-weight: bold;
+  font-size: 0.95rem;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.saved-agent-last-access {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+.saved-agent-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.btn-quick-entry {
+  font-size: 0.78rem;
+  padding: 0.35rem 0.65rem;
+}
+
+.btn-forget-link {
+  background: transparent;
+  border: 1px solid var(--border-noir);
+  color: var(--text-dim);
+  font-size: 0.72rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-forget-link:hover {
+  color: #ef4444;
+  border-color: #ef4444;
+  background: rgba(239, 68, 68, 0.08);
+}
+
+/* Tabs Container with Spring Pill Switcher */
+.auth-tabs-container {
+  display: flex;
+  position: relative;
+  background: rgba(0, 0, 0, 0.45);
   border: 1px solid var(--border-noir);
   border-radius: 6px;
-  padding: 2rem;
-  box-shadow: var(--shadow-noir);
-  position: relative;
-}
-
-.auth-wrapper::before {
-  content: "CONFIDENCIAL";
-  position: absolute;
-  top: 10px;
-  right: 15px;
-  font-family: var(--font-typewriter);
-  font-size: 0.75rem;
-  color: var(--accent-crimson);
-  border: 1px solid var(--accent-crimson);
-  padding: 2px 6px;
-  transform: rotate(5deg);
-  letter-spacing: 2px;
-}
-
-.auth-tabs {
-  display: flex;
+  padding: 4px;
   margin-bottom: 1.5rem;
-  border-bottom: 1px solid var(--border-noir);
+}
+
+.auth-tabs-slider {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 4px;
+  width: calc(50% - 4px);
+  background: rgba(212, 163, 89, 0.16);
+  border: 1px solid var(--accent-amber);
+  border-radius: 4px;
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: none;
 }
 
 .auth-tab {
   flex: 1;
   text-align: center;
-  padding: 0.75rem;
+  padding: 0.65rem 0.5rem;
   font-family: var(--font-typewriter);
-  font-size: 0.9rem;
-  color: var(--text-muted);
+  font-size: 0.85rem;
+  color: var(--text-dim);
   cursor: pointer;
-  transition: all 0.2s;
   background: transparent;
   border: none;
-  border-bottom: 2px solid transparent;
-  min-height: 44px;
+  border-radius: 4px;
+  position: relative;
+  z-index: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 0.45rem;
+  transition: color 0.2s;
+}
+
+.auth-tab:hover {
+  color: var(--text-main);
 }
 
 .auth-tab.active {
   color: var(--accent-amber);
-  border-bottom-color: var(--accent-amber);
   font-weight: bold;
+}
+
+/* Form Inputs with Tactile Glow */
+.auth-input-group {
+  margin-bottom: 1.25rem;
+}
+
+.auth-styled-input {
+  background: rgba(10, 9, 12, 0.85) !important;
+  border: 1px solid var(--border-noir);
+  padding: 0.8rem 0.9rem;
+  font-size: 0.95rem;
+  color: var(--text-main);
+  border-radius: 5px;
+  transition: border-color 0.25s, box-shadow 0.25s, background-color 0.25s;
+}
+
+.auth-styled-input:focus {
+  background: rgba(14, 13, 17, 0.95) !important;
+  border-color: var(--accent-amber) !important;
+  box-shadow: 0 0 0 1px var(--accent-amber), 0 0 16px rgba(224, 159, 62, 0.2) !important;
+}
+
+/* Remember Agent Row */
+.auth-remember-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.35rem;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.remember-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  font-family: var(--font-typewriter);
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  user-select: none;
+}
+
+.remember-checkbox-label input[type="checkbox"] {
+  accent-color: var(--accent-amber);
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.auth-secure-tag {
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-family: var(--font-typewriter);
+}
+
+/* Tactile Submit Button with Halo Ripple */
+.auth-submit-tactile {
+  position: relative;
+  overflow: hidden;
+  padding: 0.85rem 1rem;
+  font-size: 0.95rem;
+  letter-spacing: 0.5px;
+  font-weight: bold;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  transition: transform 0.15s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.15s;
+}
+
+.auth-submit-tactile:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 22px rgba(224, 159, 62, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+.auth-submit-tactile:active {
+  transform: translateY(1px) scale(0.98);
+}
+
+/* Footer Seals */
+.auth-footer-seals {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px dashed rgba(212, 163, 89, 0.15);
+  font-family: var(--font-typewriter);
+  font-size: 0.68rem;
+  color: var(--text-dim);
+  letter-spacing: 1px;
 }
 
 .form-group {

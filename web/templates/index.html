@@ -180,27 +180,116 @@
       </div>
     </header>
 
-    <!-- Authentication Section -->
+    <!-- Atmospheric Cinematic Dust Motes & Ambient Lights -->
+    <div class="cinematic-bg-effects" aria-hidden="true">
+      <div class="spotlight-cone"></div>
+      <div class="dust-mote mote-1"></div>
+      <div class="dust-mote mote-2"></div>
+      <div class="dust-mote mote-3"></div>
+      <div class="dust-mote mote-4"></div>
+      <div class="dust-mote mote-5"></div>
+    </div>
+
+    <!-- Authentication Section (Redesign Noir & Motion Design) -->
     <section id="auth-section">
-      <div class="auth-wrapper">
-        <div class="auth-tabs">
-          <button type="button" id="tab-login" class="auth-tab active">Entrar no Quartel</button>
-          <button type="button" id="tab-register" class="auth-tab">Novo Investigador</button>
+      <div class="auth-cinematic-stage">
+        <div class="auth-spotlight-beam" aria-hidden="true"></div>
+
+        <div class="auth-wrapper auth-dossier-card">
+          <!-- Brass Badge & Stamped Header -->
+          <div class="auth-card-top-header">
+            <div class="auth-police-emblem" aria-hidden="true">
+              <svg class="noir-icon-lg"><use href="#icon-police-badge"></use></svg>
+            </div>
+            <div class="auth-dept-titles">
+              <div class="auth-confidential-ribbon">CONFIDENCIAL • ARQUIVO #1940</div>
+              <h2 class="auth-main-heading">Posto Central de Identificação</h2>
+              <div class="auth-sub-heading">Credenciamento Oficial do Departamento de Homicídios</div>
+            </div>
+          </div>
+
+          <!-- Saved Agent Quick Access Banner (Modo de Salvar Usuário) -->
+          <div id="saved-agent-banner" class="saved-agent-card" style="display: none;">
+            <div class="saved-agent-avatar" aria-hidden="true">
+              <svg class="noir-icon-lg"><use href="#icon-detective"></use></svg>
+            </div>
+            <div class="saved-agent-meta">
+              <div class="saved-agent-tag">DISTINTIVO SALVO NESTE TERMINAL</div>
+              <div class="saved-agent-name" id="saved-agent-name">Detetive Marlowe</div>
+              <div class="saved-agent-last-access" id="saved-agent-last-access">Último acesso registrado</div>
+            </div>
+            <div class="saved-agent-actions">
+              <button type="button" id="btn-quick-access" class="btn btn-primary btn-quick-entry" title="Entrar imediatamente">
+                <span>Acessar</span>
+                <svg class="noir-icon" aria-hidden="true"><use href="#icon-door"></use></svg>
+              </button>
+              <button type="button" id="btn-forget-agent" class="btn-forget-link" title="Esquecer este agente e usar outra identificação">
+                Alternar
+              </button>
+            </div>
+          </div>
+
+          <!-- Spring Animated Tabs (Login / Registro) -->
+          <div class="auth-tabs-container">
+            <div class="auth-tabs-slider" id="auth-tabs-slider"></div>
+            <button type="button" id="tab-login" class="auth-tab active" data-auth-target="login">
+              <svg class="noir-icon" aria-hidden="true"><use href="#icon-detective"></use></svg>
+              <span>Identificação (Login)</span>
+            </button>
+            <button type="button" id="tab-register" class="auth-tab" data-auth-target="register">
+              <svg class="noir-icon" aria-hidden="true"><use href="#icon-folder"></use></svg>
+              <span>Novo Alistamento</span>
+            </button>
+          </div>
+
+          <div id="auth-alert" class="auth-alert" role="alert"></div>
+
+          <form id="auth-form" autocomplete="on">
+            <div class="form-group auth-input-group">
+              <label class="form-label" for="username">
+                <svg class="noir-icon" aria-hidden="true"><use href="#icon-detective"></use></svg>
+                <span>Identificação do Agente (Usuário)</span>
+              </label>
+              <div class="input-with-icon">
+                <input type="text" id="username" class="form-input auth-styled-input" placeholder="Ex: Det. Philip Marlowe" required autocomplete="username">
+              </div>
+            </div>
+
+            <div class="form-group auth-input-group">
+              <label class="form-label" for="password">
+                <svg class="noir-icon" aria-hidden="true"><use href="#icon-secret"></use></svg>
+                <span>Código Secreto do Distintivo (Senha)</span>
+              </label>
+              <div class="input-with-icon">
+                <input type="password" id="password" class="form-input auth-styled-input" placeholder="••••••••••••" required autocomplete="current-password">
+              </div>
+            </div>
+
+            <!-- Remember User / Save Agent Option -->
+            <div class="auth-remember-row">
+              <label class="remember-checkbox-label" for="remember-agent">
+                <input type="checkbox" id="remember-agent" checked>
+                <span class="custom-checkbox-box" aria-hidden="true"></span>
+                <span>Salvar meu distintivo neste terminal</span>
+              </label>
+              <span class="auth-secure-tag">
+                <svg class="noir-icon" aria-hidden="true"><use href="#icon-police-badge"></use></svg> Registros Locais
+              </span>
+            </div>
+
+            <button type="submit" id="auth-submit-btn" class="btn btn-primary auth-submit-tactile" style="width: 100%;">
+              <span class="btn-stamp-halo" aria-hidden="true"></span>
+              <svg class="noir-icon" aria-hidden="true"><use href="#icon-badge"></use></svg>
+              <span id="auth-submit-text">Autenticar e Acessar Registros</span>
+            </button>
+          </form>
+
+          <!-- Footer Stamp Seals -->
+          <div class="auth-footer-seals">
+            <span class="police-seal-text">DEPARTAMENTO DE POLÍCIA METROPOLITANA</span>
+            <span class="police-seal-text">• DIVISÃO 04 •</span>
+          </div>
         </div>
-
-        <div id="auth-alert" class="auth-alert"></div>
-
-        <form id="auth-form">
-          <div class="form-group">
-            <label class="form-label" for="username">Identificação (Usuário)</label>
-            <input type="text" id="username" class="form-input" placeholder="Ex: Detetive Marlowe" required autocomplete="username">
-          </div>
-          <div class="form-group">
-            <label class="form-label" for="password">Código Secreto (Senha)</label>
-            <input type="password" id="password" class="form-input" placeholder="••••••••" required autocomplete="current-password">
-          </div>
-          <button type="submit" id="auth-submit-btn" class="btn btn-primary" style="width: 100%;">Acessar Registros</button>
-        </form>
       </div>
     </section>
 

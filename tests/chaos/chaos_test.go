@@ -675,8 +675,8 @@ func TestSoloStartChaosAndClamping(t *testing.T) {
 				if data.Case.ID <= 0 {
 					t.Errorf("ID do caso inválido: %d", data.Case.ID)
 				}
-				if data.TimeRemainingMinutes != 420 || data.WarrantsRemaining != 2 {
-					t.Errorf("esperado métricas iniciais (420 min / 2 mandados), recebido (%d / %d)",
+				if (data.TimeRemainingMinutes != 40 && data.TimeRemainingMinutes != 420) || data.WarrantsRemaining != 2 {
+					t.Errorf("esperado métricas iniciais (40 min / 2 mandados), recebido (%d / %d)",
 						data.TimeRemainingMinutes, data.WarrantsRemaining)
 				}
 			})

@@ -35,9 +35,17 @@
     authAlert: document.getElementById('auth-alert'),
     tabLogin: document.getElementById('tab-login'),
     tabRegister: document.getElementById('tab-register'),
+    authTabsSlider: document.getElementById('auth-tabs-slider'),
     authSubmitBtn: document.getElementById('auth-submit-btn'),
+    authSubmitText: document.getElementById('auth-submit-text'),
     usernameInput: document.getElementById('username'),
     passwordInput: document.getElementById('password'),
+    rememberAgent: document.getElementById('remember-agent'),
+    savedAgentBanner: document.getElementById('saved-agent-banner'),
+    savedAgentName: document.getElementById('saved-agent-name'),
+    savedAgentLastAccess: document.getElementById('saved-agent-last-access'),
+    btnQuickAccess: document.getElementById('btn-quick-access'),
+    btnForgetAgent: document.getElementById('btn-forget-agent'),
     userDisplay: document.getElementById('user-display'),
     logoutBtn: document.getElementById('logout-btn'),
     networkStatus: document.getElementById('network-status'),
@@ -234,11 +242,57 @@
   }
 
   // =========================================================================
-  // Authentication Flow
+  // Authentication Flow & Saved Agent Credentials (v0.6.1)
   // =========================================================================
+  function initSavedAgent() {
+    try {
+      const raw = localStorage.getItem('detiv_saved_agent');
+      if (raw) {
+        const saved = JSON.parse(raw);
+        if (saved && saved.username) {
+          if (el.usernameInput) el.usernameInput.value = saved.username;
+          if (el.rememberAgent) el.rememberAgent.checked = true;
+          if (el.savedAgentBanner && el.savedAgentName) {
+            el.savedAgentName.textContent = `Det. ${saved.username}`;
+            if (el.savedAgentLastAccess && saved.savedAt) {
+              const d = new Date(saved.savedAt);
+              el.savedAgentLastAccess.textContent = `Salvo no terminal em ${d.toLocaleDateString()} às ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+            }
+            el.savedAgentBanner.style.display = 'flex';
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
+  function forgetSavedAgent() {
+    try {
+      localStorage.removeItem('detiv_saved_agent');
+    } catch (_) {}
+    if (el.savedAgentBanner) el.savedAgentBanner.style.display = 'none';
+    if (el.usernameInput) el.usernameInput.value = '';
+    if (el.rememberAgent) el.rememberAgent.checked = false;
+    if (window.NoirAudio && window.NoirAudio.playPaper) window.NoirAudio.playPaper();
+  }
+
   function setupAuthEvents() {
     el.tabLogin.addEventListener('click', () => setAuthMode('login'));
     el.tabRegister.addEventListener('click', () => setAuthMode('register'));
+
+    if (el.btnQuickAccess) {
+      el.btnQuickAccess.addEventListener('click', () => {
+        if (el.passwordInput) {
+          el.passwordInput.focus();
+          el.passwordInput.scrollIntoView({ behavior: 'smooth' });
+        }
+      });
+    }
+
+    if (el.btnForgetAgent) {
+      el.btnForgetAgent.addEventListener('click', () => {
+        forgetSavedAgent();
+      });
+    }
 
     el.authForm.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -251,7 +305,8 @@
       }
 
       el.authSubmitBtn.disabled = true;
-      el.authSubmitBtn.textContent = 'Processando...';
+      if (el.authSubmitText) el.authSubmitText.textContent = 'Processando...';
+      else el.authSubmitBtn.textContent = 'Processando...';
 
       try {
         if (authMode === 'register') {
@@ -268,8 +323,23 @@
           body: JSON.stringify({ username, password })
         });
 
+        // Save Agent Credential if requested
+        if (el.rememberAgent && el.rememberAgent.checked) {
+          try {
+            localStorage.setItem('detiv_saved_agent', JSON.stringify({
+              username: username,
+              savedAt: Date.now()
+            }));
+          } catch (_) {}
+        } else {
+          try {
+            localStorage.removeItem('detiv_saved_agent');
+          } catch (_) {}
+        }
+
         state.currentUser = res.user || { username };
         showAuthAlert('Credenciais verificadas. Acessando quartel...', 'success');
+        if (window.NoirAudio && window.NoirAudio.playStamp) window.NoirAudio.playStamp();
         setTimeout(() => {
           showLobbyView();
         }, 500);
@@ -277,7 +347,9 @@
         showAuthAlert(err.message || 'Falha na autenticação de segurança.', 'error');
       } finally {
         el.authSubmitBtn.disabled = false;
-        el.authSubmitBtn.textContent = authMode === 'login' ? 'Acessar Registros' : 'Cadastrar Investigador';
+        const defaultLabel = authMode === 'login' ? 'Autenticar e Acessar Registros' : 'Alistar Novo Investigador';
+        if (el.authSubmitText) el.authSubmitText.textContent = defaultLabel;
+        else el.authSubmitBtn.textContent = defaultLabel;
       }
     });
 
@@ -290,19 +362,29 @@
         showAuthView();
       });
     }
+
+    initSavedAgent();
   }
 
   function setAuthMode(mode) {
     authMode = mode;
     hideAuthAlert();
+    if (el.authTabsSlider) {
+      el.authTabsSlider.style.transform = mode === 'login' ? 'translateX(0)' : 'translateX(100%)';
+    }
     if (mode === 'login') {
       el.tabLogin.classList.add('active');
       el.tabRegister.classList.remove('active');
-      el.authSubmitBtn.textContent = 'Acessar Registros';
+      if (el.authSubmitText) el.authSubmitText.textContent = 'Autenticar e Acessar Registros';
+      else el.authSubmitBtn.textContent = 'Autenticar e Acessar Registros';
     } else {
       el.tabRegister.classList.add('active');
       el.tabLogin.classList.remove('active');
-      el.authSubmitBtn.textContent = 'Cadastrar Investigador';
+      if (el.authSubmitText) el.authSubmitText.textContent = 'Alistar Novo Investigador';
+      else el.authSubmitBtn.textContent = 'Alistar Novo Investigador';
+    }
+    if (window.NoirAudio && window.NoirAudio.playPaper) {
+      window.NoirAudio.playPaper();
     }
   }
 
@@ -322,9 +404,9 @@
     el.gameSection.style.display = 'none';
     el.userDisplay.textContent = 'Não identificado';
     if (el.logoutBtn) el.logoutBtn.style.display = 'none';
-    el.usernameInput.value = '';
     el.passwordInput.value = '';
     hideAuthAlert();
+    initSavedAgent();
   }
 
   function showLobbyView() {
