@@ -98,3 +98,51 @@ type DiceRollResult struct {
 	RentPaid    int    `json:"rent_paid,omitempty"`
 	RentTo      int    `json:"rent_to,omitempty"`
 }
+
+// TradeProposal defines property swapping between players with optional cash adjustments.
+type TradeProposal struct {
+	FromPlayerID   int   `json:"from_player_id"`
+	ToPlayerID     int   `json:"to_player_id"`
+	OfferedProps   []int `json:"offered_props"`   // tile positions offered by FromPlayer
+	RequestedProps []int `json:"requested_props"` // tile positions requested from ToPlayer
+	CashOffer      int   `json:"cash_offer"`      // cash given by FromPlayer to ToPlayer
+	CashRequest    int   `json:"cash_request"`    // cash demanded by FromPlayer from ToPlayer
+}
+
+// TradeResult represents the outcome of a property trade negotiation.
+type TradeResult struct {
+	Accepted bool   `json:"accepted"`
+	Message  string `json:"message"`
+	Reason   string `json:"reason,omitempty"`
+}
+
+// LoanResult represents the outcome of an emergency loan from the bank.
+type LoanResult struct {
+	Approved bool   `json:"approved"`
+	Amount   int    `json:"amount"`
+	Message  string `json:"message"`
+}
+
+// RoomPlayer represents a participant waiting in a multiplayer Banco lobby.
+type RoomPlayer struct {
+	ID     int    `json:"id"`
+	Name   string `json:"name"`
+	Avatar string `json:"avatar"`
+	Color  string `json:"color"`
+	IsHost bool   `json:"is_host"`
+}
+
+// Room represents a multiplayer lobby for Banco Imobiliário.
+type Room struct {
+	Code        string        `json:"code"` // 4-letter uppercase code
+	HostName    string        `json:"host_name"`
+	City        string        `json:"city"`
+	Difficulty  string        `json:"difficulty"`
+	Age         int           `json:"age"`
+	SchoolGrade string        `json:"school_grade"`
+	Status      string        `json:"status"` // "lobby", "in_progress", "finished"
+	GameID      string        `json:"game_id,omitempty"`
+	Players     []*RoomPlayer `json:"players"`
+	CreatedAt   string        `json:"created_at"`
+}
+

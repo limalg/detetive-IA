@@ -44,7 +44,7 @@ func NewRouter(cfg Config) http.Handler {
 		cfg.Weaver = game.NewWeaver(cfg.DB)
 	}
 	if cfg.BancoManager == nil {
-		cfg.BancoManager = banco.NewManager()
+		cfg.BancoManager = banco.NewManager(cfg.DB)
 	}
 
 	mux := http.NewServeMux()
@@ -63,6 +63,11 @@ func NewRouter(cfg Config) http.Handler {
 	mux.HandleFunc("/api/banco/buy", h.HandleBancoBuy)
 	mux.HandleFunc("/api/banco/build", h.HandleBancoBuild)
 	mux.HandleFunc("/api/banco/end-turn", h.HandleBancoEndTurn)
+	mux.HandleFunc("/api/banco/negotiate", h.HandleBancoNegotiate)
+	mux.HandleFunc("/api/banco/room/create", h.HandleBancoRoomCreate)
+	mux.HandleFunc("/api/banco/room/join", h.HandleBancoRoomJoin)
+	mux.HandleFunc("/api/banco/room/start", h.HandleBancoRoomStart)
+	mux.HandleFunc("/api/banco/room/state", h.HandleBancoRoomState)
 
 	// Authentication endpoints
 	mux.HandleFunc("/api/auth/register", h.HandleRegister)

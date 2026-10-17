@@ -287,3 +287,260 @@ func (h *Handler) HandleBancoEndTurn(w http.ResponseWriter, r *http.Request) {
 		"state":       game.GetState(),
 	})
 }
+
+// HandleBancoNegotiate processes property trades and emergency bank loans.
+func (h *Handler) HandleBancoNegotiate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		h.error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req struct {
+		GameID         string `json:"game_id"`
+		Action         string `json:"action"` // "trade" or "loan"
+		PlayerID       int    `json:"player_id"`
+		FromPlayerID   int    `json:"from_player_id"`
+		ToPlayerID     int    `json:"to_player_id"`
+		OfferedProps   []int  `json:"offered_props"`
+		RequestedProps []int  `json:"requested_props"`
+		CashOffer      int    `json:"cash_offer"`
+		CashRequest    int    `json:"cash_request"`
+		LoanAmount     int    `json:"loan_amount"`
+	}
+
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&req)
+	}
+
+	game := h.getBancoGame(r, req.GameID)
+	if game == nil {
+		h.error(w, http.StatusNotFound, "partida não encontrada")
+		return
+	}
+
+	// Emergency loan action
+	if req.Action == "loan" || (req.LoanAmount > 0 && req.ToPlayerID == 0) {
+		pID := req.PlayerID
+		if pID <= 0 {
+			pID = req.FromPlayerID
+		}
+		if pID <= 0 {
+			pID = game.GetState().CurrentTurn
+		}
+
+		res, err := game.RequestLoan(pID, req.LoanAmount)
+		if err != nil {
+			h.error(w, http.StatusBadRequest, err.Error())
+			return
+		}
+
+		if h.cfg.BancoManager != nil {
+			_ = h.cfg.BancoManager.SaveGame(game)
+		}
+
+		h.json(w, http.StatusOK, map[string]interface{}{
+			"approved": res.Approved,
+			"amount":   res.Amount,
+			"message":  res.Message,
+			"state":    game.GetState(),
+		})
+		return
+	}
+
+	// Trade action
+	fromID := req.FromPlayerID
+	if fromID <= 0 {
+		fromID = req.PlayerID
+	}
+	if fromID <= 0 {
+		fromID = game.GetState().CurrentTurn
+	}
+
+	toID := req.ToPlayerID
+	if toID <= 0 {
+		h.error(w, http.StatusBadRequest, "jogador destinatário (to_player_id) é obrigatório para negociações")
+		return
+	}
+
+	proposal := banco.TradeProposal{
+		FromPlayerID:   fromID,
+		ToPlayerID:     toID,
+		OfferedProps:   req.OfferedProps,
+		RequestedProps: req.RequestedProps,
+		CashOffer:      req.CashOffer,
+		CashRequest:    req.CashRequest,
+	}
+
+	result, err := game.TradeProperties(proposal)
+	if err != nil {
+		h.error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if h.cfg.BancoManager != nil {
+		_ = h.cfg.BancoManager.SaveGame(game)
+	}
+
+	h.json(w, http.StatusOK, map[string]interface{}{
+		"accepted": result.Accepted,
+		"message":  result.Message,
+		"reason":   result.Reason,
+		"state":    game.GetState(),
+	})
+}
+
+// HandleBancoRoomCreate generates a 4-letter code multiplayer room for Banco Imobiliário.
+func (h *Handler) HandleBancoRoomCreate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		h.error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	if h.cfg.BancoManager == nil {
+		h.cfg.BancoManager = banco.NewManager(h.cfg.DB)
+	}
+
+	var req struct {
+		HostName    string `json:"host_name"`
+		City        string `json:"city"`
+		Difficulty  string `json:"difficulty"`
+		Age         int    `json:"age"`
+		SchoolGrade string `json:"school_grade"`
+	}
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&req)
+	}
+
+	if req.HostName == "" {
+		if user, err := h.getAuthenticatedUser(r); err == nil && user != nil {
+			req.HostName = user.Username
+		}
+	}
+
+	room, err := h.cfg.BancoManager.CreateRoom(req.HostName, req.City, req.Difficulty, req.Age, req.SchoolGrade)
+	if err != nil {
+		h.error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	h.json(w, http.StatusOK, map[string]interface{}{
+		"code":    room.Code,
+		"room":    room,
+		"message": "Sala criada com sucesso!",
+	})
+}
+
+// HandleBancoRoomJoin allows friends to join an existing multiplayer room.
+func (h *Handler) HandleBancoRoomJoin(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		h.error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	if h.cfg.BancoManager == nil {
+		h.cfg.BancoManager = banco.NewManager(h.cfg.DB)
+	}
+
+	var req struct {
+		Code       string `json:"code"`
+		PlayerName string `json:"player_name"`
+		Avatar     string `json:"avatar"`
+		Color      string `json:"color"`
+	}
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&req)
+	}
+
+	if req.PlayerName == "" {
+		if user, err := h.getAuthenticatedUser(r); err == nil && user != nil {
+			req.PlayerName = user.Username
+		}
+	}
+
+	newPlayer, err := h.cfg.BancoManager.JoinRoom(req.Code, req.PlayerName, req.Avatar, req.Color)
+	if err != nil {
+		h.error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	room, _ := h.cfg.BancoManager.GetRoom(req.Code)
+
+	h.json(w, http.StatusOK, map[string]interface{}{
+		"code":      req.Code,
+		"player":    newPlayer,
+		"player_id": newPlayer.ID,
+		"room":      room,
+		"message":   "Você entrou na sala com sucesso!",
+	})
+}
+
+// HandleBancoRoomStart launches the collective Banco Imobiliário match for the room.
+func (h *Handler) HandleBancoRoomStart(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		h.error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	if h.cfg.BancoManager == nil {
+		h.cfg.BancoManager = banco.NewManager(h.cfg.DB)
+	}
+
+	var req struct {
+		Code string `json:"code"`
+	}
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&req)
+	}
+
+	game, err := h.cfg.BancoManager.StartRoomGame(req.Code)
+	if err != nil {
+		h.error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	state := game.GetState()
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "banco_game_id",
+		Value:    state.ID,
+		Path:     "/",
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	h.json(w, http.StatusOK, map[string]interface{}{
+		"code":    strings.ToUpper(strings.TrimSpace(req.Code)),
+		"game_id": state.ID,
+		"state":   state,
+		"message": "Partida iniciada para todos os jogadores da sala!",
+	})
+}
+
+// HandleBancoRoomState retrieves the current lobby state of a multiplayer room.
+func (h *Handler) HandleBancoRoomState(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		h.error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	if h.cfg.BancoManager == nil {
+		h.cfg.BancoManager = banco.NewManager(h.cfg.DB)
+	}
+
+	code := r.URL.Query().Get("code")
+	if code == "" {
+		h.error(w, http.StatusBadRequest, "código da sala é obrigatório")
+		return
+	}
+
+	room, err := h.cfg.BancoManager.GetRoom(code)
+	if err != nil {
+		h.error(w, http.StatusNotFound, err.Error())
+		return
+	}
+
+	h.json(w, http.StatusOK, map[string]interface{}{
+		"code": room.Code,
+		"room": room,
+	})
+}
+

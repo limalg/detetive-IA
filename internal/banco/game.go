@@ -41,7 +41,19 @@ func NewGame(opts GameOptions) *Game {
 		humanName = "Você (Investidor)"
 	}
 
-	gameID := fmt.Sprintf("banco_%s_%d", strings.ToLower(city[:min(len(city), 3)]), cryptoRandInt(100000, 999999))
+	citySlug := ""
+	for _, r := range strings.ToLower(city) {
+		if r >= 'a' && r <= 'z' {
+			citySlug += string(r)
+			if len(citySlug) >= 3 {
+				break
+			}
+		}
+	}
+	if citySlug == "" {
+		citySlug = "gam"
+	}
+	gameID := fmt.Sprintf("banco_%s_%d", citySlug, cryptoRandInt(100000, 999999))
 
 	var players []*Player
 	// Human Player
@@ -789,3 +801,219 @@ func min(a, b int) int {
 	}
 	return b
 }
+
+// TradeProperties allows swapping properties and cash between two players.
+// If the recipient is a bot, it evaluates market value and group completion.
+func (g *Game) TradeProperties(proposal TradeProposal) (*TradeResult, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	if g.state.Status == "finished" {
+		return nil, errors.New("a partida já foi finalizada")
+	}
+
+	if proposal.FromPlayerID == proposal.ToPlayerID {
+		return nil, errors.New("jogadores de origem e destino devem ser diferentes")
+	}
+
+	from := g.findPlayer(proposal.FromPlayerID)
+	if from == nil || from.Bankrupt {
+		return nil, errors.New("jogador proponente inválido ou falido")
+	}
+
+	to := g.findPlayer(proposal.ToPlayerID)
+	if to == nil || to.Bankrupt {
+		return nil, errors.New("jogador destinatário inválido ou falido")
+	}
+
+	// Validate offered properties
+	for _, pos := range proposal.OfferedProps {
+		if pos < 0 || pos >= len(g.state.Board) {
+			return nil, fmt.Errorf("posição %d inválida", pos)
+		}
+		tile := &g.state.Board[pos]
+		if tile.OwnerID != from.ID {
+			return nil, fmt.Errorf("%s não é proprietário de %s", from.Name, tile.Name)
+		}
+		if tile.Houses > 0 || tile.Hotel {
+			return nil, fmt.Errorf("não é permitido negociar propriedades com casas construídas (%s)", tile.Name)
+		}
+	}
+
+	// Validate requested properties
+	for _, pos := range proposal.RequestedProps {
+		if pos < 0 || pos >= len(g.state.Board) {
+			return nil, fmt.Errorf("posição %d inválida", pos)
+		}
+		tile := &g.state.Board[pos]
+		if tile.OwnerID != to.ID {
+			return nil, fmt.Errorf("%s não é proprietário de %s", to.Name, tile.Name)
+		}
+		if tile.Houses > 0 || tile.Hotel {
+			return nil, fmt.Errorf("não é permitido negociar propriedades com casas construídas (%s)", tile.Name)
+		}
+	}
+
+	// Validate cash
+	if proposal.CashOffer < 0 || proposal.CashRequest < 0 {
+		return nil, errors.New("valores em dinheiro não podem ser negativos")
+	}
+	if from.Balance < proposal.CashOffer {
+		return &TradeResult{
+			Accepted: false,
+			Message:  fmt.Sprintf("%s não possui saldo suficiente para a oferta de R$ %d.", from.Name, proposal.CashOffer),
+			Reason:   "insufficient_funds",
+		}, nil
+	}
+	if proposal.CashRequest > 0 && to.Balance < proposal.CashRequest {
+		return &TradeResult{
+			Accepted: false,
+			Message:  fmt.Sprintf("%s não possui saldo suficiente para pagar os R$ %d solicitados.", to.Name, proposal.CashRequest),
+			Reason:   "insufficient_funds",
+		}, nil
+	}
+
+	// If destination is a Bot, evaluate the proposal
+	if to.IsBot {
+		valOffered := proposal.CashOffer
+		for _, pos := range proposal.OfferedProps {
+			valOffered += g.state.Board[pos].Price
+		}
+
+		valRequested := proposal.CashRequest
+		for _, pos := range proposal.RequestedProps {
+			valRequested += g.state.Board[pos].Price
+		}
+
+		// Check if any requested property breaks a monopoly that the bot already holds
+		for _, pos := range proposal.RequestedProps {
+			reqTile := &g.state.Board[pos]
+			if g.hasMonopoly(to.ID, reqTile.Group) {
+				return &TradeResult{
+					Accepted: false,
+					Message:  fmt.Sprintf("🏦 %s analisou o mercado e recusou: não desfaz o monopólio no grupo %s!", to.Name, reqTile.Group),
+					Reason:   "breaks_monopoly",
+				}, nil
+			}
+		}
+
+		// Bonus if offered property completes a monopoly for the bot
+		for _, pos := range proposal.OfferedProps {
+			offeredTile := &g.state.Board[pos]
+			if offeredTile.Group != "special" && offeredTile.Group != "station" && offeredTile.Group != "utility" {
+				ownedCount := 0
+				totalInGroup := 0
+				for _, t := range g.state.Board {
+					if t.Group == offeredTile.Group {
+						totalInGroup++
+						if t.OwnerID == to.ID {
+							ownedCount++
+						}
+					}
+				}
+				if ownedCount+1 == totalInGroup {
+					valOffered += 250
+				}
+			}
+		}
+
+		// Acceptance threshold based on difficulty
+		requiredVal := valRequested
+		switch g.state.Difficulty {
+		case "facil":
+			requiredVal = int(float64(valRequested) * 0.85)
+		case "dificil":
+			requiredVal = int(float64(valRequested) * 1.15)
+		default: // medio
+			requiredVal = valRequested
+		}
+
+		if valOffered < requiredVal {
+			return &TradeResult{
+				Accepted: false,
+				Message:  fmt.Sprintf("🏦 %s recusou a proposta: valor oferecido (R$ %d) é inferior à avaliação de mercado esperada (R$ %d).", to.Name, valOffered, requiredVal),
+				Reason:   "insufficient_value",
+			}, nil
+		}
+	}
+
+	// Execute trade
+	for _, pos := range proposal.OfferedProps {
+		tile := &g.state.Board[pos]
+		tile.OwnerID = to.ID
+		from.Properties = removeIntFromSlice(from.Properties, pos)
+		to.Properties = append(to.Properties, pos)
+	}
+
+	for _, pos := range proposal.RequestedProps {
+		tile := &g.state.Board[pos]
+		tile.OwnerID = from.ID
+		to.Properties = removeIntFromSlice(to.Properties, pos)
+		from.Properties = append(from.Properties, pos)
+	}
+
+	from.Balance -= proposal.CashOffer
+	to.Balance += proposal.CashOffer
+	to.Balance -= proposal.CashRequest
+	from.Balance += proposal.CashRequest
+
+	logEntry := fmt.Sprintf("🤝 Negociação concluída com sucesso entre %s e %s!", from.Name, to.Name)
+	g.addHistory(logEntry)
+
+	return &TradeResult{
+		Accepted: true,
+		Message:  logEntry,
+	}, nil
+}
+
+// RequestLoan grants an emergency liquidity loan from the bank when balance is low.
+func (g *Game) RequestLoan(playerID int, requestedAmount int) (*LoanResult, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	if g.state.Status == "finished" {
+		return nil, errors.New("a partida já foi finalizada")
+	}
+
+	p := g.findPlayer(playerID)
+	if p == nil || p.Bankrupt {
+		return nil, errors.New("jogador inválido ou falido")
+	}
+
+	if p.Balance > 300 {
+		return &LoanResult{
+			Approved: false,
+			Amount:   0,
+			Message:  fmt.Sprintf("Empréstimo negado: o saldo de %s (R$ %d) está acima do limite de emergência (R$ 300).", p.Name, p.Balance),
+		}, nil
+	}
+
+	amount := requestedAmount
+	if amount <= 0 {
+		amount = 300
+	}
+	if amount > 500 {
+		amount = 500
+	}
+
+	p.Balance += amount
+	logEntry := fmt.Sprintf("🏦 [Banqueiro IA] Concedeu empréstimo emergencial de R$ %d para %s evitar a falência!", amount, p.Name)
+	g.addHistory(logEntry)
+
+	return &LoanResult{
+		Approved: true,
+		Amount:   amount,
+		Message:  logEntry,
+	}, nil
+}
+
+func removeIntFromSlice(slice []int, val int) []int {
+	result := make([]int, 0, len(slice))
+	for _, v := range slice {
+		if v != val {
+			result = append(result, v)
+		}
+	}
+	return result
+}
+

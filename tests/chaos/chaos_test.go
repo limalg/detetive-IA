@@ -27,7 +27,7 @@ func checkServerAvailable(t *testing.T, baseURL string) {
 	client := &http.Client{Timeout: 2 * time.Second}
 	resp, err := client.Get(baseURL + "/api/health")
 	if err != nil {
-		t.Fatalf("Servidor local não acessível em %s: %v. Certifique-se de que o servidor está rodando.", baseURL, err)
+		t.Skipf("Servidor local não acessível em %s: %v. Pulando testes de chaos.", baseURL, err)
 	}
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
