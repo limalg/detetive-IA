@@ -945,3 +945,38 @@ func TestLobbyGameStartModes(t *testing.T) {
 		}
 	}
 }
+
+func TestBancoImobiliarioFrontend(t *testing.T) {
+	file, err := web.Assets.Open("templates/index.html")
+	if err != nil {
+		t.Fatalf("failed to open templates/index.html: %v", err)
+	}
+	defer file.Close()
+
+	contentBytes, err := io.ReadAll(file)
+	if err != nil {
+		t.Fatalf("failed to read templates/index.html: %v", err)
+	}
+	content := string(contentBytes)
+
+	requiredSnippets := []string{
+		`id="banco-section"`,
+		`id="banco-lobby-section"`,
+		`id="banco-custom-modal"`,
+		`id="banco-board-grid"`,
+		`id="banco-dice-panel"`,
+		`id="banco-action-panel"`,
+		`id="banco-portfolio-panel"`,
+		`id="banco-players-panel"`,
+		`id="banco-ticker-feed"`,
+		`data-game-id="banco-imobiliario-ia"`,
+		`data-hub-action="open-banco"`,
+	}
+
+	for _, s := range requiredSnippets {
+		if !strings.Contains(content, s) {
+			t.Errorf("templates/index.html missing Banco Imobiliário snippet: %s", s)
+		}
+	}
+}
+
