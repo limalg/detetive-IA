@@ -47,6 +47,8 @@
         <!-- Controle de Áudio Diegético -->
         <button id="sound-toggle" class="btn btn-secondary" style="padding: 0.35rem 0.6rem; font-size: 0.8rem;" title="Alternar Som">🔊 Som: Ativo</button>
 
+        <button id="btn-hub-nav" class="btn-hub-nav" style="display: none;" title="Voltar ao Hub de Jogos de Tabuleiro IA">🎲 Hub de Jogos</button>
+
         <button id="pwa-install-btn" class="btn-pwa-install">📲 Instalar App</button>
         <div class="agent-status">
           <span id="network-status" class="status-dot" title="Status da Conexão"></span>
@@ -77,6 +79,50 @@
           </div>
           <button type="submit" id="auth-submit-btn" class="btn btn-primary" style="width: 100%;">Acessar Registros</button>
         </form>
+      </div>
+    </section>
+
+    <!-- Board Game Hub Section (Dreamweave Felt Table) -->
+    <section id="hub-section" style="display: none;">
+      <div class="hub-felt-table">
+        <div class="hub-header">
+          <h2 class="hub-title">🎲 Hub de Jogos de Tabuleiro da IA</h2>
+          <p class="hub-subtitle">A mesa de feltro da agência: fichas, dossiês e contratos — escolha seu jogo.</p>
+          <div class="hub-deco-rule" aria-hidden="true"><span>◆ ◇ ◆</span></div>
+        </div>
+
+        <!-- Cards rendered dynamically by app.js (GET /api/hub/games) over this static safe fallback -->
+        <div id="hub-games-grid" class="hub-games-grid">
+          <!-- Fallback card: Detetive IA -->
+          <article class="hub-card hub-card-active" data-game-id="detetive-ia">
+            <div class="hub-card-icon">🕵️</div>
+            <span class="hub-badge hub-badge-active">Disponível</span>
+            <h3 class="hub-card-title">Detetive IA</h3>
+            <p class="hub-card-subtitle">Mistério, Dedução & Interrogatórios Noir</p>
+            <p class="hub-card-desc">Casos policiais procedurais, Detective Night com 3 envelopes digitais e interrogatórios com IA.</p>
+            <div class="hub-card-tags">
+              <span class="hub-tag">👥 1–6 jogadores</span>
+              <span class="hub-tag">🧩 Dificuldade: Médio</span>
+            </div>
+            <button type="button" class="hub-card-btn" data-hub-action="open-detective">Investigar / Abrir Dossiê</button>
+          </article>
+
+          <!-- Fallback card: Banco Imobiliário IA (provisional art / under construction) -->
+          <article class="hub-card hub-card-under-construction" data-game-id="banco-imobiliario-ia">
+            <div class="hub-card-construction-overlay" aria-hidden="true"></div>
+            <div class="hub-card-icon">🏛️</div>
+            <span class="hub-badge hub-badge-construction">🚧 Em Construção</span>
+            <span class="hub-tag hub-tag-soon">Em Breve</span>
+            <h3 class="hub-card-title">Banco Imobiliário IA</h3>
+            <p class="hub-card-subtitle">Estratégia Financeira & Negociações com IA</p>
+            <p class="hub-card-desc">Negociação de imóveis, leilões e acordos com agentes autônomos de IA.</p>
+            <div class="hub-card-tags">
+              <span class="hub-tag">👥 2–4 jogadores</span>
+              <span class="hub-tag">🧩 Dificuldade: Avançado (em breve)</span>
+            </div>
+            <button type="button" class="hub-card-btn" data-hub-action="open-monopoly-preview">Ver Conceito do Jogo</button>
+          </article>
+        </div>
       </div>
     </section>
 
@@ -461,6 +507,35 @@
           <button type="button" id="btn-restart-game" class="btn btn-primary" style="width: 100%; font-size: 1.05rem;">
             🔄 Reiniciar Investigação
           </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Monopoly Preview Modal (Conceito de Banco Imobiliário IA) -->
+    <div id="monopoly-preview-modal" class="modal-overlay">
+      <div class="modal-card monopoly-preview-card" style="max-width: 560px;">
+        <div class="modal-header">
+          <h3 class="modal-title">🏛️ Banco Imobiliário IA — Conceito</h3>
+          <button id="close-monopoly-preview-btn" class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body monopoly-preview-body">
+          <div class="monopoly-deco-banner" aria-hidden="true">
+            <span class="deco-line"></span><span class="deco-star">✦</span><span class="deco-line"></span>
+          </div>
+          <p class="monopoly-tagline" style="font-family: var(--font-typewriter); text-align: center; color: var(--accent-amber); letter-spacing: 2px; text-transform: uppercase; font-size: 0.9rem;">
+            Monte seu império imobiliário. Negoceie com máquinas sem escrúpulos.
+          </p>
+          <p style="font-size: 0.92rem; color: var(--text-main); line-height: 1.7; margin-bottom: 1rem;">
+            Um jogo de <strong>Estratégia & Economia</strong> para <strong>2–4 jogadores</strong> onde a banca, os moradores e o mercado são agentes autônomos de IA com personalidades próprias — <em>homens de negócio fazem acordos em escritórios escuros e honram contratos com a honestidade afiada dos anos 1930</em>.
+          </p>
+          <ul class="monopoly-concept-list">
+            <li><strong>🔨 Leilões Peremptórios:</strong> propriedades vão a pregões velozs com lances em tempo real e IA licitando contra você.</li>
+            <li><strong>🤝 Negociação Imobiliária:</strong> acordos de compra/venda, hipotecas e monopólios negociados com agentes autônomos que lembram de cada aperto de mão dado e insulto proferido.</li>
+            <li><strong>🏙️ Império Art Déco:</strong> construa casas e hotéis no skyline vintage da cidade enquanto a economia reage ao seu estilo de gestor.</li>
+          </ul>
+          <div class="monopoly-preview-note" style="margin-top: 1.25rem; padding: 0.6rem 0.8rem; background: rgba(245, 158, 11, 0.08); border: 1px dashed var(--accent-amber); border-radius: 4px; font-size: 0.85rem; color: var(--accent-amber); text-align: center;">
+            🚧 <strong>Em Construção</strong> — previsão: nunca se sabe. Negoceie enquanto investiga na mesa ao lado.
+          </div>
         </div>
       </div>
     </div>

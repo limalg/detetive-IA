@@ -38,6 +38,13 @@
     passwordInput: document.getElementById('password'),
     userDisplay: document.getElementById('user-display'),
     logoutBtn: document.getElementById('logout-btn'),
+
+    // Board Game Hub Navigation & Modals
+    hubSection: document.getElementById('hub-section'),
+    hubGamesGrid: document.getElementById('hub-games-grid'),
+    btnHubNav: document.getElementById('btn-hub-nav'),
+    monopolyPreviewModal: document.getElementById('monopoly-preview-modal'),
+    closeMonopolyPreviewBtn: document.getElementById('close-monopoly-preview-btn'),
     networkStatus: document.getElementById('network-status'),
     pwaInstallBtn: document.getElementById('pwa-install-btn'),
 
@@ -295,6 +302,8 @@
     el.authSection.style.display = 'block';
     if (el.lobbySection) el.lobbySection.style.display = 'none';
     el.gameSection.style.display = 'none';
+    if (el.hubSection) el.hubSection.style.display = 'none';
+    if (el.btnHubNav) el.btnHubNav.style.display = 'none';
     el.userDisplay.textContent = 'Não identificado';
     if (el.logoutBtn) el.logoutBtn.style.display = 'none';
     el.usernameInput.value = '';
@@ -306,6 +315,8 @@
     el.authSection.style.display = 'none';
     if (el.lobbySection) el.lobbySection.style.display = 'block';
     el.gameSection.style.display = 'none';
+    if (el.hubSection) el.hubSection.style.display = 'none';
+    if (el.btnHubNav) el.btnHubNav.style.display = 'inline-flex';
     if (state.currentUser) {
       el.userDisplay.textContent = `Det. ${state.currentUser.username}`;
     }
@@ -321,9 +332,172 @@
     el.authSection.style.display = 'none';
     if (el.lobbySection) el.lobbySection.style.display = 'none';
     el.gameSection.style.display = 'block';
+    if (el.hubSection) el.hubSection.style.display = 'none';
+    if (el.btnHubNav) el.btnHubNav.style.display = 'inline-flex';
     const personaTitle = state.persona && state.persona.name ? state.persona.name : (state.currentUser ? state.currentUser.username : 'Investigador');
     el.userDisplay.textContent = `Det. ${personaTitle}`;
     if (el.logoutBtn) el.logoutBtn.style.display = 'inline-flex';
+  }
+
+  // =========================================================================
+  // Board Game IA Hub (Mesa de Feltro — SPA Navigation)
+  // =========================================================================
+  const HUB_FALLBACK_GAMES = [
+    {
+      id: 'detetive-ia',
+      title: 'Detetive IA',
+      subtitle: 'Mistério, Dedução & Interrogatórios Noir',
+      description: 'Casos policiais procedurais, Detective Night com 3 envelopes digitais e interrogatórios com IA.',
+      min_players: 1,
+      max_players: 6,
+      difficulty: 'Médio',
+      status: 'active',
+      icon: 'search'
+    },
+    {
+      id: 'banco-imobiliario-ia',
+      title: 'Banco Imobiliário IA',
+      subtitle: 'Estratégia Financeira & Negociações com IA',
+      description: 'Negociação de imóveis, leilões e acordos com agentes autônomos de IA.',
+      min_players: 2,
+      max_players: 4,
+      difficulty: 'Avançado',
+      status: 'in_construction',
+      icon: 'building'
+    }
+  ];
+
+  let hubGamesLoaded = false;
+
+  function showHubView() {
+    el.authSection.style.display = 'none';
+    if (el.lobbySection) el.lobbySection.style.display = 'none';
+    el.gameSection.style.display = 'none';
+    if (el.hubSection) el.hubSection.style.display = 'block';
+    if (el.btnHubNav) el.btnHubNav.style.display = 'none';
+    if (state.currentUser) {
+      el.userDisplay.textContent = `Det. ${state.currentUser.username}`;
+      if (el.logoutBtn) el.logoutBtn.style.display = 'inline-flex';
+    }
+  }
+
+  const HUB_ICONS = { search: '🕵️', building: '🏛️' };
+
+  function renderHubCard(game) {
+    const icon = HUB_ICONS[game.icon] || '🎲';
+    const title = escapeHtml(game.title || 'Jogo');
+    const subtitle = escapeHtml(game.subtitle || '');
+    const description = escapeHtml(game.description || '');
+    const playersTag = (game.min_players && game.max_players)
+      ? `<span class="hub-tag">👥 ${game.min_players}–${game.max_players} jogadores</span>`
+      : '';
+    const difficultyTag = game.difficulty
+      ? `<span class="hub-tag">🧩 Dificuldade: ${escapeHtml(game.difficulty)}</span>`
+      : '';
+
+    if (game.status === 'active') {
+      return `
+      <article class="hub-card hub-card-active" data-game-id="${escapeHtml(game.id)}">
+        <div class="hub-card-icon">${icon}</div>
+        <span class="hub-badge hub-badge-active">Disponível</span>
+        <h3 class="hub-card-title">${title}</h3>
+        <p class="hub-card-subtitle">${subtitle}</p>
+        <p class="hub-card-desc">${description}</p>
+        <div class="hub-card-tags">${playersTag}${difficultyTag}</div>
+        <button type="button" class="hub-card-btn" data-hub-action="open-detective">Investigar / Abrir Dossiê</button>
+      </article>`;
+    }
+
+    return `
+      <article class="hub-card hub-card-under-construction" data-game-id="${escapeHtml(game.id)}">
+        <div class="hub-card-construction-overlay" aria-hidden="true"></div>
+        <div class="hub-card-icon">${icon}</div>
+        <span class="hub-badge hub-badge-construction">🚧 ${escapeHtml(game.badge || 'Em Construção')}</span>
+        <span class="hub-tag hub-tag-soon">Em Breve</span>
+        <h3 class="hub-card-title">${title}</h3>
+        <p class="hub-card-subtitle">${subtitle}</p>
+        <p class="hub-card-desc">${description}</p>
+        <div class="hub-card-tags">${playersTag}${difficultyTag}</div>
+        <button type="button" class="hub-card-btn" data-hub-action="open-monopoly-preview">Ver Conceito do Jogo</button>
+      </article>`;
+  }
+
+  function renderHubGames(games) {
+    if (!el.hubGamesGrid || !Array.isArray(games) || games.length === 0) return;
+    el.hubGamesGrid.innerHTML = games.map(renderHubCard).join('');
+  }
+
+  async function fetchHubGames() {
+    // Safe static fallback rendered first; API data refines it when available
+    if (!hubGamesLoaded) {
+      renderHubGames(HUB_FALLBACK_GAMES);
+    }
+    try {
+      const data = await api('/api/hub/games');
+      if (data && Array.isArray(data.games) && data.games.length > 0) {
+        renderHubGames(data.games);
+        hubGamesLoaded = true;
+      }
+    } catch (_) {
+      // Catalog API unavailable: keep the static safe fallback
+    }
+  }
+
+  function openMonopolyPreview() {
+    if (!el.monopolyPreviewModal) return;
+    el.monopolyPreviewModal.classList.add('active');
+    if (typeof playTypewriter === 'function') playTypewriter();
+  }
+
+  function closeMonopolyPreview() {
+    if (!el.monopolyPreviewModal) return;
+    el.monopolyPreviewModal.classList.remove('active');
+  }
+
+  function setupHubEvents() {
+    if (el.btnHubNav) {
+      el.btnHubNav.addEventListener('click', () => {
+        if (typeof playPaper === 'function') playPaper();
+        showHubView();
+      });
+    }
+
+    if (el.hubGamesGrid) {
+      el.hubGamesGrid.addEventListener('click', (e) => {
+        const card = e.target.closest('.hub-card');
+        if (!card) return;
+        const gameId = card.dataset.gameId;
+        if (gameId === 'detetive-ia') {
+          // Mid-investigation? Return straight to the desk. Otherwise open the lobby.
+          if (state.currentCase && !state.isGameOver) {
+            showGameView();
+          } else {
+            showLobbyView();
+          }
+          if (typeof playStamp === 'function') playStamp();
+        } else if (gameId === 'banco-imobiliario-ia') {
+          openMonopolyPreview();
+        }
+      });
+    }
+
+    if (el.closeMonopolyPreviewBtn) {
+      el.closeMonopolyPreviewBtn.addEventListener('click', closeMonopolyPreview);
+    }
+    if (el.monopolyPreviewModal) {
+      el.monopolyPreviewModal.addEventListener('click', (e) => {
+        if (e.target === el.monopolyPreviewModal) {
+          closeMonopolyPreview();
+        }
+      });
+    }
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && el.monopolyPreviewModal && el.monopolyPreviewModal.classList.contains('active')) {
+        closeMonopolyPreview();
+      }
+    });
+
+    fetchHubGames();
   }
 
   async function checkActiveSession() {
@@ -1762,6 +1936,7 @@
     initPWA();
     setupAuthEvents();
     setupLobbyEvents();
+    setupHubEvents();
     setupNavEvents();
     setupLoupeEvents();
     setupInterrogationEvents();

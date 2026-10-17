@@ -1670,3 +1670,326 @@ body::after {
 }
 
 
+
+/* ==========================================================================
+   Board Game IA Hub — Mesa de Feltro Verde (Noir Luxury Lounge)
+   ========================================================================== */
+
+/* Botão de retorno ao Hub (cabeçalho do lobby e da mesa de investigação) */
+.btn-hub-nav {
+  display: none;
+  align-items: center;
+  gap: 0.4rem;
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.16), rgba(217, 119, 6, 0.28));
+  border: 1px solid rgba(245, 158, 11, 0.55);
+  color: var(--accent-amber);
+  font-family: var(--font-typewriter);
+  font-weight: bold;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  padding: 0.4rem 0.85rem;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+
+.btn-hub-nav:hover {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.3), rgba(217, 119, 6, 0.45));
+  box-shadow: 0 4px 14px rgba(245, 158, 11, 0.25);
+  transform: translateY(-1px);
+}
+
+/* Entrada suave da seção do Hub */
+#hub-section {
+  animation: hubSectionIn 0.45s ease both;
+}
+
+@keyframes hubSectionIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Mesa de jogos: feltro verde escuro sob fotografia noir */
+.hub-felt-table {
+  position: relative;
+  background:
+    radial-gradient(ellipse at 50% 35%, #1d5138 0%, #123a29 48%, #0b2419 78%, #071b12 100%);
+  border: 4px double rgba(245, 158, 11, 0.5);
+  border-radius: 12px;
+  padding: 2rem 1.5rem 2.5rem;
+  box-shadow:
+    var(--shadow-noir),
+    inset 0 0 80px rgba(0, 0, 0, 0.6),
+    inset 0 0 30px rgba(3, 20, 13, 0.9);
+  overflow: hidden;
+}
+
+/* Grão de feltro sutil */
+.hub-felt-table::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(47deg, rgba(255, 255, 255, 0.015) 0 2px, transparent 2px 4px);
+}
+
+.hub-header {
+  text-align: center;
+  margin-bottom: 1.75rem;
+}
+
+.hub-title {
+  font-family: var(--font-typewriter);
+  font-size: 1.6rem;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--accent-amber);
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.8);
+  margin-bottom: 0.4rem;
+}
+
+.hub-subtitle {
+  color: rgba(244, 244, 245, 0.75);
+  font-size: 0.9rem;
+  font-style: italic;
+}
+
+.hub-deco-rule {
+  margin-top: 0.9rem;
+  color: var(--accent-amber);
+  letter-spacing: 6px;
+  font-size: 0.85rem;
+  opacity: 0.75;
+}
+
+/* Cards táteis dos jogos */
+.hub-games-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1.5rem;
+  max-width: 920px;
+  margin: 0 auto;
+  position: relative;
+  z-index: 1;
+}
+
+@keyframes hubCardRise {
+  from { opacity: 0; transform: translateY(22px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.hub-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.45rem;
+  text-align: center;
+  background: linear-gradient(165deg, rgba(34, 34, 40, 0.96), rgba(20, 24, 21, 0.94));
+  border: 1px solid var(--border-noir);
+  border-radius: 8px;
+  padding: 1.6rem 1.25rem 1.3rem;
+  cursor: pointer;
+  overflow: hidden;
+  box-shadow: var(--shadow-noir);
+  animation: hubCardRise 0.55s ease both;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.hub-card:nth-child(2) {
+  animation-delay: 0.08s;
+}
+
+/* Textura de papel de dactilografia */
+.hub-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(0deg, transparent 0 3px, rgba(255, 255, 255, 0.014) 3px 4px);
+}
+
+.hub-card:hover {
+  transform: translateY(-6px);
+  border-color: rgba(245, 158, 11, 0.6);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.75), 0 0 26px rgba(245, 158, 11, 0.14);
+}
+
+.hub-card-icon {
+  font-size: 2.8rem;
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.65));
+}
+
+.hub-card-title {
+  font-family: var(--font-typewriter);
+  font-size: 1.25rem;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--text-main);
+  margin-top: 0.3rem;
+}
+
+.hub-card-subtitle {
+  font-size: 0.78rem;
+  color: var(--accent-amber);
+  letter-spacing: 0.5px;
+}
+
+.hub-card-desc {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+  flex-grow: 1;
+}
+
+/* Badges de status (verde/âmbar versus faixas de obra) */
+.hub-badge {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  font-family: var(--font-typewriter);
+  font-size: 0.68rem;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  padding: 0.22rem 0.55rem;
+  border-radius: 3px;
+}
+
+.hub-badge-active {
+  color: var(--accent-green);
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.55);
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.2);
+}
+
+.hub-badge-construction {
+  color: var(--accent-amber);
+  background:
+    repeating-linear-gradient(45deg, rgba(245, 158, 11, 0.16) 0 8px, rgba(245, 158, 11, 0.06) 8px 16px),
+    rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(245, 158, 11, 0.6);
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.18);
+}
+
+/* Tags informativas */
+.hub-card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  justify-content: center;
+}
+
+.hub-tag {
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--border-noir);
+  color: var(--text-muted);
+  font-family: var(--font-typewriter);
+  font-size: 0.72rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+.hub-tag-soon {
+  color: var(--accent-amber);
+  border-color: rgba(245, 158, 11, 0.5);
+}
+
+/* Botão diegético do card */
+.hub-card-btn {
+  margin-top: 0.8rem;
+  width: 100%;
+  background: linear-gradient(135deg, var(--accent-gold), var(--accent-amber));
+  color: #121214;
+  border: none;
+  font-family: var(--font-typewriter);
+  font-weight: bold;
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  padding: 0.7rem 0.9rem;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: filter 0.15s ease, transform 0.15s ease;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.5);
+}
+
+.hub-card-btn:hover {
+  filter: brightness(1.1);
+  transform: translateY(-1px);
+}
+
+.hub-card-btn:active {
+  transform: translateY(0);
+}
+
+/* Card em construção: transparência diegética + faixas de obra */
+.hub-card-under-construction {
+  opacity: 0.88;
+}
+
+.hub-card-under-construction:hover {
+  border-color: rgba(245, 158, 11, 0.45);
+  transform: translateY(-4px);
+}
+
+.hub-card-construction-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(45deg, rgba(0, 0, 0, 0.22) 0 14px, rgba(0, 0, 0, 0) 14px 28px);
+}
+
+/* Modal do conceito: moldura Art Déco */
+.monopoly-preview-card {
+  background: linear-gradient(165deg, #1c1c22, #14141a);
+  border: 2px solid rgba(245, 158, 11, 0.5);
+  box-shadow: 0 0 0 6px rgba(245, 158, 11, 0.08), var(--shadow-noir);
+}
+
+.monopoly-deco-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.9rem;
+}
+
+.monopoly-deco-banner .deco-line {
+  flex: 1;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent-amber));
+}
+
+.monopoly-deco-banner .deco-line:last-child {
+  background: linear-gradient(270deg, transparent, var(--accent-amber));
+}
+
+.monopoly-deco-banner .deco-star {
+  color: var(--accent-amber);
+  font-size: 1rem;
+}
+
+.monopoly-concept-list {
+  margin: 0;
+  padding-left: 1.2rem;
+  display: grid;
+  gap: 0.6rem;
+  font-size: 0.88rem;
+  color: var(--text-main);
+  line-height: 1.65;
+}
+
+@media (max-width: 640px) {
+  .hub-felt-table {
+    padding: 1.5rem 1rem 1.75rem;
+  }
+  .hub-title {
+    font-size: 1.25rem;
+  }
+  .hub-games-grid {
+    grid-template-columns: 1fr;
+  }
+}

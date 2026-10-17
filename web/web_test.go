@@ -658,3 +658,122 @@ func TestCentralizedInterrogationStage(t *testing.T) {
 
 
 
+
+func TestBoardGameHub(t *testing.T) {
+	// 1. Verify index.html hub section structure: felt table, tactile cards,
+	// header navigation button and Banco Imobiliário preview modal
+	htmlFile, err := web.Assets.Open("templates/index.html")
+	if err != nil {
+		t.Fatalf("failed to open templates/index.html: %v", err)
+	}
+	defer htmlFile.Close()
+
+	htmlBytes, err := io.ReadAll(htmlFile)
+	if err != nil {
+		t.Fatalf("failed to read templates/index.html: %v", err)
+	}
+	html := string(htmlBytes)
+
+	requiredHubHTML := []string{
+		`id="hub-section"`,
+		`id="hub-games-grid"`,
+		`id="btn-hub-nav"`,
+		`id="monopoly-preview-modal"`,
+		`id="close-monopoly-preview-btn"`,
+		"detetive-ia",
+		"banco-imobiliario-ia",
+		"Detetive IA",
+		"Banco Imobiliário IA",
+		"Disponível",
+		"Em Construção",
+		"Em Breve",
+		"Investigar / Abrir Dossiê",
+	}
+
+	for _, elem := range requiredHubHTML {
+		if !strings.Contains(html, elem) {
+			t.Errorf("templates/index.html missing required hub element: %s", elem)
+		}
+	}
+
+	// 2. Security rule: /admin must NEVER be linked or surfaced in the UI
+	adminRefs := []string{`href="/admin"`, `href='/admin'`, `action="/admin"`}
+	for _, ref := range adminRefs {
+		if strings.Contains(html, ref) {
+			t.Errorf("templates/index.html must not link to %s (hidden route rule)", ref)
+		}
+	}
+	jsAdminRefs := []string{`"href", "/admin"`, `location.href = "/admin"`, `window.location = "/admin"`}
+	for _, ref := range jsAdminRefs {
+		if strings.Contains(html, ref) || strings.Contains(html, ref) {
+			t.Errorf("hub UI must not redirect to %s (hidden route rule)", ref)
+		}
+	}
+
+	// 3. Verify style.css noir felt table & card rules
+	cssFile, err := web.Assets.Open("static/css/style.css")
+	if err != nil {
+		t.Fatalf("failed to open static/css/style.css: %v", err)
+	}
+	defer cssFile.Close()
+
+	cssBytes, err := io.ReadAll(cssFile)
+	if err != nil {
+		t.Fatalf("failed to read static/css/style.css: %v", err)
+	}
+	css := string(cssBytes)
+
+	requiredHubCSS := []string{
+		".hub-felt-table",
+		".hub-games-grid",
+		".hub-card",
+		".hub-badge-active",
+		".hub-badge-construction",
+		".hub-card-under-construction",
+		".hub-tag",
+		".btn-hub-nav",
+		"@keyframes hubCardRise",
+	}
+
+	for _, elem := range requiredHubCSS {
+		if !strings.Contains(css, elem) {
+			t.Errorf("static/css/style.css missing required hub rule: %s", elem)
+		}
+	}
+
+	// 4. Verify app.js: hub navigation, dynamic fetch with static fallback and modal
+	jsFile, err := web.Assets.Open("static/js/app.js")
+	if err != nil {
+		t.Fatalf("failed to open static/js/app.js: %v", err)
+	}
+	defer jsFile.Close()
+
+	jsBytes, err := io.ReadAll(jsFile)
+	if err != nil {
+		t.Fatalf("failed to read static/js/app.js: %v", err)
+	}
+	js := string(jsBytes)
+
+	requiredHubJS := []string{
+		"/api/hub/games",
+		"showHubView",
+		"setupHubEvents",
+		"renderHubGames",
+		"openMonopolyPreview",
+		"closeMonopolyPreview",
+	}
+
+	for _, snippet := range requiredHubJS {
+		if !strings.Contains(js, snippet) {
+			t.Errorf("static/js/app.js missing required hub JS logic: %s", snippet)
+		}
+	}
+
+	// Static fallback must exist so cards render even if the API has not loaded
+	fallbackMarkers := []string{"HUB_FALLBACK_GAMES"}
+	for _, marker := range fallbackMarkers {
+		if !strings.Contains(js, marker) {
+			t.Errorf("static/js/app.js missing hub static fallback: %s", marker)
+		}
+	}
+}
