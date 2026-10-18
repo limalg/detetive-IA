@@ -42,3 +42,12 @@ As 50 Skills profissionais encontram-se instaladas e indexadas em:
 
 4. **Fase 4: Encerramento, Tag & Memória**
    - Atualização da nota `Projeto`, documentação de lições aprendidas e publicação da release.
+
+---
+
+## ⚡ Gatilho `meta-skills` (Verificação & Priorização)
+
+Ao receber o termo **`meta-skills`** ou ao iniciar novos módulos/features:
+1. **Prioridade em Perguntas & Descoberta**: Ative imediatamente [`interview-me`](file:///C:/Users/limae/.gemini/config/skills/addy-interview-me/SKILL.md) e [`idea-refine`](file:///C:/Users/limae/.gemini/config/skills/addy-idea-refine/SKILL.md) para alinhar escopo e premissas antes de qualquer implementação.
+2. **Validação de Restrições**: Utilize [`constraint-driven-development`](file:///C:/Users/limae/.gemini/config/skills/addy-constraint-driven-development/SKILL.md) e [`spec-driven-development`](file:///C:/Users/limae/.gemini/config/skills/addy-spec-driven-development/SKILL.md) antes de gerar tarefas de código.
+3. **Distribuição aos Agentes**: O Maestro distribui as tarefas refinadas aos agentes especialistas ([Tracker](file:///C:/Users/limae/Documents/Projects/Detiv/AGENTS.md#L10), [Cipher](file:///C:/Users/limae/Documents/Projects/Detiv/AGENTS.md#L11), [Buster](file:///C:/Users/limae/Documents/Projects/Detiv/AGENTS.md#L12), [Raven](file:///C:/Users/limae/Documents/Projects/Detiv/AGENTS.md#L13), [Oracle](file:///C:/Users/limae/Documents/Projects/Detiv/AGENTS.md#L14)) munidos de suas respectivas skills.
