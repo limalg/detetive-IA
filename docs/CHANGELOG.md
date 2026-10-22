@@ -2,6 +2,14 @@
 
 Todas as alterações notáveis do módulo Banco Imobiliário são documentadas neste arquivo.
 
+## [banco-v0.6.1] - 2026-10-22
+### Added
+- Arte visual do centro do tabuleiro (`web/banco3d/assets/centro-cidade.webp`, 219KB, 1152px):
+  - Fundo diegético na área central do tabuleiro em substituição ao mapa SVG procedimental, com vinheta e poça escura sob o logotipo.
+  - Camada de UI preservada com logo, dados e pilhas de cartas HTML sobrepostas.
+  - Zero scroll mantido e medido em 1440x900 (centro y=641, base 750, barra 806).
+  - Arte de capa (`capa-imperio-urbano.webp`, 146KB) integrada com overlay e blur no hub, lobby, votação e configuração.
+
 ## [banco-v0.5.2] - 2026-10-22
 ### Fixed
 - Correção de vulnerabilidades de autorização e consentimento na negociação de trocas (`Trade`):
