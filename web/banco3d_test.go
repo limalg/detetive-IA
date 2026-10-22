@@ -15,6 +15,7 @@ func TestBanco3DRouteAndAssets(t *testing.T) {
 		"banco3d/index.html",
 		"banco3d/css/style.css",
 		"banco3d/js/app.js",
+		"banco3d/assets/capa-imperio-urbano.webp",
 	}
 	for _, f := range files {
 		rc, err := web.Assets.Open(f)
@@ -53,6 +54,14 @@ func TestBanco3DRouteAndAssets(t *testing.T) {
 	handler.ServeHTTP(rrJS, reqJS)
 	if rrJS.Code != http.StatusOK {
 		t.Fatalf("expected 200 for /banco/js/app.js, got %d", rrJS.Code)
+	}
+
+	// Test /banco/assets/capa-imperio-urbano.webp
+	reqImg := httptest.NewRequest("GET", "/banco/assets/capa-imperio-urbano.webp", nil)
+	rrImg := httptest.NewRecorder()
+	handler.ServeHTTP(rrImg, reqImg)
+	if rrImg.Code != http.StatusOK {
+		t.Fatalf("expected 200 for /banco/assets/capa-imperio-urbano.webp, got %d", rrImg.Code)
 	}
 
 	// Test root / still serves Detetive IA
