@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#050b1a">
+<title>Banco Imobiliário 3D</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-house" viewBox="0 0 24 24"><path d="M3 11.5 12 4l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z" fill="currentColor"/></symbol>
+  <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M12 2a6 6 0 0 0-3.5 10.9c.9.7 1.5 1.6 1.5 2.6V17h4v-1.5c0-1 .6-1.9 1.5-2.6A6 6 0 0 0 12 2zm-2 17h4v1.5a1.5 1.5 0 0 1-1.5 1.5h-1A1.5 1.5 0 0 1 10 20.500z" fill="currentColor"/></symbol>
+  <symbol id="i-drop" viewBox="0 0 24 24"><path d="M12 2.500c3.500 4.200 6 7.400 6 10.500a6 6 0 0 1-12 0c0-3.100 2.500-6.300 6-10.500z" fill="currentColor"/></symbol>
+  <symbol id="i-wifi" viewBox="0 0 24 24"><path d="M2 9a15 15 0 0 1 20 0M5.500 12.500a10 10 0 0 1 13 0M9 16a5 5 0 0 1 6 0" fill="none" stroke="currentColor" stroke-width="2.200" stroke-linecap="round"/><circle cx="12" cy="19.500" r="1.800" fill="currentColor"/></symbol>
+  <symbol id="i-train" viewBox="0 0 24 24"><path d="M7 3h10a3 3 0 0 1 3 3v9a3 3 0 0 1-3 3l2 3h-2.500l-1.500-2.500h-6L7.500 21H5l2-3a3 3 0 0 1-3-3V6a3 3 0 0 1 3-3zm0 3v5h10V6zm1.500 8a1.200 1.200 0 1 0 0 2.400 1.200 1.200 0 0 0 0-2.400zm7 0a1.200 1.200 0 1 0 0 2.400 1.200 1.200 0 0 0 0-2.400z" fill="currentColor"/></symbol>
+  <symbol id="i-bank" viewBox="0 0 24 24"><path d="M12 2 2 7v2h20V7zM5 11v7H3v3h18v-3h-2v-7h-2.500v7h-2v-7h-3v7h-2v-7z" fill="currentColor"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M4 20c0-7 4-11 11-11V5l6 6-6 6v-4c-5 0-8 2-11 7z" fill="currentColor"/></symbol>
+  <symbol id="i-car" viewBox="0 0 24 24"><path d="M5 11 7 6h10l2 5a2 2 0 0 1 2 2v5h-2.500v-2h-13v2H3v-5a2 2 0 0 1 2-2zm3-3-1 3h10l-1-3zm-.500 5.500a1.300 1.300 0 1 0 0 2.600 1.300 1.300 0 0 0 0-2.600zm9 0a1.300 1.300 0 1 0 0 2.600 1.300 1.300 0 0 0 0-2.600z" fill="currentColor"/></symbol>
+  <symbol id="i-q" viewBox="0 0 24 24"><path d="M9 9a3 3 0 1 1 4.500 2.600c-1 .6-1.500 1.200-1.500 2.400M12 17.500v.5" fill="none" stroke="currentColor" stroke-width="2.800" stroke-linecap="round"/></symbol>
+  <symbol id="i-coin" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 7v10M9.500 9.500h4a1.500 1.500 0 0 1 0 3h-3a1.500 1.500 0 0 0 0 3h4" fill="none" stroke="currentColor" stroke-width="1.600" stroke-linecap="round"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" fill="currentColor"/><path d="M4 21c0-4.400 3.600-7 8-7s8 2.600 8 7z" fill="currentColor"/></symbol>
+  <symbol id="i-dice" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="4" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="8.500" cy="8.500" r="1.500" fill="currentColor"/><circle cx="15.500" cy="8.500" r="1.500" fill="currentColor"/><circle cx="12" cy="12" r="1.500" fill="currentColor"/><circle cx="8.500" cy="15.500" r="1.500" fill="currentColor"/><circle cx="15.500" cy="15.500" r="1.500" fill="currentColor"/></symbol>
+  <symbol id="i-swap" viewBox="0 0 24 24"><path d="M4 9h13l-3-3M20 15H7l3 3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-map" viewBox="0 0 24 24"><path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2zM9 4v14M15 6v14" fill="none" stroke="currentColor" stroke-width="1.800" stroke-linejoin="round"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 22s7-6.200 7-12a7 7 0 0 0-14 0c0 5.800 7 12 7 12z" fill="currentColor"/><circle cx="12" cy="10" r="2.600" fill="#06101f"/></symbol>
+</svg>
+
+<main class="stage" id="stage" aria-label="Mesa do Banco Imobiliário">
+  <div class="city-bg" aria-hidden="true"></div>
+
+  <section class="glass players" id="players" aria-label="Jogadores"></section>
+
+  <div class="table-wrap">
+    <div class="table" id="table">
+      <div class="board" id="board"></div>
+    </div>
+  </div>
+
+  <div class="glass city-chip" id="cityChip" role="status" aria-live="polite">
+    <svg class="ico" aria-hidden="true"><use href="#i-pin"/></svg>
+    <div><b id="cityName">Sua cidade</b><span><i class="dot"></i><em id="statusText">Carregando…</em></span></div>
+  </div>
+
+  <div class="toast glass" id="toast" role="status" aria-live="polite" hidden></div>
+
+  <nav class="glass actions" id="actions" aria-label="Ações">
+    <button type="button" id="btnRoll" class="primary"><svg aria-hidden="true"><use href="#i-dice"/></svg><span>Rolar Dados</span></button>
+    <button type="button" id="btnBuy"><svg aria-hidden="true"><use href="#i-house"/></svg><span>Comprar</span></button>
+    <button type="button" id="btnBuild"><svg aria-hidden="true"><use href="#i-bank"/></svg><span>Construir</span></button>
+    <button type="button" id="btnTrade"><svg aria-hidden="true"><use href="#i-swap"/></svg><span>Trocar</span></button>
+    <button type="button" id="btnEnd"><svg aria-hidden="true"><use href="#i-arrow"/></svg><span>Passar</span></button>
+    <button type="button" id="btnMap"><svg aria-hidden="true"><use href="#i-map"/></svg><span>Ver Mapa</span></button>
+  </nav>
+
+  <aside class="glass sheet" id="sheet" role="dialog" aria-modal="false" aria-labelledby="sheetTitle" hidden>
+    <header><h2 id="sheetTitle"></h2><button type="button" id="sheetClose" aria-label="Fechar">×</button></header>
+    <div id="sheetBody"></div>
+  </aside>
+
+  <div class="start" id="start">
+    <form class="glass start-card" id="startForm">
+      <h1>Banco Imobiliário</h1>
+      <p>Escolha sua cidade. As ruas viram o tabuleiro.</p>
+      <label>Cidade<input id="fCity" name="city" value="Curitiba, PR" autocomplete="off" required></label>
+      <label>Seu nome<input id="fName" name="name" value="Você" autocomplete="nickname" required></label>
+      <label>Adversários (IA)<select id="fBots" name="bots"><option>1</option><option>2</option><option selected>3</option></select></label>
+      <button class="primary" type="submit">Começar</button>
+      <small id="startErr" role="alert"></small>
+    </form>
+  </div>
+</main>
+<script src="js/app.js"></script>
+</body>
+</html>
