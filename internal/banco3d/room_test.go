@@ -6,7 +6,7 @@ import (
 )
 
 func TestRoomLifecycleAndEvents(t *testing.T) {
-	hub := NewRoomHub()
+	hub := NewRoomHub(":memory:")
 	room, err := hub.CreateRoom("SP-123", "São Paulo")
 	if err != nil || room == nil {
 		t.Fatalf("falha ao criar sala: %v", err)
@@ -75,8 +75,11 @@ func TestRoomLifecycleAndEvents(t *testing.T) {
 }
 
 func TestTradeAuthorizationAndBotAutoAccept(t *testing.T) {
-	hub := NewRoomHub()
-	room, _ := hub.CreateRoom("TRADE-TEST", "Curitiba")
+	hub := NewRoomHub(":memory:")
+	room, err := hub.CreateRoom("TRADE-TEST", "Curitiba")
+	if err != nil || room == nil {
+		t.Fatalf("failed to create room: %v", err)
+	}
 	p1, _ := room.JoinPlayer("Lucas", "#3b82f6", "car") // p1 (humano)
 	p2, _ := room.JoinPlayer("Ana", "#ef4444", "hat")   // p2 (humano)
 	_ = room.StartGame()

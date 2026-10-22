@@ -70,6 +70,9 @@ func (h *Handler) HandleBanco3DPlacesLandmarks(w http.ResponseWriter, r *http.Re
 	if city == "" {
 		city = r.URL.Query().Get("q")
 	}
+	if city == "" {
+		city = "Curitiba"
+	}
 
 	res, err := banco3d.GlobalPlacesService.GetLandmarks(city, placeID)
 	if err != nil {
@@ -194,6 +197,8 @@ func (h *Handler) HandleBanco3DRoomJoin(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	go func() { _ = hub.SaveToDisk() }()
+
 	h.json(w, http.StatusOK, map[string]interface{}{
 		"reconnected": false,
 		"player":      p,
@@ -231,6 +236,7 @@ func (h *Handler) HandleBanco3DRoomVote(w http.ResponseWriter, r *http.Request) 
 			h.error(w, http.StatusBadRequest, err.Error())
 			return
 		}
+		go func() { _ = hub.SaveToDisk() }()
 		h.json(w, http.StatusOK, map[string]interface{}{
 			"status":     "voting_started",
 			"candidates": room.Voting.Candidates,
@@ -242,6 +248,7 @@ func (h *Handler) HandleBanco3DRoomVote(w http.ResponseWriter, r *http.Request) 
 			h.error(w, http.StatusBadRequest, err.Error())
 			return
 		}
+		go func() { _ = hub.SaveToDisk() }()
 		h.json(w, http.StatusOK, map[string]interface{}{
 			"status": "voting_concluded",
 			"winner": winner,
@@ -251,6 +258,7 @@ func (h *Handler) HandleBanco3DRoomVote(w http.ResponseWriter, r *http.Request) 
 			h.error(w, http.StatusBadRequest, err.Error())
 			return
 		}
+		go func() { _ = hub.SaveToDisk() }()
 		h.json(w, http.StatusOK, map[string]interface{}{
 			"status": "vote_recorded",
 		})
@@ -303,6 +311,7 @@ func (h *Handler) HandleBanco3DRoomStart(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	go func() { _ = hub.SaveToDisk() }()
 	h.json(w, http.StatusOK, h.formatRoomState(room, nil))
 }
 
@@ -405,6 +414,7 @@ func (h *Handler) HandleBanco3DRoomRoll(w http.ResponseWriter, r *http.Request) 
 		})
 	}
 
+	go func() { _ = hub.SaveToDisk() }()
 	h.json(w, http.StatusOK, h.formatRoomState(room, dice))
 }
 
@@ -469,6 +479,7 @@ func (h *Handler) HandleBanco3DRoomBuy(w http.ResponseWriter, r *http.Request) {
 		Text:       fmt.Sprintf("%s passou a vez", pName),
 	})
 
+	go func() { _ = hub.SaveToDisk() }()
 	h.json(w, http.StatusOK, h.formatRoomState(room, nil))
 }
 
@@ -516,6 +527,7 @@ func (h *Handler) HandleBanco3DRoomPass(w http.ResponseWriter, r *http.Request) 
 		Text:       fmt.Sprintf("%s passou a vez", pName),
 	})
 
+	go func() { _ = hub.SaveToDisk() }()
 	h.json(w, http.StatusOK, h.formatRoomState(room, nil))
 }
 
@@ -548,6 +560,7 @@ func (h *Handler) HandleBanco3DRoomBuild(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	go func() { _ = hub.SaveToDisk() }()
 	h.json(w, http.StatusOK, h.formatRoomState(room, nil))
 }
 
@@ -670,5 +683,6 @@ func (h *Handler) HandleBanco3DRoomTrade(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	go func() { _ = hub.SaveToDisk() }()
 	h.json(w, http.StatusOK, h.formatRoomState(room, nil))
 }

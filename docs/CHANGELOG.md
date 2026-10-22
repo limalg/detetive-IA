@@ -2,6 +2,23 @@
 
 Todas as alterações notáveis do módulo Banco Imobiliário são documentadas neste arquivo.
 
+## [banco-v0.7.1] - 2026-10-22
+### Added
+- **Catálogo Expandido de Cidades com Locais Reais (`generator.go` & `places.go`)**:
+  - Presets dedicados e autênticos para **Londrina**, **Recife**, **Porto Alegre**, **Brasília**, **Fortaleza** e **Florianópolis**, somando-se a Curitiba, São Paulo, Rio de Janeiro, Belo Horizonte, Salvador, Nova York e Paris.
+  - Eliminação de nomes procedurais genéricos; todas as 22 propriedades, 4 estações, 2 concessionárias e 4 candidatos a ponto icônico refletem vias, bairros e patrimônios autênticos.
+  - Exemplos autênticos integrados:
+    - **Londrina**: Lago Igapó, Calçadão de Londrina, Gleba Palhano, Av. Higienópolis, Catedral de Londrina.
+    - **Recife**: Rua do Bom Jesus, Marco Zero, Praia de Boa Viagem, Jaqueira, Derby, Casa Forte.
+    - **Porto Alegre**: Orla do Guaíba, Redenção, Moinhos de Vento, Mercado Público de POA, Cidade Baixa.
+    - **Brasília**: Eixo Monumental, Esplanada dos Ministérios, Asa Sul/Norte, Ponte JK, Lago Sul.
+    - **Fortaleza**: Av. Beira-Mar, Praia do Futuro, Dragão do Mar, Meireles, Aldeota.
+    - **Florianópolis**: Ponte Hercílio Luz, Lagoa da Conceição, Jurerê Internacional, Praia da Joaquina.
+- **Persistência de Salas em Disco (`internal/banco3d/hub.go`)**:
+  - Mecanismo de snapshots em arquivo (`data/banco3d_rooms.json`) com sincronização em `SaveToDisk()` e recuperação em `LoadFromDisk()`.
+  - Tolerância total a F5 e reinicializações do servidor: jogadores, saldos, propriedades compradas, eventos e prazos de decisão pendentes são restaurados na íntegra.
+  - Modo in-memory (`:memory:`) para isolamento hermético nas suítes de testes.
+
 ## [banco-v0.7.0] - 2026-10-22
 ### Added
 - **Inteligência Artificial dos Bots (`internal/banco3d/bot.go`)**:

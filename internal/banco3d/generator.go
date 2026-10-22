@@ -12,6 +12,41 @@ type cityPreset struct {
 	candidates [4]string
 }
 
+// resolveCityPreset matches a query to a dedicated catalog preset or generates a procedural fallback.
+func resolveCityPreset(query string) cityPreset {
+	norm := strings.ToLower(strings.TrimSpace(query))
+	switch {
+	case strings.Contains(norm, "curitiba"):
+		return curitibaPreset()
+	case strings.Contains(norm, "londrina"):
+		return londrinaPreset()
+	case strings.Contains(norm, "recife"):
+		return recifePreset()
+	case strings.Contains(norm, "porto alegre") || strings.Contains(norm, "poa"):
+		return portoAlegrePreset()
+	case strings.Contains(norm, "brasília") || strings.Contains(norm, "brasilia") || strings.Contains(norm, "distrito federal"):
+		return brasiliaPreset()
+	case strings.Contains(norm, "fortaleza"):
+		return fortalezaPreset()
+	case strings.Contains(norm, "florianópolis") || strings.Contains(norm, "florianopolis") || strings.Contains(norm, "floripa"):
+		return florianopolisPreset()
+	case strings.Contains(norm, "são paulo") || strings.Contains(norm, "sao paulo") || strings.Contains(norm, "sp"):
+		return saoPauloPreset()
+	case strings.Contains(norm, "rio"):
+		return rioPreset()
+	case strings.Contains(norm, "belo horizonte") || strings.Contains(norm, "bh"):
+		return beloHorizontePreset()
+	case strings.Contains(norm, "salvador"):
+		return salvadorPreset()
+	case strings.Contains(norm, "nova york") || strings.Contains(norm, "new york") || strings.Contains(norm, "nyc"):
+		return newYorkPreset()
+	case strings.Contains(norm, "paris"):
+		return parisPreset()
+	default:
+		return proceduralPreset(query)
+	}
+}
+
 // GenerateCityBoard builds a 40-tile board and extracts 4 iconic candidates.
 func GenerateCityBoard(query string, apiKey string) (*Board, []string, error) {
 	clean := strings.TrimSpace(query)
@@ -19,28 +54,7 @@ func GenerateCityBoard(query string, apiKey string) (*Board, []string, error) {
 		clean = "Curitiba, PR"
 	}
 
-	norm := strings.ToLower(clean)
-	var preset cityPreset
-
-	switch {
-	case strings.Contains(norm, "curitiba"):
-		preset = curitibaPreset()
-	case strings.Contains(norm, "são paulo") || strings.Contains(norm, "sao paulo") || strings.Contains(norm, "sp"):
-		preset = saoPauloPreset()
-	case strings.Contains(norm, "rio"):
-		preset = rioPreset()
-	case strings.Contains(norm, "belo horizonte") || strings.Contains(norm, "bh"):
-		preset = beloHorizontePreset()
-	case strings.Contains(norm, "salvador"):
-		preset = salvadorPreset()
-	case strings.Contains(norm, "nova york") || strings.Contains(norm, "new york") || strings.Contains(norm, "nyc"):
-		preset = newYorkPreset()
-	case strings.Contains(norm, "paris"):
-		preset = parisPreset()
-	default:
-		preset = proceduralPreset(clean)
-	}
-
+	preset := resolveCityPreset(clean)
 	board := buildBoardFromPreset(clean, preset)
 	return board, preset.candidates[:], nil
 }
@@ -106,6 +120,28 @@ func curitibaPreset() cityPreset {
 		utilities: [2]string{"Copel Energia", "Sanepar Saneamento"},
 		candidates: [4]string{
 			"Jardim Botânico", "Ópera de Arame", "Parque Barigui", "Largo da Ordem",
+		},
+	}
+}
+
+func londrinaPreset() cityPreset {
+	return cityPreset{
+		props: [22]string{
+			"Vila Nova", "Vila Brasil",
+			"Higienópolis (Londrina)", "Jardim Bela Vista", "Jardim Quebec",
+			"Gleba Palhano", "Avenida Ayrton Senna", "Alto da Palhano",
+			"Centro Histórico", "Calçadão de Londrina", "Avenida Paraná",
+			"Avenida Juscelino Kubitschek", "Jardim Maringá", "Parque Guanabara",
+			"Parque Ney Braga", "Avenida Tiradentes", "Jardim Shangri-lá",
+			"Avenida Higienópolis", "Praça Tomi Nakagawa", "Bosque Central",
+			"Avenida Madre Leônia Milito", "Lago Igapó",
+		},
+		stations: [4]string{
+			"Terminal Central de Londrina", "Terminal Rodoviário de Londrina", "Terminal Ouro Verde", "Aeroporto de Londrina",
+		},
+		utilities: [2]string{"Copel Londrina", "Sanepar Londrina"},
+		candidates: [4]string{
+			"Lago Igapó", "Calçadão de Londrina", "Catedral de Londrina", "Jardim Botânico de Londrina",
 		},
 	}
 }
@@ -198,6 +234,116 @@ func salvadorPreset() cityPreset {
 	}
 }
 
+func recifePreset() cityPreset {
+	return cityPreset{
+		props: [22]string{
+			"São José", "Santo Antônio",
+			"Derby", "Graças", "Espinheiro",
+			"Casa Forte", "Poço da Panela", "Santana",
+			"Madalena", "Torre", "Prado",
+			"Jaqueira", "Aflitos", "Tamarineira",
+			"Pina", "Ilha do Leite", "Ilha do Retiro",
+			"Boa Viagem", "Setúbal", "Piedade",
+			"Avenida Boa Viagem", "Rua do Bom Jesus",
+		},
+		stations: [4]string{
+			"Estação Central do Recife", "Terminal Integrado Joana Bezerra", "Terminal Integrado TIP", "Aeroporto dos Guararapes",
+		},
+		utilities: [2]string{"Neoenergia Pernambuco", "Compesa Saneamento"},
+		candidates: [4]string{
+			"Marco Zero", "Rua do Bom Jesus", "Praia de Boa Viagem", "Instituto Ricardo Brennand",
+		},
+	}
+}
+
+func portoAlegrePreset() cityPreset {
+	return cityPreset{
+		props: [22]string{
+			"Cidade Baixa", "Bom Fim",
+			"Menino Deus", "Praia de Belas", "Azenha",
+			"Rio Branco", "Mont'Serrat", "Petrópolis",
+			"Moinhos de Vento", "Independência", "Floresta",
+			"Bela Vista (POA)", "Auxiliadora", "Higienópolis (POA)",
+			"Três Figueiras", "Chácara das Pedras", "Jardim Botânico (POA)",
+			"Ipanema (POA)", "Vila Assunção", "Tristeza",
+			"Avenida Padre Chagas", "Orla do Guaíba",
+		},
+		stations: [4]string{
+			"Estação Rodoviária de POA", "Estação Mercado (Trensurb)", "Terminal Triângulo", "Aeroporto Salgado Filho",
+		},
+		utilities: [2]string{"CEEE Equatorial", "DMAE Porto Alegre"},
+		candidates: [4]string{
+			"Orla do Guaíba", "Parque da Redenção", "Mercado Público de POA", "Usina do Gasômetro",
+		},
+	}
+}
+
+func brasiliaPreset() cityPreset {
+	return cityPreset{
+		props: [22]string{
+			"Vila Planalto", "Candangolândia",
+			"Asa Norte", "Asa Sul", "Sudoeste",
+			"Noroeste", "Octogonal", "Cruzeiro",
+			"Lago Norte", "Park Way", "Águas Claras",
+			"Guará", "Taguatinga", "Vicente Pires",
+			"Setor Hoteleiro Norte", "Setor Hoteleiro Sul", "Setor de Autarquias",
+			"Lago Sul", "Península dos Ministros", "Pontão do Lago Sul",
+			"Eixo Monumental", "Esplanada dos Ministérios",
+		},
+		stations: [4]string{
+			"Rodoviária do Plano Piloto", "Terminal Interestadual de Brasília", "Estação Central (Metrô DF)", "Aeroporto Internacional de Brasília (JK)",
+		},
+		utilities: [2]string{"Neoenergia Brasília", "Caesb Saneamento"},
+		candidates: [4]string{
+			"Congresso Nacional", "Catedral Metropolitana de Brasília", "Ponte JK", "Praça dos Três Poderes",
+		},
+	}
+}
+
+func fortalezaPreset() cityPreset {
+	return cityPreset{
+		props: [22]string{
+			"Praia de Iracema", "Centro Histórico de Fortaleza",
+			"Benfica", "Fátima", "Montese",
+			"Aldeota", "Meireles", "Varjota",
+			"Dionísio Torres", "Joaquim Távora", "Papicu",
+			"Cocó", "Guararapes", "Engenheiro Luciano Cavalcante",
+			"Parquelândia", "Praça Portugal", "Água Fria",
+			"Praia do Futuro", "Porto das Dunas", "Dunas",
+			"Avenida Abolição", "Avenida Beira-Mar",
+		},
+		stations: [4]string{
+			"Terminal Rodoviário Engenheiro João Thomé", "Terminal Integrado Papicu", "Terminal Parangaba", "Aeroporto Pinto Martins",
+		},
+		utilities: [2]string{"Enel Ceará", "Cagece Saneamento"},
+		candidates: [4]string{
+			"Praia do Futuro", "Dragão do Mar", "Beira-Mar de Fortaleza", "Catedral de Fortaleza",
+		},
+	}
+}
+
+func florianopolisPreset() cityPreset {
+	return cityPreset{
+		props: [22]string{
+			"Centro de Florianópolis", "Prainha",
+			"Trindade", "Itacorubi", "Córrego Grande",
+			"Santa Mônica", "Pantanal", "Agronômica",
+			"Lagoa da Conceição", "Barra da Lagoa", "Campeche",
+			"Cacupé", "Sambaqui", "Santo Antônio de Lisboa",
+			"Canasvieiras", "Ingleses", "Cachoeira do Bom Jesus",
+			"Jurerê Tradicional", "Jurerê Internacional", "Praia Brava",
+			"Avenida Beira-Mar Norte", "Ponte Hercílio Luz",
+		},
+		stations: [4]string{
+			"Terminal Rodoviário Rita Maria", "Terminal Integração Centro (TICEN)", "Terminal Lagoa (TILAG)", "Aeroporto Hercílio Luz",
+		},
+		utilities: [2]string{"Celesc Distribuição", "Casan Saneamento"},
+		candidates: [4]string{
+			"Ponte Hercílio Luz", "Lagoa da Conceição", "Praia da Joaquina", "Santo Antônio de Lisboa",
+		},
+	}
+}
+
 func newYorkPreset() cityPreset {
 	return cityPreset{
 		props: [22]string{
@@ -243,32 +389,36 @@ func parisPreset() cityPreset {
 }
 
 func proceduralPreset(city string) cityPreset {
+	clean := strings.TrimSpace(city)
+	if clean == "" {
+		clean = "Metrópole"
+	}
 	return cityPreset{
 		props: [22]string{
-			fmt.Sprintf("Centro Histórico de %s", city), fmt.Sprintf("Bairro Operário de %s", city),
-			fmt.Sprintf("Vila Nova de %s", city), fmt.Sprintf("Jardim América de %s", city), fmt.Sprintf("Bairro São José de %s", city),
-			fmt.Sprintf("Parque das Flores de %s", city), fmt.Sprintf("Bairro Universitário de %s", city), fmt.Sprintf("Bairro Industrial de %s", city),
-			fmt.Sprintf("Bela Vista de %s", city), fmt.Sprintf("Alto da Colina de %s", city), fmt.Sprintf("Bairro dos Ipês de %s", city),
-			fmt.Sprintf("Avenida Central de %s", city), fmt.Sprintf("Parque Ecológico de %s", city), fmt.Sprintf("Mirante Verde de %s", city),
-			fmt.Sprintf("Bairro Imperial de %s", city), fmt.Sprintf("Jardim Botânico de %s", city), fmt.Sprintf("Vila Mariana de %s", city),
-			fmt.Sprintf("Condomínio dos Lagos de %s", city), fmt.Sprintf("Alphaville de %s", city), fmt.Sprintf("Residencial das Palmeiras de %s", city),
-			fmt.Sprintf("Avenida das Nações de %s", city), fmt.Sprintf("Avenida Beira-Rio de %s", city),
+			fmt.Sprintf("Centro Histórico de %s", clean), fmt.Sprintf("Bairro Operário de %s", clean),
+			fmt.Sprintf("Vila Nova de %s", clean), fmt.Sprintf("Jardim América de %s", clean), fmt.Sprintf("Bairro São José de %s", clean),
+			fmt.Sprintf("Parque das Flores de %s", clean), fmt.Sprintf("Bairro Universitário de %s", clean), fmt.Sprintf("Bairro Industrial de %s", clean),
+			fmt.Sprintf("Bela Vista de %s", clean), fmt.Sprintf("Alto da Colina de %s", clean), fmt.Sprintf("Bairro dos Ipês de %s", clean),
+			fmt.Sprintf("Avenida Central de %s", clean), fmt.Sprintf("Parque Ecológico de %s", clean), fmt.Sprintf("Mirante Verde de %s", clean),
+			fmt.Sprintf("Bairro Imperial de %s", clean), fmt.Sprintf("Jardim Botânico de %s", clean), fmt.Sprintf("Vila Mariana de %s", clean),
+			fmt.Sprintf("Condomínio dos Lagos de %s", clean), fmt.Sprintf("Alphaville de %s", clean), fmt.Sprintf("Residencial das Palmeiras de %s", clean),
+			fmt.Sprintf("Avenida das Nações de %s", clean), fmt.Sprintf("Avenida Beira-Rio de %s", clean),
 		},
 		stations: [4]string{
-			fmt.Sprintf("Terminal Rodoviário Central de %s", city),
-			fmt.Sprintf("Estação Ferroviária de %s", city),
-			fmt.Sprintf("Terminal Metropolitano de %s", city),
-			fmt.Sprintf("Aeroporto Regional de %s", city),
+			fmt.Sprintf("Terminal Rodoviário de %s", clean),
+			fmt.Sprintf("Estação Ferroviária de %s", clean),
+			fmt.Sprintf("Terminal Metropolitano de %s", clean),
+			fmt.Sprintf("Aeroporto Regional de %s", clean),
 		},
 		utilities: [2]string{
-			fmt.Sprintf("Companhia de Energia de %s", city),
-			fmt.Sprintf("Companhia de Água e Esgoto de %s", city),
+			fmt.Sprintf("Companhia de Energia de %s", clean),
+			fmt.Sprintf("Companhia de Água e Esgoto de %s", clean),
 		},
 		candidates: [4]string{
-			fmt.Sprintf("Praça Central de %s", city),
-			fmt.Sprintf("Centro Histórico de %s", city),
-			fmt.Sprintf("Parque Ecológico de %s", city),
-			fmt.Sprintf("Mirante da Cidade de %s", city),
+			fmt.Sprintf("Praça Central de %s", clean),
+			fmt.Sprintf("Centro Histórico de %s", clean),
+			fmt.Sprintf("Parque Ecológico de %s", clean),
+			fmt.Sprintf("Mirante da Cidade de %s", clean),
 		},
 	}
 }

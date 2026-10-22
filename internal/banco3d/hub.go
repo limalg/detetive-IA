@@ -1,21 +1,154 @@
 package banco3d
 
 import (
+	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"sync"
+	"time"
 )
+
+// DefaultStoragePath defines where room states are persisted.
+const DefaultStoragePath = "data/banco3d_rooms.json"
+
+var storageFileMu sync.Mutex
+
+// RoomSnapshot represents the serialized form of a room for persistence.
+type RoomSnapshot struct {
+	ID               string         `json:"id"`
+	City             string         `json:"city"`
+	Config           RoomConfig     `json:"config"`
+	Board            *Board         `json:"board"`
+	Candidates       []string       `json:"candidates"`
+	Voting           *VotingSession `json:"voting,omitempty"`
+	Game             *Game          `json:"game"`
+	PendingTrade     *TradeProposal `json:"pending_trade,omitempty"`
+	Events           []GameEvent    `json:"events"`
+	EventSeq         int            `json:"event_seq"`
+	PendingDecision  string         `json:"pending_decision,omitempty"`
+	DecisionDeadline *time.Time     `json:"decision_deadline,omitempty"`
+	LastActivity     time.Time      `json:"last_activity"`
+}
 
 // RoomHub coordinates all active rooms and connections.
 type RoomHub struct {
-	mu    sync.RWMutex
-	Rooms map[string]*Room
+	mu          sync.RWMutex
+	Rooms       map[string]*Room
+	storagePath string
 }
 
-// NewRoomHub creates a thread-safe room registry.
-func NewRoomHub() *RoomHub {
-	return &RoomHub{
-		Rooms: make(map[string]*Room),
+// NewRoomHub creates a thread-safe room registry and recovers rooms from disk.
+func NewRoomHub(storagePaths ...string) *RoomHub {
+	path := DefaultStoragePath
+	if len(storagePaths) > 0 {
+		path = storagePaths[0]
 	}
+	hub := &RoomHub{
+		Rooms:       make(map[string]*Room),
+		storagePath: path,
+	}
+	if path != ":memory:" && path != "" {
+		_ = hub.LoadFromDisk()
+	}
+	return hub
+}
+
+func (h *RoomHub) saveToDiskLocked() error {
+	if h.storagePath == ":memory:" || h.storagePath == "" {
+		return nil
+	}
+
+	storageFileMu.Lock()
+	defer storageFileMu.Unlock()
+
+	snaps := make(map[string]RoomSnapshot)
+	for id, r := range h.Rooms {
+		r.mu.Lock()
+		snaps[id] = RoomSnapshot{
+			ID:               r.ID,
+			City:             r.City,
+			Config:           r.Config,
+			Board:            r.Board,
+			Candidates:       r.Candidates,
+			Voting:           r.Voting,
+			Game:             r.Game,
+			PendingTrade:     r.PendingTrade,
+			Events:           r.Events,
+			EventSeq:         r.EventSeq,
+			PendingDecision:  r.PendingDecision,
+			DecisionDeadline: r.DecisionDeadline,
+			LastActivity:     r.LastActivity,
+		}
+		r.mu.Unlock()
+	}
+
+	_ = os.MkdirAll(filepath.Dir(h.storagePath), 0755)
+
+	data, err := json.MarshalIndent(snaps, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(h.storagePath, data, 0644)
+}
+
+// SaveToDisk writes active rooms state to a persistent JSON snapshot.
+func (h *RoomHub) SaveToDisk() error {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.saveToDiskLocked()
+}
+
+// LoadFromDisk reloads rooms from a persistent JSON snapshot.
+func (h *RoomHub) LoadFromDisk() error {
+	if h.storagePath == ":memory:" || h.storagePath == "" {
+		return nil
+	}
+
+	storageFileMu.Lock()
+	defer storageFileMu.Unlock()
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	data, err := os.ReadFile(h.storagePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
+	var snaps map[string]RoomSnapshot
+	if err := json.Unmarshal(data, &snaps); err != nil {
+		return err
+	}
+
+	for id, s := range snaps {
+		r := &Room{
+			ID:               s.ID,
+			City:             s.City,
+			Config:           s.Config,
+			Board:            s.Board,
+			Candidates:       s.Candidates,
+			Voting:           s.Voting,
+			Game:             s.Game,
+			PendingTrade:     s.PendingTrade,
+			TurnTimeout:      time.Duration(s.Config.TurnSeconds) * time.Second,
+			Events:           s.Events,
+			EventSeq:         s.EventSeq,
+			PendingDecision:  s.PendingDecision,
+			DecisionDeadline: s.DecisionDeadline,
+			LastActivity:     s.LastActivity,
+		}
+		if r.TurnTimeout <= 0 {
+			r.TurnTimeout = 30 * time.Second
+		}
+		h.Rooms[id] = r
+	}
+
+	return nil
 }
 
 // CreateRoom builds and registers a new room.
@@ -33,6 +166,7 @@ func (h *RoomHub) CreateRoom(roomID, city string, opts ...*RoomConfig) (*Room, e
 	}
 
 	h.Rooms[roomID] = room
+	_ = h.saveToDiskLocked()
 	return room, nil
 }
 
@@ -51,6 +185,7 @@ func (h *RoomHub) GetOrCreateRoom(roomID, city string, opts ...*RoomConfig) (*Ro
 	}
 
 	h.Rooms[roomID] = room
+	_ = h.saveToDiskLocked()
 	return room, nil
 }
 
@@ -69,4 +204,5 @@ func (h *RoomHub) RemoveRoom(roomID string) {
 	defer h.mu.Unlock()
 
 	delete(h.Rooms, roomID)
+	_ = h.saveToDiskLocked()
 }

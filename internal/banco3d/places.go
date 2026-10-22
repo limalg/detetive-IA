@@ -34,10 +34,10 @@ type CityLandmarksResult struct {
 
 // PlacesService handles geocoding, autocomplete and landmark extraction.
 type PlacesService struct {
-	mu           sync.Mutex
-	client       *http.Client
-	lastReqTime  time.Time
-	suggestCache map[string][]PlaceSuggestion
+	mu            sync.Mutex
+	client        *http.Client
+	lastReqTime   time.Time
+	suggestCache  map[string][]PlaceSuggestion
 	landmarkCache map[string]*CityLandmarksResult
 }
 
@@ -138,12 +138,12 @@ func (s *PlacesService) fetchNominatimSuggest(query string) ([]PlaceSuggestion, 
 		PlaceID     int64  `json:"place_id"`
 		DisplayName string `json:"display_name"`
 		Address     struct {
-			City        string `json:"city"`
-			Town        string `json:"town"`
-			Village     string `json:"village"`
+			City         string `json:"city"`
+			Town         string `json:"town"`
+			Village      string `json:"village"`
 			Municipality string `json:"municipality"`
-			State       string `json:"state"`
-			Country     string `json:"country"`
+			State        string `json:"state"`
+			Country      string `json:"country"`
 		} `json:"address"`
 	}
 
@@ -192,6 +192,7 @@ func (s *PlacesService) filterOfflineCatalog(query string) []PlaceSuggestion {
 	q := strings.ToLower(strings.TrimSpace(query))
 	all := []PlaceSuggestion{
 		{ID: "pl_curitiba", Name: "Curitiba", Description: "Paraná, Brasil"},
+		{ID: "pl_londrina", Name: "Londrina", Description: "Paraná, Brasil"},
 		{ID: "pl_sp", Name: "São Paulo", Description: "São Paulo, Brasil"},
 		{ID: "pl_rio", Name: "Rio de Janeiro", Description: "Rio de Janeiro, Brasil"},
 		{ID: "pl_bh", Name: "Belo Horizonte", Description: "Minas Gerais, Brasil"},
@@ -230,6 +231,7 @@ func (s *PlacesService) GetLandmarks(cityName string, placeID string) (*CityLand
 	norm := strings.ToLower(strings.TrimSpace(cityName))
 	if norm == "" {
 		norm = "curitiba"
+		cityName = "Curitiba"
 	}
 
 	s.mu.Lock()
@@ -323,26 +325,11 @@ out tags 20;`, cityName)
 }
 
 func (s *PlacesService) fallbackLandmarks(cityName string) *CityLandmarksResult {
-	norm := strings.ToLower(cityName)
-	var preset cityPreset
-	switch {
-	case strings.Contains(norm, "curitiba"):
-		preset = curitibaPreset()
-	case strings.Contains(norm, "são paulo") || strings.Contains(norm, "sao paulo") || strings.Contains(norm, "sp"):
-		preset = saoPauloPreset()
-	case strings.Contains(norm, "rio"):
-		preset = rioPreset()
-	case strings.Contains(norm, "belo horizonte") || strings.Contains(norm, "bh"):
-		preset = beloHorizontePreset()
-	case strings.Contains(norm, "salvador"):
-		preset = salvadorPreset()
-	case strings.Contains(norm, "nova york") || strings.Contains(norm, "new york") || strings.Contains(norm, "nyc"):
-		preset = newYorkPreset()
-	case strings.Contains(norm, "paris"):
-		preset = parisPreset()
-	default:
-		preset = proceduralPreset(cityName)
+	cityName = strings.TrimSpace(cityName)
+	if cityName == "" {
+		cityName = "Curitiba"
 	}
+	preset := resolveCityPreset(cityName)
 
 	var landmarks []LandmarkItem
 	for _, prop := range preset.props {

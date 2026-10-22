@@ -7,11 +7,12 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"detetive-ia/internal/banco3d"
 	"detetive-ia/internal/server"
 )
 
 func TestBanco3DEndpoints(t *testing.T) {
-	router := server.NewRouter(server.Config{})
+	router := server.NewRouter(server.Config{Banco3DHub: banco3d.NewRoomHub(":memory:")})
 
 	// 1. GET /api/banco3d/city
 	req := httptest.NewRequest("GET", "/api/banco3d/city?q=Curitiba", nil)
@@ -212,7 +213,7 @@ func TestBanco3DEndpoints(t *testing.T) {
 }
 
 func TestBanco3DCustomConfigAndFullTrade(t *testing.T) {
-	router := server.NewRouter(server.Config{})
+	router := server.NewRouter(server.Config{Banco3DHub: banco3d.NewRoomHub(":memory:")})
 
 	// 1. Criar sala com configuração personalizada (R$ 2.500 de saldo, 2 bots)
 	createBody, _ := json.Marshal(map[string]interface{}{
@@ -293,7 +294,7 @@ func TestBanco3DCustomConfigAndFullTrade(t *testing.T) {
 }
 
 func TestTradeHTTPRejectionUnauthorizedAndHumanConsent(t *testing.T) {
-	router := server.NewRouter(server.Config{})
+	router := server.NewRouter(server.Config{Banco3DHub: banco3d.NewRoomHub(":memory:")})
 
 	// 1. Criar sala com 2 humanos
 	createBody, _ := json.Marshal(map[string]interface{}{
@@ -511,7 +512,7 @@ func TestTradeHTTPRejectionUnauthorizedAndHumanConsent(t *testing.T) {
 }
 
 func TestBanco3DPlacesAndEventsAPI(t *testing.T) {
-	router := server.NewRouter(server.Config{})
+	router := server.NewRouter(server.Config{Banco3DHub: banco3d.NewRoomHub(":memory:")})
 
 	// 1. Test GET /api/banco3d/places/suggest?q=cur
 	reqSuggest := httptest.NewRequest("GET", "/api/banco3d/places/suggest?q=cur", nil)
