@@ -15,6 +15,21 @@ func (h *Handler) getBanco3DHub() *banco3d.RoomHub {
 	return h.cfg.Banco3DHub
 }
 
+func (h *Handler) formatRoomState(room *banco3d.Room, dice *banco3d.DiceResult) map[string]interface{} {
+	room.CheckTurnTimeout()
+	res := map[string]interface{}{
+		"room_id": room.ID,
+		"city":    room.City,
+		"board":   room.Board,
+		"game":    room.Game,
+		"voting":  room.Voting,
+	}
+	if dice != nil {
+		res["dice"] = dice
+	}
+	return res
+}
+
 // HandleBanco3DCity returns the 40-tile board and 4 iconic candidates for a city query.
 func (h *Handler) HandleBanco3DCity(w http.ResponseWriter, r *http.Request) {
 	cityQuery := r.URL.Query().Get("q")
@@ -191,7 +206,7 @@ func (h *Handler) HandleBanco3DRoomVote(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
-// HandleBanco3DRoomState returns the complete room and game state.
+// HandleBanco3DRoomState returns the complete room, voting and game state.
 func (h *Handler) HandleBanco3DRoomState(w http.ResponseWriter, r *http.Request) {
 	roomID := r.URL.Query().Get("room_id")
 	if roomID == "" {
@@ -206,12 +221,132 @@ func (h *Handler) HandleBanco3DRoomState(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	room.CheckTurnTimeout()
+	h.json(w, http.StatusOK, h.formatRoomState(room, nil))
+}
 
-	h.json(w, http.StatusOK, map[string]interface{}{
-		"room_id": room.ID,
-		"city":    room.City,
-		"board":   room.Board,
-		"game":    room.Game,
-	})
+// HandleBanco3DRoomStart starts the match.
+func (h *Handler) HandleBanco3DRoomStart(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		h.error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req struct {
+		RoomID   string `json:"room_id"`
+		PlayerID string `json:"player_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.error(w, http.StatusBadRequest, "invalid payload")
+		return
+	}
+
+	hub := h.getBanco3DHub()
+	room, ok := hub.GetRoom(req.RoomID)
+	if !ok {
+		h.error(w, http.StatusNotFound, "room not found")
+		return
+	}
+
+	if err := room.StartGame(); err != nil {
+		h.error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	h.json(w, http.StatusOK, h.formatRoomState(room, nil))
+}
+
+// HandleBanco3DRoomRoll rolls dice for the player.
+func (h *Handler) HandleBanco3DRoomRoll(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		h.error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req struct {
+		RoomID   string `json:"room_id"`
+		PlayerID string `json:"player_id"`
+		D1       int    `json:"d1"`
+		D2       int    `json:"d2"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.error(w, http.StatusBadRequest, "invalid payload")
+		return
+	}
+
+	hub := h.getBanco3DHub()
+	room, ok := hub.GetRoom(req.RoomID)
+	if !ok {
+		h.error(w, http.StatusNotFound, "room not found")
+		return
+	}
+
+	dice, err := room.Game.RollDice(req.PlayerID, req.D1, req.D2)
+	if err != nil {
+		h.error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	h.json(w, http.StatusOK, h.formatRoomState(room, dice))
+}
+
+// HandleBanco3DRoomBuy purchases property at player's position.
+func (h *Handler) HandleBanco3DRoomBuy(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		h.error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req struct {
+		RoomID   string `json:"room_id"`
+		PlayerID string `json:"player_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.error(w, http.StatusBadRequest, "invalid payload")
+		return
+	}
+
+	hub := h.getBanco3DHub()
+	room, ok := hub.GetRoom(req.RoomID)
+	if !ok {
+		h.error(w, http.StatusNotFound, "room not found")
+		return
+	}
+
+	if err := room.Game.BuyProperty(req.PlayerID); err != nil {
+		h.error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	h.json(w, http.StatusOK, h.formatRoomState(room, nil))
+}
+
+// HandleBanco3DRoomPass passes the turn.
+func (h *Handler) HandleBanco3DRoomPass(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		h.error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req struct {
+		RoomID   string `json:"room_id"`
+		PlayerID string `json:"player_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.error(w, http.StatusBadRequest, "invalid payload")
+		return
+	}
+
+	hub := h.getBanco3DHub()
+	room, ok := hub.GetRoom(req.RoomID)
+	if !ok {
+		h.error(w, http.StatusNotFound, "room not found")
+		return
+	}
+
+	if err := room.Game.PassTurn(req.PlayerID); err != nil {
+		h.error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	h.json(w, http.StatusOK, h.formatRoomState(room, nil))
 }

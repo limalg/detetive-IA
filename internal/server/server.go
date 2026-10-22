@@ -80,6 +80,10 @@ func NewRouter(cfg Config) http.Handler {
 	mux.HandleFunc("/api/banco3d/room/join", h.HandleBanco3DRoomJoin)
 	mux.HandleFunc("/api/banco3d/room/vote", h.HandleBanco3DRoomVote)
 	mux.HandleFunc("/api/banco3d/room/state", h.HandleBanco3DRoomState)
+	mux.HandleFunc("/api/banco3d/room/start", h.HandleBanco3DRoomStart)
+	mux.HandleFunc("/api/banco3d/room/roll", h.HandleBanco3DRoomRoll)
+	mux.HandleFunc("/api/banco3d/room/buy", h.HandleBanco3DRoomBuy)
+	mux.HandleFunc("/api/banco3d/room/pass", h.HandleBanco3DRoomPass)
 
 	// Authentication endpoints
 	mux.HandleFunc("/api/auth/register", h.HandleRegister)
