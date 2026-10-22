@@ -2,11 +2,21 @@
 
 Todas as alterações notáveis do módulo Banco Imobiliário são documentadas neste arquivo.
 
+## [banco-v0.3.0] - 2026-10-21
+### Added
+- Módulo independente de backend 40 casas (`internal/banco3d/`):
+  - Modelo canônico de domínio de 40 casas (`board.go`) com 8 grupos de cores, estações, utilitários, impostos e casa rainha (39).
+  - Máquina de estados completa (`game.go`): turnos rápidos, bônus de passagem/queda no GO, cálculo de aluguel por grupo/casas e detecção de falência.
+  - Gerador de cidades com busca por nome e catálogo offline enriquecido (`generator.go`) para SP, Rio, Curitiba, BH, Salvador, NY, Paris e gerador procedural, fornecendo 4 candidatos a ponto icônico.
+  - Sistema de votação relâmpago pré-jogo de 15 segundos (`voting.go`) com desempate determinístico e atribuição à propriedade de maior valor (índice 39).
+  - Hub de salas e gerenciamento multiplayer (`room.go`, `hub.go`) com suporte a reconexão por ID de jogador sem reiniciar partida e timeout de turno inativo de 30 segundos.
+  - Endpoints REST em `internal/server/banco3d_handler.go` (`/api/banco3d/city`, `/api/banco3d/room/*`).
+
 ## [banco-v0.2.0] - 2026-10-21
 ### Added
 - Frontend standalone Banco Imobiliário 3D (`web/banco3d/` por Pixel):
   - Interface arcade zero-scroll (100vh) com layout responsivo e HUD (`index.html`).
-  - Estilização com perspectiva 3D (38deg tilt), efeitos de vidro (glassmorphism) e paleta neon/art-déco (`css/style.css`).
+  - Estilização com perspectiva 3D (30deg tilt), efeitos de vidro (glassmorphism) e paleta neon/art-déco (`css/style.css`).
   - Cliente de jogo interativo com suporte a dados animados, visualização de mapa SVG procedural da cidade e modo demo offline para testes visuais (`js/app.js`).
 
 ## [banco-v0.1.0] - 2026-10-17
