@@ -97,3 +97,44 @@ func TestGameGoBonusAndTimeout(t *testing.T) {
 		t.Errorf("auto-pass deveria ter trocado de jogador")
 	}
 }
+
+func TestGameBuildAndTrade(t *testing.T) {
+	board := NewStandardBoard("Curitiba", nil)
+	game := NewGame("room-3", board)
+	p1, _ := game.AddPlayer("Lucas", "#3b82f6", "car")
+	p2, _ := game.AddPlayer("Ana", "#ef4444", "hat")
+	game.Start()
+
+	// 1. Dar o grupo Marrom (casas 1 e 2) para p1
+	board.Tiles[1].OwnerID = p1.ID
+	board.Tiles[2].OwnerID = p1.ID
+	p1.Properties = []int{1, 2}
+
+	// 2. Construir casa na casa 1 (custo 50)
+	moneyBefore := p1.Money
+	if err := game.BuildHouse(p1.ID, 1); err != nil {
+		t.Fatalf("falha ao construir casa: %v", err)
+	}
+	if board.Tiles[1].Houses != 1 {
+		t.Errorf("esperado 1 casa construída, recebido %d", board.Tiles[1].Houses)
+	}
+	if p1.Money != moneyBefore-50 {
+		t.Errorf("dinheiro esperado %d, recebido %d", moneyBefore-50, p1.Money)
+	}
+
+	// 3. Negociar casa 2 de p1 para p2 por R$ 100
+	p1Cash := p1.Money
+	p2Cash := p2.Money
+	if err := game.TradeProperties(p1.ID, p2.ID, 2, 100); err != nil {
+		t.Fatalf("falha no trade: %v", err)
+	}
+	if board.Tiles[2].OwnerID != p2.ID {
+		t.Errorf("dono da casa 2 deve ser p2, recebido %s", board.Tiles[2].OwnerID)
+	}
+	if p1.Money != p1Cash+100 {
+		t.Errorf("p1 dinheiro esperado %d, recebido %d", p1Cash+100, p1.Money)
+	}
+	if p2.Money != p2Cash-100 {
+		t.Errorf("p2 dinheiro esperado %d, recebido %d", p2Cash-100, p2.Money)
+	}
+}

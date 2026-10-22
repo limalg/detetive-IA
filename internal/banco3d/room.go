@@ -116,10 +116,25 @@ func (r *Room) ConcludeVoting() (string, error) {
 	return winner, nil
 }
 
-// StartGame starts the game match.
+// StartGame starts the game match, auto-filling bots if only 1 player joined.
 func (r *Room) StartGame() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
+	if len(r.Game.Players) == 1 {
+		bots := []struct {
+			name  string
+			color string
+			piece string
+		}{
+			{"Gabriel", "#22c55e", "thimble"},
+			{"Larissa", "#facc15", "shoe"},
+			{"Pedro", "#ef4444", "hat"},
+		}
+		for _, b := range bots {
+			_, _ = r.Game.AddPlayer(b.name, b.color, b.piece)
+		}
+	}
 
 	err := r.Game.Start()
 	if err != nil {

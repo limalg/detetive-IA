@@ -2,6 +2,15 @@
 
 Todas as alterações notáveis do módulo Banco Imobiliário são documentadas neste arquivo.
 
+## [banco-v0.4.0] - 2026-10-22
+### Added
+- Integração Fullstack Banco Imobiliário 3D (`web/banco3d` + `internal/banco3d`):
+  - Fluxo completo validado: criação de sala por cidade, link compartilhável (`?sala=ID`), lobby, votação relâmpago de 15s e transição para tabuleiro de 40 casas.
+  - Vencedor da votação atribuído dinamicamente à casa 39 (Rainha, R$ 800) com coroa dourada.
+  - Reconexão instantânea de jogador por sessão (`localStorage`) ao atualizar o navegador.
+  - Rotação de turnos, rolagem de dados (`d1`/`d2`), compra de propriedades, passagem de vez e auto-preenchimento de bots ("Gabriel", "Larissa", "Pedro") em partidas solo.
+  - Métodos de backend para construção de casas (`BuildHouse`) e negociação de propriedades (`TradeProperties`) com testes unitários.
+
 ## [banco-v0.3.0] - 2026-10-21
 ### Added
 - Módulo independente de backend 40 casas (`internal/banco3d/`):

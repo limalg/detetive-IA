@@ -18,11 +18,12 @@ func (h *Handler) getBanco3DHub() *banco3d.RoomHub {
 func (h *Handler) formatRoomState(room *banco3d.Room, dice *banco3d.DiceResult) map[string]interface{} {
 	room.CheckTurnTimeout()
 	res := map[string]interface{}{
-		"room_id": room.ID,
-		"city":    room.City,
-		"board":   room.Board,
-		"game":    room.Game,
-		"voting":  room.Voting,
+		"room_id":    room.ID,
+		"city":       room.City,
+		"board":      room.Board,
+		"candidates": room.Candidates,
+		"game":       room.Game,
+		"voting":     room.Voting,
 	}
 	if dice != nil {
 		res["dice"] = dice
@@ -344,6 +345,72 @@ func (h *Handler) HandleBanco3DRoomPass(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if err := room.Game.PassTurn(req.PlayerID); err != nil {
+		h.error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	h.json(w, http.StatusOK, h.formatRoomState(room, nil))
+}
+
+// HandleBanco3DRoomBuild constructs a house/hotel on an owned property.
+func (h *Handler) HandleBanco3DRoomBuild(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		h.error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req struct {
+		RoomID    string `json:"room_id"`
+		PlayerID  string `json:"player_id"`
+		TileIndex int    `json:"tile_index"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.error(w, http.StatusBadRequest, "invalid payload")
+		return
+	}
+
+	hub := h.getBanco3DHub()
+	room, ok := hub.GetRoom(req.RoomID)
+	if !ok {
+		h.error(w, http.StatusNotFound, "room not found")
+		return
+	}
+
+	if err := room.Game.BuildHouse(req.PlayerID, req.TileIndex); err != nil {
+		h.error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	h.json(w, http.StatusOK, h.formatRoomState(room, nil))
+}
+
+// HandleBanco3DRoomTrade executes a property transfer between players.
+func (h *Handler) HandleBanco3DRoomTrade(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		h.error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req struct {
+		RoomID     string `json:"room_id"`
+		SellerID   string `json:"seller_id"`
+		BuyerID    string `json:"buyer_id"`
+		TileIndex  int    `json:"tile_index"`
+		CashAmount int    `json:"cash_amount"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.error(w, http.StatusBadRequest, "invalid payload")
+		return
+	}
+
+	hub := h.getBanco3DHub()
+	room, ok := hub.GetRoom(req.RoomID)
+	if !ok {
+		h.error(w, http.StatusNotFound, "room not found")
+		return
+	}
+
+	if err := room.Game.TradeProperties(req.SellerID, req.BuyerID, req.TileIndex, req.CashAmount); err != nil {
 		h.error(w, http.StatusBadRequest, err.Error())
 		return
 	}

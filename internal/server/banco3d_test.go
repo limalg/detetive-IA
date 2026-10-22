@@ -72,6 +72,14 @@ func TestBanco3DEndpoints(t *testing.T) {
 		t.Fatalf("expected 200 joining room p2, got %d: %s", rrJoin2.Code, rrJoin2.Body.String())
 	}
 
+	var joinResp2 struct {
+		Player struct {
+			ID string `json:"id"`
+		} `json:"player"`
+	}
+	_ = json.Unmarshal(rrJoin2.Body.Bytes(), &joinResp2)
+	p2ID := joinResp2.Player.ID
+
 	// 4. Iniciar votação e votar
 	voteStartPayload := []byte(`{"room_id":"sala-curitiba","action":"start"}`)
 	reqVoteStart := httptest.NewRequest("POST", "/api/banco3d/room/vote", bytes.NewReader(voteStartPayload))
@@ -177,5 +185,20 @@ func TestBanco3DEndpoints(t *testing.T) {
 	router.ServeHTTP(rrPass, reqPass)
 	if rrPass.Code != http.StatusOK {
 		t.Fatalf("expected 200 passing turn, got %d: %s", rrPass.Code, rrPass.Body.String())
+	}
+
+	// 10. POST /api/banco3d/room/trade
+	tradePayload, _ := json.Marshal(map[string]interface{}{
+		"room_id":     "sala-curitiba",
+		"seller_id":   p1ID,
+		"buyer_id":    p2ID,
+		"tile_index":  1,
+		"cash_amount": 100,
+	})
+	reqTrade := httptest.NewRequest("POST", "/api/banco3d/room/trade", bytes.NewReader(tradePayload))
+	rrTrade := httptest.NewRecorder()
+	router.ServeHTTP(rrTrade, reqTrade)
+	if rrTrade.Code != http.StatusOK {
+		t.Fatalf("expected 200 trading, got %d: %s", rrTrade.Code, rrTrade.Body.String())
 	}
 }

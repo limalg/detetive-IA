@@ -219,6 +219,75 @@ func (g *Game) BuyProperty(playerID string) error {
 	return nil
 }
 
+// BuildHouse constructs a house/hotel on an eligible property.
+func (g *Game) BuildHouse(playerID string, tileIndex int) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	if !g.IsStarted || g.CurrentTurnPlayerID != playerID {
+		return errors.New("não é a vez deste jogador")
+	}
+	if tileIndex < 0 || tileIndex >= len(g.Board.Tiles) {
+		return errors.New("casa inválida")
+	}
+
+	tile := &g.Board.Tiles[tileIndex]
+	if tile.Type != TileProperty || tile.OwnerID != playerID {
+		return errors.New("você não é o proprietário desta casa")
+	}
+	if !g.hasFullGroup(playerID, tile.Group) {
+		return errors.New("necessário possuir o grupo de cor completo para construir")
+	}
+	if tile.Houses >= 5 {
+		return errors.New("limite máximo de construções atingido (hotel construído)")
+	}
+
+	p := g.getPlayer(playerID)
+	if p.Money < tile.HouseCost {
+		return errors.New("saldo insuficiente para construir")
+	}
+
+	p.Money -= tile.HouseCost
+	tile.Houses++
+	return nil
+}
+
+// TradeProperties transfers a property between two players for an agreed cash amount.
+func (g *Game) TradeProperties(sellerID, buyerID string, tileIndex, cashAmount int) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	seller := g.getPlayer(sellerID)
+	buyer := g.getPlayer(buyerID)
+	if seller == nil || buyer == nil {
+		return errors.New("jogadores inválidos")
+	}
+	if buyer.Money < cashAmount {
+		return errors.New("comprador com saldo insuficiente")
+	}
+	if tileIndex < 0 || tileIndex >= len(g.Board.Tiles) {
+		return errors.New("propriedade inválida")
+	}
+	tile := &g.Board.Tiles[tileIndex]
+	if tile.OwnerID != sellerID {
+		return errors.New("vendedor não é dono da propriedade")
+	}
+
+	buyer.Money -= cashAmount
+	seller.Money += cashAmount
+	tile.OwnerID = buyerID
+
+	newSellerProps := make([]int, 0, len(seller.Properties))
+	for _, idx := range seller.Properties {
+		if idx != tileIndex {
+			newSellerProps = append(newSellerProps, idx)
+		}
+	}
+	seller.Properties = newSellerProps
+	buyer.Properties = append(buyer.Properties, tileIndex)
+	return nil
+}
+
 // PassTurn advances the turn to next active player.
 func (g *Game) PassTurn(playerID string) error {
 	g.mu.Lock()
