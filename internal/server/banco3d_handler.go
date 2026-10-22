@@ -355,42 +355,16 @@ func (h *Handler) HandleBanco3DRoomRoll(w http.ResponseWriter, r *http.Request) 
 	if p != nil {
 		pName = p.Name
 	}
-	diceArr := [2]int{dice.Die1, dice.Die2}
-	room.RecordEvent(banco3d.GameEvent{
-		Type:       "roll",
-		PlayerID:   req.PlayerID,
-		PlayerName: pName,
-		Dice:       &diceArr,
-		From:       dice.OldPosition,
-		To:         dice.NewPosition,
-		Text:       fmt.Sprintf("%s tirou %d (%d+%d)", pName, dice.Total, dice.Die1, dice.Die2),
-	})
 
-	if dice.RentPaid > 0 {
-		room.RecordEvent(banco3d.GameEvent{
-			Type:       "rent",
-			PlayerID:   req.PlayerID,
-			PlayerName: pName,
-			Amount:     dice.RentPaid,
-			ToPlayerID: dice.RentTo,
-			Tile:       dice.NewPosition,
-			Text:       fmt.Sprintf("%s pagou $ %d de aluguel", pName, dice.RentPaid),
-		})
-	}
-	if dice.CardDrawn != nil {
-		room.RecordEvent(banco3d.GameEvent{
-			Type:       "card",
-			PlayerID:   req.PlayerID,
-			PlayerName: pName,
-			Amount:     dice.CardDrawn.MoneyDelta,
-			Tile:       dice.NewPosition,
-			Text:       fmt.Sprintf("%s tirou carta: %s", pName, dice.CardDrawn.Card.Title),
-		})
-	}
+	room.RecordTurnRollAndMove(req.PlayerID, pName, dice)
 
-	tile := &room.Board.Tiles[dice.NewPosition]
+	finalPos := dice.NewPosition
+	if p != nil {
+		finalPos = p.Position
+	}
+	tile := &room.Board.Tiles[finalPos]
 	canBuy := (tile.Type == banco3d.TileProperty || tile.Type == banco3d.TileStation || tile.Type == banco3d.TileUtility) &&
-		tile.OwnerID == "" && p != nil && p.Money >= tile.Price
+		tile.OwnerID == "" && p != nil && p.Money >= tile.Price && !p.InJail
 
 	if canBuy {
 		deadline := time.Now().Add(8 * time.Second)

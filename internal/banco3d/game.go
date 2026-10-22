@@ -33,6 +33,7 @@ type DiceResult struct {
 	IsDouble    bool        `json:"is_double"`
 	OldPosition int         `json:"old_position"`
 	NewPosition int         `json:"new_position"`
+	SalaryPaid  int         `json:"salary_paid,omitempty"`
 	RentPaid    int         `json:"rent_paid,omitempty"`
 	RentTo      string      `json:"rent_to,omitempty"`
 	CardDrawn   *CardResult `json:"card_drawn,omitempty"`
@@ -54,6 +55,15 @@ type Game struct {
 	Deck                *DeckManager `json:"deck,omitempty"`
 	LastCard            *Card        `json:"last_card,omitempty"`
 	LastCardResult      *CardResult  `json:"last_card_result,omitempty"`
+	SalaryAmount        int          `json:"salary_amount,omitempty"`
+}
+
+// GetSalaryAmount returns the configured salary for passing/stopping at GO (default 200).
+func (g *Game) GetSalaryAmount() int {
+	if g.SalaryAmount <= 0 {
+		return 200
+	}
+	return g.SalaryAmount
 }
 
 // NewGame initializes a game instance for the given room and board.
@@ -144,11 +154,12 @@ func (g *Game) RollDice(playerID string, d1, d2 int) (*DiceResult, error) {
 	newPos := (oldPos + total) % 40
 	p.Position = newPos
 
-	// Checar bônus do GO (0)
-	if newPos == 0 {
-		p.Money += 400 // R$ 400 se cair exatamente no GO
-	} else if newPos < oldPos {
-		p.Money += 200 // R$ 200 ao passar pelo GO
+	// Checar salário do INÍCIO (0): passar OU parar no início dá R$ 200 (configurável)
+	salary := g.GetSalaryAmount()
+	salaryPaid := 0
+	if newPos == 0 || newPos < oldPos {
+		p.Money += salary
+		salaryPaid = salary
 	}
 
 	g.DiceRolledThisTurn = true
@@ -160,6 +171,7 @@ func (g *Game) RollDice(playerID string, d1, d2 int) (*DiceResult, error) {
 		IsDouble:    d1 == d2,
 		OldPosition: oldPos,
 		NewPosition: newPos,
+		SalaryPaid:  salaryPaid,
 	}
 
 	// Resolução automática de taxa/aluguel/cartas

@@ -152,3 +152,130 @@ func TestTradeAuthorizationAndBotAutoAccept(t *testing.T) {
 		t.Fatalf("bot deveria conseguir aceitar troca: %v", err)
 	}
 }
+
+func TestTurnEventsOrderAndSalaryAndCardFormat(t *testing.T) {
+	hub := NewRoomHub(":memory:")
+	cfg := DefaultRoomConfig()
+	cfg.SalaryAmount = 200
+	room, err := hub.CreateRoom("EVENT-ORDER-TEST", "Curitiba", &cfg)
+	if err != nil {
+		t.Fatalf("falha ao criar sala: %v", err)
+	}
+	p1, _ := room.JoinPlayer("Lucas", "#3b82f6", "car")
+	_, _ = room.JoinPlayer("Ana", "#ef4444", "hat")
+	_ = room.StartGame()
+
+	// 1. Simular jogada com dado que passa pelo GO e saca carta que dá salário ou bônus
+	// Criar mock de DiceResult com carta e salário
+	mockCard := Card{
+		ID:        "chance-1",
+		Deck:      CardTypeChance,
+		Type:      CardTypeChance,
+		Title:     "Expresso Urbano",
+		Text:      "Avance até a saída.",
+		Effect:    CardActionMovePos,
+		Action:    CardActionMovePos,
+		Amount:    200,
+		TargetPos: 0,
+	}
+	mockDice := &DiceResult{
+		Die1:        3,
+		Die2:        4,
+		Total:       7,
+		OldPosition: 35,
+		NewPosition: 2, // passou pelo GO (de 35 para 2)
+		SalaryPaid:  200,
+		CardDrawn: &CardResult{
+			Card:        mockCard,
+			PlayerID:    p1.ID,
+			MoneyDelta:  200,
+			NewPosition: 0,
+			SalaryPaid:  200,
+		},
+	}
+
+	room.RecordTurnRollAndMove(p1.ID, p1.Name, mockDice)
+
+	// Conferir eventos emitidos
+	events := room.Events
+	if len(events) < 4 {
+		t.Fatalf("esperado pelo menos 4 eventos, obtido %d", len(events))
+	}
+
+	// Ordem estrita: roll -> move -> card -> salary
+	expectedTypes := []string{"roll", "move", "card", "salary"}
+	for i, exp := range expectedTypes {
+		if events[i].Type != exp {
+			t.Errorf("evento[%d] tipo esperado '%s', obtido '%s'", i, exp, events[i].Type)
+		}
+		if events[i].Seq <= 0 {
+			t.Errorf("evento[%d] seq deve ser > 0, obtido %d", i, events[i].Seq)
+		}
+	}
+
+	// Verificar campos do evento 'card'
+	cardEvt := events[2]
+	if cardEvt.PlayerID != p1.ID {
+		t.Errorf("card player_id esperado %s, obtido %s", p1.ID, cardEvt.PlayerID)
+	}
+	if cardEvt.Deck != "chance" {
+		t.Errorf("card deck esperado 'chance', obtido '%s'", cardEvt.Deck)
+	}
+	if cardEvt.Title != "Expresso Urbano" {
+		t.Errorf("card title incorreto: %s", cardEvt.Title)
+	}
+	if cardEvt.Text != "Avance até a saída." {
+		t.Errorf("card text incorreto: %s", cardEvt.Text)
+	}
+	if cardEvt.Amount != 200 {
+		t.Errorf("card amount esperado 200, obtido %d", cardEvt.Amount)
+	}
+	if cardEvt.Effect != "MOVE_POS" {
+		t.Errorf("card effect esperado 'MOVE_POS', obtido '%s'", cardEvt.Effect)
+	}
+
+	// Verificar campos do evento 'salary'
+	salaryEvt := events[3]
+	if salaryEvt.PlayerID != p1.ID {
+		t.Errorf("salary player_id esperado %s, obtido %s", p1.ID, salaryEvt.PlayerID)
+	}
+	if salaryEvt.Amount != 400 { // 200 do dado + 200 da carta
+		t.Errorf("salary amount esperado 400, obtido %d", salaryEvt.Amount)
+	}
+
+	// 2. Testar turno do BOT com o mesmo pipeline
+	botRoom, _ := hub.CreateRoom("BOT-EVENT-TEST", "Curitiba")
+	botRoom.JoinPlayer("Humano", "#3b82f6", "car")
+	_ = botRoom.StartGame()
+
+	var bot *Player
+	for _, p := range botRoom.Game.Players {
+		if p.IsBot {
+			bot = p
+			break
+		}
+	}
+	if bot == nil {
+		t.Fatalf("bot não encontrado")
+	}
+
+	// Passar para a vez do bot
+	botRoom.Game.CurrentTurnPlayerID = bot.ID
+	botRoom.Events = nil // limpa eventos anteriores
+	botRoom.EventSeq = 0
+
+	err = botRoom.ExecuteBotTurn(bot)
+	if err != nil {
+		t.Fatalf("falha ao executar turno do bot: %v", err)
+	}
+
+	if len(botRoom.Events) < 3 {
+		t.Fatalf("bot deveria ter gerado ao menos 3 eventos (roll, move, pass/buy), gerou %d", len(botRoom.Events))
+	}
+	if botRoom.Events[0].Type != "roll" {
+		t.Errorf("primeiro evento do bot deve ser 'roll', foi %s", botRoom.Events[0].Type)
+	}
+	if botRoom.Events[1].Type != "move" {
+		t.Errorf("segundo evento do bot deve ser 'move', foi %s", botRoom.Events[1].Type)
+	}
+}

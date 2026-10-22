@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"strings"
 	"sync"
 	"time"
 )
@@ -36,6 +37,7 @@ type RoomConfig struct {
 	Bots            BotConfig  `json:"bots"`
 	StartingBalance int        `json:"starting_balance"`
 	TurnSeconds     int        `json:"turn_seconds"`
+	SalaryAmount    int        `json:"salary_amount"` // Salário ao passar ou parar no início (padrão 200)
 	Rules           RuleConfig `json:"rules"`
 }
 
@@ -46,6 +48,7 @@ func DefaultRoomConfig() RoomConfig {
 		Bots:            BotConfig{Count: 0, Difficulty: "normal"},
 		StartingBalance: 1500,
 		TurnSeconds:     30,
+		SalaryAmount:    200,
 		Rules: RuleConfig{
 			JailBail:          true,
 			JailTripleDoubles: true,
@@ -72,10 +75,13 @@ type TradeProposal struct {
 type GameEvent struct {
 	Seq        int       `json:"seq"`
 	ID         string    `json:"id"`
-	Type       string    `json:"type"` // "roll", "buy", "rent", "card", "pass", "jail", "bankrupt", "build", "trade"
+	Type       string    `json:"type"` // "roll", "move", "card", "salary", "buy", "rent", "pass", "jail", "bankrupt", "build", "trade"
 	Turn       int       `json:"turn,omitempty"`
 	PlayerID   string    `json:"player_id"`
 	PlayerName string    `json:"player_name,omitempty"`
+	Deck       string    `json:"deck,omitempty"` // "chance" | "chest"
+	Title      string    `json:"title,omitempty"`
+	Effect     string    `json:"effect,omitempty"`
 	Dice       *[2]int   `json:"dice,omitempty"`
 	Die1       int       `json:"die1,omitempty"`
 	Die2       int       `json:"die2,omitempty"`
@@ -146,6 +152,117 @@ func (r *Room) RecordEvent(evt GameEvent) {
 	}
 }
 
+// RecordTurnRollAndMove records the standard sequence of events for a player's dice roll:
+// roll -> move -> card -> salary (and rent if applicable).
+func (r *Room) RecordTurnRollAndMove(playerID, pName string, dice *DiceResult) {
+	if dice == nil {
+		return
+	}
+
+	// 1. roll
+	diceArr := [2]int{dice.Die1, dice.Die2}
+	r.RecordEvent(GameEvent{
+		Type:       "roll",
+		PlayerID:   playerID,
+		PlayerName: pName,
+		Dice:       &diceArr,
+		Die1:       dice.Die1,
+		Die2:       dice.Die2,
+		From:       dice.OldPosition,
+		To:         dice.NewPosition,
+		Text:       fmt.Sprintf("%s tirou %d (%d+%d)", pName, dice.Total, dice.Die1, dice.Die2),
+	})
+
+	// 2. move
+	tileName := ""
+	if r.Board != nil && dice.NewPosition >= 0 && dice.NewPosition < len(r.Board.Tiles) {
+		tileName = r.Board.Tiles[dice.NewPosition].Name
+	}
+	moveText := fmt.Sprintf("%s avançou para a casa %d", pName, dice.NewPosition)
+	if tileName != "" {
+		moveText = fmt.Sprintf("%s avançou para %s (casa %d)", pName, tileName, dice.NewPosition)
+	}
+	r.RecordEvent(GameEvent{
+		Type:       "move",
+		PlayerID:   playerID,
+		PlayerName: pName,
+		From:       dice.OldPosition,
+		To:         dice.NewPosition,
+		Tile:       dice.NewPosition,
+		Text:       moveText,
+	})
+
+	// 3. card (se tirou carta Sorte ou Revés)
+	if dice.CardDrawn != nil {
+		card := dice.CardDrawn.Card
+		deck := strings.ToLower(string(card.Deck))
+		if deck == "" {
+			deck = strings.ToLower(string(card.Type))
+		}
+		if deck != "chance" && deck != "chest" {
+			deck = "chance"
+		}
+		effect := string(card.Effect)
+		if effect == "" {
+			effect = string(card.Action)
+		}
+		cardAmount := card.Amount
+		if cardAmount == 0 {
+			cardAmount = card.Value
+		}
+		if cardAmount == 0 && dice.CardDrawn.MoneyDelta != 0 {
+			cardAmount = dice.CardDrawn.MoneyDelta
+		}
+		cardText := card.Text
+		if cardText == "" {
+			cardText = fmt.Sprintf("%s tirou carta: %s", pName, card.Title)
+		}
+
+		r.RecordEvent(GameEvent{
+			Type:       "card",
+			PlayerID:   playerID,
+			PlayerName: pName,
+			Deck:       deck,
+			Title:      card.Title,
+			Text:       cardText,
+			Amount:     cardAmount,
+			Value:      cardAmount,
+			Effect:     effect,
+			Tile:       dice.NewPosition,
+		})
+	}
+
+	// 4. salary (se houve salário pelo dado ou pela carta)
+	totalSalary := dice.SalaryPaid
+	if dice.CardDrawn != nil && dice.CardDrawn.SalaryPaid > 0 {
+		totalSalary += dice.CardDrawn.SalaryPaid
+	}
+	if totalSalary > 0 {
+		r.RecordEvent(GameEvent{
+			Type:       "salary",
+			PlayerID:   playerID,
+			PlayerName: pName,
+			Amount:     totalSalary,
+			Value:      totalSalary,
+			Text:       fmt.Sprintf("%s recebeu salário de R$ %d ao passar/parar no Início", pName, totalSalary),
+		})
+	}
+
+	// 5. rent (se pagou aluguel)
+	if dice.RentPaid > 0 {
+		r.RecordEvent(GameEvent{
+			Type:       "rent",
+			PlayerID:   playerID,
+			PlayerName: pName,
+			Amount:     dice.RentPaid,
+			Value:      dice.RentPaid,
+			ToPlayerID: dice.RentTo,
+			Tile:       dice.NewPosition,
+			Text:       fmt.Sprintf("%s pagou R$ %d de aluguel", pName, dice.RentPaid),
+		})
+	}
+}
+
 // NewRoom constructs a room with city board generation and game instance.
 func NewRoom(id, city string, opts ...*RoomConfig) (*Room, error) {
 	board, candidates, err := GenerateCityBoard(city, "")
@@ -167,11 +284,18 @@ func NewRoom(id, city string, opts ...*RoomConfig) (*Room, error) {
 		if userCfg.TurnSeconds >= 10 && userCfg.TurnSeconds <= 90 {
 			cfg.TurnSeconds = userCfg.TurnSeconds
 		}
+		if userCfg.SalaryAmount > 0 {
+			cfg.SalaryAmount = userCfg.SalaryAmount
+		}
 		if userCfg.Bots.Count >= 0 {
 			cfg.Bots = userCfg.Bots
 		}
 		cfg.Rules = userCfg.Rules
 	}
+	if cfg.SalaryAmount <= 0 {
+		cfg.SalaryAmount = 200
+	}
+	game.SalaryAmount = cfg.SalaryAmount
 
 	return &Room{
 		ID:           id,
@@ -321,46 +445,12 @@ func (r *Room) executeBotTurnLocked(bot *Player) error {
 		return err
 	}
 
-	diceArr := [2]int{d1, d2}
-	r.RecordEvent(GameEvent{
-		Type:       "roll",
-		PlayerID:   bot.ID,
-		PlayerName: bot.Name,
-		Dice:       &diceArr,
-		From:       diceRes.OldPosition,
-		To:         diceRes.NewPosition,
-		Text:       fmt.Sprintf("%s tirou %d (%d+%d)", bot.Name, d1+d2, d1, d2),
-	})
+	r.RecordTurnRollAndMove(bot.ID, bot.Name, diceRes)
 
-	tile := &r.Board.Tiles[diceRes.NewPosition]
-
-	// Rent event
-	if diceRes.RentPaid > 0 {
-		r.RecordEvent(GameEvent{
-			Type:       "rent",
-			PlayerID:   bot.ID,
-			PlayerName: bot.Name,
-			Amount:     diceRes.RentPaid,
-			ToPlayerID: diceRes.RentTo,
-			Tile:       tile.Index,
-			Text:       fmt.Sprintf("%s pagou $ %d de aluguel", bot.Name, diceRes.RentPaid),
-		})
-	}
-
-	// Card event
-	if diceRes.CardDrawn != nil {
-		r.RecordEvent(GameEvent{
-			Type:       "card",
-			PlayerID:   bot.ID,
-			PlayerName: bot.Name,
-			Amount:     diceRes.CardDrawn.MoneyDelta,
-			Tile:       tile.Index,
-			Text:       fmt.Sprintf("%s tirou carta: %s", bot.Name, diceRes.CardDrawn.Card.Title),
-		})
-	}
+	tile := &r.Board.Tiles[bot.Position]
 
 	// Buy decision
-	if tile.Type == TileProperty || tile.Type == TileStation || tile.Type == TileUtility {
+	if (tile.Type == TileProperty || tile.Type == TileStation || tile.Type == TileUtility) && !bot.InJail {
 		if tile.OwnerID == "" && BotAI.ShouldBuy(r.Game, bot, tile, diff) {
 			if buyErr := r.Game.BuyProperty(bot.ID); buyErr == nil {
 				r.RecordEvent(GameEvent{
@@ -369,7 +459,7 @@ func (r *Room) executeBotTurnLocked(bot *Player) error {
 					PlayerName: bot.Name,
 					Tile:       tile.Index,
 					Amount:     tile.Price,
-					Text:       fmt.Sprintf("%s comprou %s por $ %d", bot.Name, tile.Name, tile.Price),
+					Text:       fmt.Sprintf("%s comprou %s por R$ %d", bot.Name, tile.Name, tile.Price),
 				})
 			}
 		}

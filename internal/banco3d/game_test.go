@@ -74,7 +74,7 @@ func TestGameGoBonusAndTimeout(t *testing.T) {
 	game.AddPlayer("Bot", "#22c55e", "thimble")
 	game.Start()
 
-	// Posicionar jogador na casa 38 e andar 2 casas (cai exatamente no GO)
+	// 1. Posicionar jogador na casa 38 e andar 2 casas (cai exatamente no GO)
 	p1.Position = 38
 	mBefore := p1.Money
 	res, err := game.RollDice(p1.ID, 1, 1)
@@ -84,17 +84,107 @@ func TestGameGoBonusAndTimeout(t *testing.T) {
 	if res.NewPosition != 0 {
 		t.Errorf("esperado cair no GO (0), recebido %d", res.NewPosition)
 	}
-	// Passar ou cair exatamente no GO concede R$ 400
-	if p1.Money != mBefore+400 {
-		t.Errorf("esperado bônus de cair no GO de 400, dinheiro: %d (era %d)", p1.Money, mBefore)
+	// Parar no GO (0) concede salário padrão de R$ 200
+	if p1.Money != mBefore+200 {
+		t.Errorf("esperado salário de cair no GO de 200, dinheiro: %d (era %d)", p1.Money, mBefore)
+	}
+	if res.SalaryPaid != 200 {
+		t.Errorf("esperado res.SalaryPaid=200, recebido %d", res.SalaryPaid)
 	}
 
-	// Testar auto-pass
+	// 2. Testar auto-pass
 	if err := game.AutoPassTurn(); err != nil {
 		t.Fatalf("falha no auto-pass: %v", err)
 	}
 	if game.CurrentTurnPlayerID == p1.ID {
 		t.Errorf("auto-pass deveria ter trocado de jogador")
+	}
+}
+
+func TestSalaryPassingGoAndConfigurableAmount(t *testing.T) {
+	board := NewStandardBoard("Curitiba", nil)
+	game := NewGame("room-custom-salary", board)
+	game.SalaryAmount = 350
+	p1, _ := game.AddPlayer("Lucas", "#3b82f6", "car")
+	game.AddPlayer("Ana", "#ef4444", "hat")
+	_ = game.Start()
+
+	// Passar pelo GO (de 38 para 2 andando 4)
+	p1.Position = 38
+	mBefore := p1.Money
+	res, err := game.RollDice(p1.ID, 2, 2)
+	if err != nil {
+		t.Fatalf("erro ao rolar: %v", err)
+	}
+	if res.NewPosition != 2 {
+		t.Fatalf("esperado nova posicao 2, recebido %d", res.NewPosition)
+	}
+	if p1.Money != mBefore+350 {
+		t.Errorf("esperado salário customizado de 350, saldo: %d (era %d)", p1.Money, mBefore)
+	}
+	if res.SalaryPaid != 350 {
+		t.Errorf("esperado res.SalaryPaid=350, recebido %d", res.SalaryPaid)
+	}
+}
+
+func TestCardSalaryAndJailExclusion(t *testing.T) {
+	board := NewStandardBoard("Curitiba", nil)
+	game := NewGame("room-card-salary", board)
+	p1, _ := game.AddPlayer("Lucas", "#3b82f6", "car")
+	_, _ = game.AddPlayer("Ana", "#ef4444", "hat")
+	_ = game.Start()
+
+	// 1. Carta que avança até a saída (TargetPos: 0) deve conceder R$ 200 de salário
+	p1.Position = 25
+	mBefore := p1.Money
+	cardAdvanceToGo := Card{
+		ID:        "adv-go",
+		Deck:      CardTypeChance,
+		Type:      CardTypeChance,
+		Title:     "Avançar até o Início",
+		Text:      "Avance até a saída e receba seu salário.",
+		Effect:    CardActionMovePos,
+		Action:    CardActionMovePos,
+		TargetPos: 0,
+	}
+	resCard, err := game.ResolveCard(p1.ID, cardAdvanceToGo)
+	if err != nil {
+		t.Fatalf("erro ao resolver carta: %v", err)
+	}
+	if resCard.NewPosition != 0 {
+		t.Errorf("esperado posição 0, recebido %d", resCard.NewPosition)
+	}
+	if resCard.SalaryPaid != 200 {
+		t.Errorf("esperado SalaryPaid=200 na carta, recebido %d", resCard.SalaryPaid)
+	}
+	if p1.Money != mBefore+200 {
+		t.Errorf("jogador deveria receber R$ 200 de salário, saldo: %d (era %d)", p1.Money, mBefore)
+	}
+
+	// 2. Carta de Ir para a Prisão NÃO PODE pagar salário, mesmo estando em posição avançada
+	p1.Position = 38
+	mBeforeJail := p1.Money
+	cardJail := Card{
+		ID:     "jail-card",
+		Deck:   CardTypeChance,
+		Type:   CardTypeChance,
+		Title:  "Vá para a Prisão",
+		Text:   "Vá direto para a prisão, sem passar pelo início e sem receber salário.",
+		Effect: CardActionGoToJail,
+		Action: CardActionGoToJail,
+	}
+	resJail, err := game.ResolveCard(p1.ID, cardJail)
+	if err != nil {
+		t.Fatalf("erro ao resolver carta de prisão: %v", err)
+	}
+	if resJail.NewPosition != 10 {
+		t.Errorf("esperado posição 10 (prisão), recebido %d", resJail.NewPosition)
+	}
+	if resJail.SalaryPaid != 0 {
+		t.Errorf("carta de ir para a prisão NÃO pode pagar salário, pagou: %d", resJail.SalaryPaid)
+	}
+	if p1.Money != mBeforeJail {
+		t.Errorf("saldo não deveria ter mudado ao ir para a prisão, saldo: %d (era %d)", p1.Money, mBeforeJail)
 	}
 }
 

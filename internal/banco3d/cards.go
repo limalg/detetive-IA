@@ -50,6 +50,7 @@ type CardResult struct {
 	PlayerID    string `json:"player_id"`
 	MoneyDelta  int    `json:"money_delta"`
 	NewPosition int    `json:"new_position"`
+	SalaryPaid  int    `json:"salary_paid,omitempty"`
 	WentToJail  bool   `json:"went_to_jail"`
 	HasFreeCard bool   `json:"has_free_card"`
 }
@@ -232,17 +233,24 @@ func (g *Game) ResolveCard(playerID string, card Card) (*CardResult, error) {
 		newPos := card.TargetPos
 		p.Position = newPos
 		result.NewPosition = newPos
-		if newPos == 0 {
-			p.Money += 400
-			result.MoneyDelta += 400
-		} else if newPos < oldPos {
-			p.Money += 200
-			result.MoneyDelta += 200
+		salary := g.GetSalaryAmount()
+		if newPos == 0 || newPos < oldPos {
+			p.Money += salary
+			result.SalaryPaid += salary
+			result.MoneyDelta += salary
 		}
 		g.resolveTileLanding(p)
 	case CardActionMoveRelative:
-		p.Position = (p.Position + amount + len(g.Board.Tiles)) % len(g.Board.Tiles)
-		result.NewPosition = p.Position
+		oldPos := p.Position
+		newPos := (p.Position + amount + len(g.Board.Tiles)) % len(g.Board.Tiles)
+		p.Position = newPos
+		result.NewPosition = newPos
+		if amount > 0 && (newPos == 0 || newPos < oldPos) {
+			salary := g.GetSalaryAmount()
+			p.Money += salary
+			result.SalaryPaid += salary
+			result.MoneyDelta += salary
+		}
 		g.resolveTileLanding(p)
 	case CardActionGoToJail:
 		p.Position = 10

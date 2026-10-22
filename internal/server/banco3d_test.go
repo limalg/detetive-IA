@@ -655,11 +655,14 @@ func TestBanco3DPlacesAndEventsAPI(t *testing.T) {
 		} `json:"events"`
 	}
 	_ = json.Unmarshal(rrRoll.Body.Bytes(), &stateAfterRoll)
-	if len(stateAfterRoll.Events) == 0 {
-		t.Fatalf("esperava eventos registrados após rolagem")
+	if len(stateAfterRoll.Events) < 2 {
+		t.Fatalf("esperava ao menos 2 eventos registrados após rolagem (roll, move), obteve %d", len(stateAfterRoll.Events))
 	}
 	if stateAfterRoll.Events[0].Type != "roll" {
 		t.Errorf("primeiro evento deveria ser roll, obteve %s", stateAfterRoll.Events[0].Type)
+	}
+	if stateAfterRoll.Events[1].Type != "move" {
+		t.Errorf("segundo evento deveria ser move, obteve %s", stateAfterRoll.Events[1].Type)
 	}
 	// Tile 2 (1+1=2) é comprável, portanto pending_decision deve ser 'buy'
 	if stateAfterRoll.PendingDecision != "buy" {

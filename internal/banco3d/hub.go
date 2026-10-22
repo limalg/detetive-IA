@@ -204,12 +204,21 @@ func (h *RoomHub) GetOrCreateRoom(roomID, city string, opts ...*RoomConfig) (*Ro
 	return room, nil
 }
 
-// GetRoom retrieves a room by ID.
+// GetRoom retrieves a room by ID, attempting a disk reload if missing in memory.
 func (h *RoomHub) GetRoom(roomID string) (*Room, bool) {
 	h.mu.RLock()
-	defer h.mu.RUnlock()
-
 	r, ok := h.Rooms[roomID]
+	h.mu.RUnlock()
+	if ok {
+		return r, true
+	}
+
+	// Tenta recarregar do disco mesmo sem restart do servidor
+	_ = h.LoadFromDisk()
+
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	r, ok = h.Rooms[roomID]
 	return r, ok
 }
 
