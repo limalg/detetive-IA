@@ -37,9 +37,10 @@
     </div>
   </div>
 
-  <div class="glass city-chip" id="cityChip" role="status" aria-live="polite">
+  <div class="glass city-chip" id="cityChip">
     <svg class="ico" aria-hidden="true"><use href="#i-pin"/></svg>
-    <div><b id="cityName">Sua cidade</b><span><i class="dot"></i><em id="statusText">Carregando…</em></span></div>
+    <div><b id="cityName">Sua cidade</b><span><i class="dot"></i><em id="statusText" role="status" aria-live="polite">Carregando…</em></span></div>
+    <button type="button" class="motion-btn" id="btnMotion" aria-pressed="false">Animações: Máximo</button>
   </div>
 
   <div class="toast glass" id="toast" role="status" aria-live="polite" hidden></div>

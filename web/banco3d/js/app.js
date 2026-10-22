@@ -109,7 +109,7 @@
   function dieHtml(id) {
     const P = { 1: [5], 2: [1, 9], 3: [1, 5, 9], 4: [1, 3, 7, 9], 5: [1, 3, 5, 7, 9], 6: [1, 3, 4, 6, 7, 9] };
     const face = (v) => `<b class="f${v}">${P[v].map((p) => `<i style="grid-area:${Math.ceil(p / 3)}/${((p - 1) % 3) + 1}"></i>`).join('')}</b>`;
-    return `<div class="die" id="${id}">${[1, 2, 3, 4, 5, 6].map(face).join('')}</div>`;
+    return `<div class="dw"><div class="die" id="${id}">${[1, 2, 3, 4, 5, 6].map(face).join('')}</div></div>`;
   }
   function centerEl() {
     const c = document.createElement('div');
@@ -139,10 +139,53 @@
     if (!boardBuilt) return;
     state.players.forEach((p, i) => { if (!p.bankrupt) placePawn(p, p.position, i); prevPos.set(p.id, p.position); });
   }
+  // hop tile to tile, squashing on landing (own `translate`/`scale` props, so they compose with the pawn's transform)
+  function hop(p) {
+    const el = pawns.get(p.id);
+    if (!el || !maxMotion()) return;
+    const h = $('board').offsetWidth * .04;
+    el.firstChild.animate([{ translate: '0 0', scale: '1 1' }, { translate: `0 ${-h}px`, scale: '.92 1.1', offset: .45 }, { translate: '0 0', scale: '1.12 .86', offset: .85 }, { translate: '0 0', scale: '1 1' }], { duration: 200, easing: 'ease-out' });
+  }
+  function land(pos) {
+    const t = $('board').children[pos];
+    if (!t || !maxMotion()) return;
+    t.classList.remove('land'); void t.offsetWidth; t.classList.add('land');
+    setTimeout(() => t.classList.remove('land'), 1100);
+  }
   async function walk(p, from, to) {
     const N = state.board.length, i = state.players.findIndex((x) => x.id === p.id);
-    for (let pos = from; pos !== to;) { pos = (pos + 1) % N; placePawn(p, pos, i); await sleep(200); }
+    for (let pos = from; pos !== to;) { pos = (pos + 1) % N; placePawn(p, pos, i); hop(p); camera(pos); await sleep(200); }
+    land(to);
   }
+
+  // ---------- motion toggle (default: max, ignores the OS preference) + camera that follows the turn ----------
+  let motion = 'max';
+  try { if (localStorage.getItem('banco3d:motion') === 'reduced') motion = 'reduced'; } catch { /* storage blocked */ }
+  const maxMotion = () => motion === 'max';
+  function camera(pos) {
+    const st = $('table').style, b = $('board');
+    if (pos == null || !maxMotion() || $('table').classList.contains('flat') || !boardBuilt) {
+      st.setProperty('--tx', '0px'); st.setProperty('--ty', '0px'); st.setProperty('--zm', '1'); return;
+    }
+    const t = b.children[pos], fx = (t.offsetLeft + t.offsetWidth / 2) / b.offsetWidth - .5, fy = (t.offsetTop + t.offsetHeight / 2) / b.offsetHeight - .5;
+    st.setProperty('--tx', `${-fx * b.offsetWidth * .08}px`); st.setProperty('--ty', `${-fy * b.offsetHeight * .08}px`); st.setProperty('--zm', '1.04');
+  }
+  function followTurn() { const c = state && state.players.find((p) => p.id === state.current_turn); camera(c ? c.position : null); }
+  function applyMotion() {
+    document.documentElement.dataset.motion = motion;
+    const b = $('btnMotion');
+    b.textContent = 'Animações: ' + (maxMotion() ? 'Máximo' : 'Reduzido'); b.setAttribute('aria-pressed', !maxMotion());
+    if (!maxMotion()) { camera(null); $('table').style.setProperty('--px', '0deg'); $('table').style.setProperty('--py', '0deg'); }
+    else followTurn();
+  }
+  $('btnMotion').onclick = () => { motion = maxMotion() ? 'reduced' : 'max'; try { localStorage.setItem('banco3d:motion', motion); } catch { /* ignore */ } applyMotion(); };
+  // light parallax: the tabletop leans a few degrees toward the pointer
+  $('stage').addEventListener('pointermove', (e) => {
+    if (!maxMotion() || e.pointerType === 'touch') return;
+    const st = $('table').style;
+    st.setProperty('--py', ((e.clientX / innerWidth - .5) * 5).toFixed(2) + 'deg'); st.setProperty('--px', ((.5 - e.clientY / innerHeight) * 3).toFixed(2) + 'deg');
+  });
+  applyMotion();
 
   // ---------- property art (assets/props): manifest or probing, graceful when absent ----------
   const KINDS = ['street', 'avenue', 'square', 'park', 'landmark', 'station', 'utility'];
@@ -222,6 +265,8 @@
   // ---------- render ----------
   function render() {
     renderPlayers();
+    pawns.forEach((el, id) => el.classList.toggle('turn', id === state.current_turn));
+    followTurn();
     $('cityName').textContent = state.city || 'Sua cidade';
     const mine = state.current_turn === meId && state.status === 'in_progress';
     const cur = state.players.find((p) => p.id === state.current_turn);
@@ -251,11 +296,12 @@
   const FACE = { 1: [0, 0], 2: [0, -90], 3: [-90, 0], 4: [90, 0], 5: [0, 90], 6: [0, 180] };
   async function rollDice(dice) {
     ['d1', 'd2'].forEach((id, k) => {
-      const d = $(id), [rx, ry] = FACE[dice[k]] || FACE[1];
-      d.classList.remove('roll'); void d.offsetWidth; d.classList.add('roll');
-      d.style.transform = `rotateX(${rx + 720 + k * 360}deg) rotateY(${ry + 720}deg)`;
+      const d = $(id), [rx, ry] = FACE[dice[k]] || FACE[1], w = d.parentNode, n = (d._n = (d._n || 0) + 1);
+      w.classList.remove('roll'); void w.offsetWidth; w.classList.add('roll');
+      // spins on all 3 axes; always increasing so each roll tumbles forward; Z is a full turn so the face stays upright
+      d.style.transform = `rotateX(${rx + 720 * n + k * 360}deg) rotateY(${ry + 720 * n}deg) rotateZ(${360 * (n + k)}deg)`;
     });
-    await sleep(1000);
+    await sleep(1200);
   }
 
   // apply a fresh room payload: roll dice + walk pawns for every mover, then redraw
@@ -296,7 +342,7 @@
           const dice = diceBy.get(p.id) || guessDice(from, p.position, N);
           if (dice) { if (p.id !== meId) toast(`${p.name} tirou ${dice[0] + dice[1]}`); await rollDice(dice); }
         }
-        if ((p.position - from + N) % N > 14) placePawn(p, p.position, state.players.indexOf(p)); // card/jail teleport
+        if ((p.position - from + N) % N > 14) { placePawn(p, p.position, state.players.indexOf(p)); camera(p.position); land(p.position); } // card/jail teleport
         else await walk(p, from, p.position);
       } else if (!pawns.has(p.id)) placePawn(p, p.position, state.players.indexOf(p));
       prevPos.set(p.id, p.position);
@@ -365,10 +411,9 @@
   });
   $('btnBuy').onclick = () => run(async () => { const r = await act('buy'); await commit(r.game ? r : await getRoom(roomId)); toast('Comprado!'); });
   $('btnEnd').onclick = () => passTurn();
-  $('btnMap').onclick = () => { const f = $('table').classList.toggle('flat'); $('btnMap').setAttribute('aria-pressed', f); setTimeout(placeAll, 720); };
+  $('btnMap').onclick = () => { const f = $('table').classList.toggle('flat'); $('btnMap').setAttribute('aria-pressed', f); if (f) camera(null); else followTurn(); setTimeout(placeAll, 1050); };
 
   let cardTimer = null;
-  const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
   function sheet(title, html) { clearInterval(cardTimer); $('sheetTitle').textContent = title; $('sheetBody').innerHTML = html; $('sheet').hidden = false; }
   $('sheetClose').onclick = () => { clearInterval(cardTimer); $('sheet').hidden = true; };
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') $('sheet').hidden = true; });
@@ -383,7 +428,7 @@
     sheet(t.name, `<div class="pc"><div class="pc-img" style="--gc:${gc}">${layers}<span class="pc-ic">${use(tileIcon(t, i))}</span><span class="pc-cap">${KIND_LABEL[k] || ''}${t.queen ? ' · ★ ícone da cidade' : ''}</span></div>${t.description ? `<p>${esc(t.description)}</p>` : ''}<dl><dt>Preço</dt><dd>${brl(t.price)}</dd>${rent}${t.build_cost ? `<dt>Casa custa</dt><dd>${brl(t.build_cost)}</dd>` : ''}${t.mortgage ? `<dt>Hipoteca</dt><dd>${brl(t.mortgage)}</dd>` : ''}<dt>Dono</dt><dd>${o ? esc(o.name) : 'Livre'}</dd></dl></div>`);
     // every ~6s fade to the next variant of this kind (skipped with reduced motion)
     const imgs = $('sheetBody').querySelectorAll('.pc-img img');
-    if (imgs.length === 2 && !reduceMotion.matches) {
+    if (imgs.length === 2 && maxMotion()) {
       let cur = idx, front = 0;
       cardTimer = setInterval(() => {
         cur = (cur + 1) % list.length;
@@ -486,7 +531,10 @@
   const cfgPayload = () => ({ max_players: cfg.players, bots: { count: cfg.bots, difficulty: cfg.difficulty }, starting_balance: cfg.balance, turn_seconds: cfg.turn, rules: { jail_bail: cfg.bail, jail_triple_doubles: cfg.triple, get_out_free_card: cfg.freecard } });
 
   // ---------- lobby / voting / room flow ----------
-  const setView = (v) => { $('start').dataset.view = v; $('start').hidden = v === 'game'; };
+  const setView = (v) => {
+    $('start').dataset.view = v; $('start').hidden = v === 'game';
+    if (v === 'game') { const t = $('table'); t.classList.remove('enter'); void t.offsetWidth; t.classList.add('enter'); } // flat -> tilt entrance
+  };
   const err = (m) => ($('startErr').textContent = m || '');
   const newCode = () => Array.from({ length: 5 }, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.floor(Math.random() * 32)]).join('');
   const parseCode = (v) => { v = v.trim(); try { return new URL(v).searchParams.get('sala') || v; } catch { return v.toUpperCase(); } };
