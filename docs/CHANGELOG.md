@@ -2,6 +2,23 @@
 
 Todas as alterações notáveis do módulo Banco Imobiliário são documentadas neste arquivo.
 
+## [banco-v0.5.0] - 2026-10-22
+### Added
+- Baralhos de Cartas Sorte e Revés temáticas por cidade (`internal/banco3d/cards.go`):
+  - Textos e contextos autênticos para Curitiba, São Paulo, Rio de Janeiro e catálogo genérico.
+  - Efeitos clássicos: recompensa/multa monetária, avanço de posição, ida para a prisão, carta Saída Livre da Prisão, custos de reformas por casa/hotel e divisão de dividendos entre jogadores.
+  - Sorteio e resolução automática em tempo de execução ao cair nas casas Sorte/Revés no `RollDice`.
+- Negociação avançada em lote (`TradeExchange`):
+  - Troca atômica de múltiplas propriedades e compensação financeira entre jogadores com validação de propriedades construídas e saldo.
+  - Compatibilidade com chamadas simples e em lote no endpoint `POST /api/banco3d/room/trade`.
+- Suporte a configurações personalizadas de partida (`RoomConfig`):
+  - Suporte a `config` em `POST /api/banco3d/room/create` (limite de 2 a 6 jogadores, saldo inicial customizado, tempo de turno de 15s a 90s, bots e regras de prisão).
+  - Botões do Hub de Jogos direcionando para `/banco/` (Jogar) e `/banco/?config=1` (Personalizar).
+
+### Removed
+- Remoção completa da interface 2D antiga do Banco Imobiliário (`templates/index.html`, `static/js/app.js`, `static/css/style.css`).
+- Remoção das rotas legadas `/api/banco/*` e do pacote antigo `internal/banco/`.
+
 ## [banco-v0.4.0] - 2026-10-22
 ### Added
 - Integração Fullstack Banco Imobiliário 3D (`web/banco3d` + `internal/banco3d`):

@@ -202,3 +202,84 @@ func TestBanco3DEndpoints(t *testing.T) {
 		t.Fatalf("expected 200 trading, got %d: %s", rrTrade.Code, rrTrade.Body.String())
 	}
 }
+
+func TestBanco3DCustomConfigAndFullTrade(t *testing.T) {
+	router := server.NewRouter(server.Config{})
+
+	// 1. Criar sala com configuração personalizada (R$ 2.500 de saldo, 2 bots)
+	createBody, _ := json.Marshal(map[string]interface{}{
+		"room_id": "sala-custom-sp",
+		"city":    "São Paulo",
+		"config": map[string]interface{}{
+			"max_players":      4,
+			"starting_balance": 2500,
+			"turn_seconds":     45,
+			"bots": map[string]interface{}{
+				"count":      2,
+				"difficulty": "hard",
+			},
+		},
+	})
+	reqCreate := httptest.NewRequest("POST", "/api/banco3d/room/create", bytes.NewReader(createBody))
+	rrCreate := httptest.NewRecorder()
+	router.ServeHTTP(rrCreate, reqCreate)
+	if rrCreate.Code != http.StatusOK {
+		t.Fatalf("falha ao criar sala customizada: %d", rrCreate.Code)
+	}
+
+	// 2. Entrar jogador 1 e jogador 2
+	join1, _ := json.Marshal(map[string]interface{}{
+		"room_id": "sala-custom-sp",
+		"name":    "Roberto",
+		"color":   "#2563eb",
+	})
+	rr1 := httptest.NewRecorder()
+	router.ServeHTTP(rr1, httptest.NewRequest("POST", "/api/banco3d/room/join", bytes.NewReader(join1)))
+	if rr1.Code != http.StatusOK {
+		t.Fatalf("falha ao entrar p1: %d", rr1.Code)
+	}
+	var p1Res struct {
+		Player struct {
+			ID    string `json:"id"`
+			Money int    `json:"money"`
+		} `json:"player"`
+	}
+	_ = json.Unmarshal(rr1.Body.Bytes(), &p1Res)
+	if p1Res.Player.Money != 2500 {
+		t.Errorf("jogador deveria iniciar com saldo customizado de R$ 2500, recebeu %d", p1Res.Player.Money)
+	}
+
+	join2, _ := json.Marshal(map[string]interface{}{
+		"room_id": "sala-custom-sp",
+		"name":    "Mariana",
+		"color":   "#dc2626",
+	})
+	rr2 := httptest.NewRecorder()
+	router.ServeHTTP(rr2, httptest.NewRequest("POST", "/api/banco3d/room/join", bytes.NewReader(join2)))
+	var p2Res struct {
+		Player struct {
+			ID    string `json:"id"`
+			Money int    `json:"money"`
+		} `json:"player"`
+	}
+	_ = json.Unmarshal(rr2.Body.Bytes(), &p2Res)
+
+	// 3. Testar troca completa (TradeExchange) entre p1 e p2
+	p1ID := p1Res.Player.ID
+	p2ID := p2Res.Player.ID
+
+	tradeExchangeBody, _ := json.Marshal(map[string]interface{}{
+		"room_id":         "sala-custom-sp",
+		"sender_id":       p1ID,
+		"receiver_id":     p2ID,
+		"offered_tiles":   []int{},
+		"offered_cash":    200,
+		"requested_tiles": []int{},
+		"requested_cash":  50,
+	})
+	rrTrade := httptest.NewRecorder()
+	router.ServeHTTP(rrTrade, httptest.NewRequest("POST", "/api/banco3d/room/trade", bytes.NewReader(tradeExchangeBody)))
+	if rrTrade.Code != http.StatusOK {
+		t.Fatalf("falha no trade exchange completo: %d - %s", rrTrade.Code, rrTrade.Body.String())
+	}
+}

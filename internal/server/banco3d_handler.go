@@ -20,6 +20,7 @@ func (h *Handler) formatRoomState(room *banco3d.Room, dice *banco3d.DiceResult) 
 	res := map[string]interface{}{
 		"room_id":    room.ID,
 		"city":       room.City,
+		"config":     room.Config,
 		"board":      room.Board,
 		"candidates": room.Candidates,
 		"game":       room.Game,
@@ -72,8 +73,9 @@ func (h *Handler) HandleBanco3DRoomCreate(w http.ResponseWriter, r *http.Request
 	}
 
 	var req struct {
-		RoomID string `json:"room_id"`
-		City   string `json:"city"`
+		RoomID string              `json:"room_id"`
+		City   string              `json:"city"`
+		Config *banco3d.RoomConfig `json:"config,omitempty"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&req)
 
@@ -85,7 +87,7 @@ func (h *Handler) HandleBanco3DRoomCreate(w http.ResponseWriter, r *http.Request
 	}
 
 	hub := h.getBanco3DHub()
-	room, err := hub.GetOrCreateRoom(req.RoomID, req.City)
+	room, err := hub.GetOrCreateRoom(req.RoomID, req.City, req.Config)
 	if err != nil {
 		h.error(w, http.StatusInternalServerError, err.Error())
 		return
@@ -392,11 +394,17 @@ func (h *Handler) HandleBanco3DRoomTrade(w http.ResponseWriter, r *http.Request)
 	}
 
 	var req struct {
-		RoomID     string `json:"room_id"`
-		SellerID   string `json:"seller_id"`
-		BuyerID    string `json:"buyer_id"`
-		TileIndex  int    `json:"tile_index"`
-		CashAmount int    `json:"cash_amount"`
+		RoomID         string `json:"room_id"`
+		SellerID       string `json:"seller_id"`
+		BuyerID        string `json:"buyer_id"`
+		TileIndex      int    `json:"tile_index"`
+		CashAmount     int    `json:"cash_amount"`
+		SenderID       string `json:"sender_id"`
+		ReceiverID     string `json:"receiver_id"`
+		OfferedTiles   []int  `json:"offered_tiles"`
+		OfferedCash    int    `json:"offered_cash"`
+		RequestedTiles []int  `json:"requested_tiles"`
+		RequestedCash  int    `json:"requested_cash"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		h.error(w, http.StatusBadRequest, "invalid payload")
@@ -410,8 +418,22 @@ func (h *Handler) HandleBanco3DRoomTrade(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if err := room.Game.TradeProperties(req.SellerID, req.BuyerID, req.TileIndex, req.CashAmount); err != nil {
-		h.error(w, http.StatusBadRequest, err.Error())
+	var tradeErr error
+	if len(req.OfferedTiles) > 0 || len(req.RequestedTiles) > 0 || req.SenderID != "" {
+		tradeErr = room.Game.TradeExchange(banco3d.TradeExchangeRequest{
+			SenderID:       req.SenderID,
+			ReceiverID:     req.ReceiverID,
+			OfferedTiles:   req.OfferedTiles,
+			OfferedCash:    req.OfferedCash,
+			RequestedTiles: req.RequestedTiles,
+			RequestedCash:  req.RequestedCash,
+		})
+	} else {
+		tradeErr = room.Game.TradeProperties(req.SellerID, req.BuyerID, req.TileIndex, req.CashAmount)
+	}
+
+	if tradeErr != nil {
+		h.error(w, http.StatusBadRequest, tradeErr.Error())
 		return
 	}
 

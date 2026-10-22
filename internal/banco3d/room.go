@@ -14,11 +14,51 @@ type WSMessage struct {
 	Timestamp int64       `json:"timestamp"`
 }
 
+// BotConfig specifies AI bot count and strategic profile.
+type BotConfig struct {
+	Count      int    `json:"count"`
+	Difficulty string `json:"difficulty"`
+}
+
+// RuleConfig defines rule modifications for custom matches.
+type RuleConfig struct {
+	JailBail          bool `json:"jail_bail"`
+	JailTripleDoubles bool `json:"jail_triple_doubles"`
+	GetOutFreeCard    bool `json:"get_out_free_card"`
+	Auction           bool `json:"auction"`
+}
+
+// RoomConfig encapsulates match customization parameters.
+type RoomConfig struct {
+	MaxPlayers      int        `json:"max_players"`
+	Bots            BotConfig  `json:"bots"`
+	StartingBalance int        `json:"starting_balance"`
+	TurnSeconds     int        `json:"turn_seconds"`
+	Rules           RuleConfig `json:"rules"`
+}
+
+// DefaultRoomConfig returns standard canonical match configuration.
+func DefaultRoomConfig() RoomConfig {
+	return RoomConfig{
+		MaxPlayers:      4,
+		Bots:            BotConfig{Count: 0, Difficulty: "normal"},
+		StartingBalance: 1500,
+		TurnSeconds:     30,
+		Rules: RuleConfig{
+			JailBail:          true,
+			JailTripleDoubles: true,
+			GetOutFreeCard:    true,
+			Auction:           false,
+		},
+	}
+}
+
 // Room represents a multiplayer room for 40-tile Banco Imobiliário.
 type Room struct {
 	mu           sync.Mutex
 	ID           string         `json:"id"`
 	City         string         `json:"city"`
+	Config       RoomConfig     `json:"config"`
 	Board        *Board         `json:"board"`
 	Candidates   []string       `json:"candidates"`
 	Voting       *VotingSession `json:"voting,omitempty"`
@@ -28,7 +68,7 @@ type Room struct {
 }
 
 // NewRoom constructs a room with city board generation and game instance.
-func NewRoom(id, city string) (*Room, error) {
+func NewRoom(id, city string, opts ...*RoomConfig) (*Room, error) {
 	board, candidates, err := GenerateCityBoard(city, "")
 	if err != nil {
 		return nil, err
@@ -36,13 +76,32 @@ func NewRoom(id, city string) (*Room, error) {
 
 	game := NewGame(id, board)
 
+	cfg := DefaultRoomConfig()
+	if len(opts) > 0 && opts[0] != nil {
+		userCfg := opts[0]
+		if userCfg.MaxPlayers >= 2 && userCfg.MaxPlayers <= 6 {
+			cfg.MaxPlayers = userCfg.MaxPlayers
+		}
+		if userCfg.StartingBalance >= 500 && userCfg.StartingBalance <= 10000 {
+			cfg.StartingBalance = userCfg.StartingBalance
+		}
+		if userCfg.TurnSeconds >= 10 && userCfg.TurnSeconds <= 90 {
+			cfg.TurnSeconds = userCfg.TurnSeconds
+		}
+		if userCfg.Bots.Count >= 0 {
+			cfg.Bots = userCfg.Bots
+		}
+		cfg.Rules = userCfg.Rules
+	}
+
 	return &Room{
 		ID:           id,
 		City:         city,
+		Config:       cfg,
 		Board:        board,
 		Candidates:   candidates,
 		Game:         game,
-		TurnTimeout:  30 * time.Second,
+		TurnTimeout:  time.Duration(cfg.TurnSeconds) * time.Second,
 		LastActivity: time.Now(),
 	}, nil
 }
@@ -52,9 +111,16 @@ func (r *Room) JoinPlayer(name, color, piece string) (*Player, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	if len(r.Game.Players) >= r.Config.MaxPlayers {
+		return nil, errors.New("sala cheia")
+	}
+
 	p, err := r.Game.AddPlayer(name, color, piece)
 	if err != nil {
 		return nil, err
+	}
+	if r.Config.StartingBalance > 0 {
+		p.Money = r.Config.StartingBalance
 	}
 	r.LastActivity = time.Now()
 	return p, nil
@@ -116,23 +182,33 @@ func (r *Room) ConcludeVoting() (string, error) {
 	return winner, nil
 }
 
-// StartGame starts the game match, auto-filling bots if only 1 player joined.
+// StartGame starts the game match, auto-filling bots if configured or if only 1 player joined.
 func (r *Room) StartGame() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if len(r.Game.Players) == 1 {
-		bots := []struct {
-			name  string
-			color string
-			piece string
-		}{
-			{"Gabriel", "#22c55e", "thimble"},
-			{"Larissa", "#facc15", "shoe"},
-			{"Pedro", "#ef4444", "hat"},
-		}
-		for _, b := range bots {
-			_, _ = r.Game.AddPlayer(b.name, b.color, b.piece)
+	botNames := []struct {
+		name  string
+		color string
+		piece string
+	}{
+		{"Gabriel", "#22c55e", "thimble"},
+		{"Larissa", "#facc15", "shoe"},
+		{"Pedro", "#ef4444", "hat"},
+		{"Sofia", "#a855f7", "car"},
+		{"Marcos", "#f97316", "ship"},
+	}
+
+	neededBots := r.Config.Bots.Count
+	if neededBots <= 0 && len(r.Game.Players) == 1 {
+		neededBots = 3
+	}
+
+	for i := 0; i < neededBots && len(r.Game.Players) < r.Config.MaxPlayers; i++ {
+		b := botNames[i%len(botNames)]
+		bp, err := r.Game.AddPlayer(b.name, b.color, b.piece)
+		if err == nil && r.Config.StartingBalance > 0 {
+			bp.Money = r.Config.StartingBalance
 		}
 	}
 

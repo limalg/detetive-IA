@@ -19,7 +19,7 @@ func NewRoomHub() *RoomHub {
 }
 
 // CreateRoom builds and registers a new room.
-func (h *RoomHub) CreateRoom(roomID, city string) (*Room, error) {
+func (h *RoomHub) CreateRoom(roomID, city string, opts ...*RoomConfig) (*Room, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
@@ -27,7 +27,7 @@ func (h *RoomHub) CreateRoom(roomID, city string) (*Room, error) {
 		return nil, errors.New("sala já existe")
 	}
 
-	room, err := NewRoom(roomID, city)
+	room, err := NewRoom(roomID, city, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -37,7 +37,7 @@ func (h *RoomHub) CreateRoom(roomID, city string) (*Room, error) {
 }
 
 // GetOrCreateRoom returns the room if present or creates a new one.
-func (h *RoomHub) GetOrCreateRoom(roomID, city string) (*Room, error) {
+func (h *RoomHub) GetOrCreateRoom(roomID, city string, opts ...*RoomConfig) (*Room, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
@@ -45,7 +45,7 @@ func (h *RoomHub) GetOrCreateRoom(roomID, city string) (*Room, error) {
 		return room, nil
 	}
 
-	room, err := NewRoom(roomID, city)
+	room, err := NewRoom(roomID, city, opts...)
 	if err != nil {
 		return nil, err
 	}

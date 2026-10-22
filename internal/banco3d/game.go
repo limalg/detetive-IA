@@ -10,52 +10,63 @@ import (
 
 // Player represents a participant in the game.
 type Player struct {
-	ID         string   `json:"id"`
-	Name       string   `json:"name"`
-	Color      string   `json:"color"`
-	Piece      string   `json:"piece"`
-	Money      int      `json:"money"`
-	Position   int      `json:"position"`
-	InJail     bool     `json:"in_jail"`
-	JailTurns  int      `json:"jail_turns"`
-	IsBankrupt bool     `json:"is_bankrupt"`
-	Properties []int    `json:"properties"` // Índices das casas possuídas
+	ID                string `json:"id"`
+	Name              string `json:"name"`
+	Color             string `json:"color"`
+	Piece             string `json:"piece"`
+	Money             int    `json:"money"`
+	Position          int    `json:"position"`
+	InJail            bool   `json:"in_jail"`
+	IsJailed          bool   `json:"is_jailed"`
+	JailTurns         int    `json:"jail_turns"`
+	GetOutOfJailCards int    `json:"get_out_of_jail_cards"`
+	IsBankrupt        bool   `json:"is_bankrupt"`
+	Properties        []int  `json:"properties"` // Índices das casas possuídas
 }
 
 // DiceResult describes the outcome of rolling two dice.
 type DiceResult struct {
-	Die1        int  `json:"die1"`
-	Die2        int  `json:"die2"`
-	Total       int  `json:"total"`
-	IsDouble    bool `json:"is_double"`
-	OldPosition int  `json:"old_position"`
-	NewPosition int  `json:"new_position"`
-	RentPaid    int  `json:"rent_paid,omitempty"`
-	RentTo      string `json:"rent_to,omitempty"`
+	Die1        int         `json:"die1"`
+	Die2        int         `json:"die2"`
+	Total       int         `json:"total"`
+	IsDouble    bool        `json:"is_double"`
+	OldPosition int         `json:"old_position"`
+	NewPosition int         `json:"new_position"`
+	RentPaid    int         `json:"rent_paid,omitempty"`
+	RentTo      string      `json:"rent_to,omitempty"`
+	CardDrawn   *CardResult `json:"card_drawn,omitempty"`
 }
 
 // Game represents the state and rules engine for a 40-tile match.
 type Game struct {
 	mu                  sync.Mutex
-	RoomID              string    `json:"room_id"`
-	Board               *Board    `json:"board"`
-	Players             []*Player `json:"players"`
-	CurrentTurnPlayerID string    `json:"current_turn_player_id"`
-	TurnIndex           int       `json:"turn_index"`
-	DiceRolledThisTurn  bool      `json:"dice_rolled_this_turn"`
-	TurnStartTime       time.Time `json:"turn_start_time"`
-	IsStarted           bool      `json:"is_started"`
-	IsOver              bool      `json:"is_over"`
-	WinnerID            string    `json:"winner_id,omitempty"`
+	RoomID              string       `json:"room_id"`
+	Board               *Board       `json:"board"`
+	Players             []*Player    `json:"players"`
+	CurrentTurnPlayerID string       `json:"current_turn_player_id"`
+	TurnIndex           int          `json:"turn_index"`
+	DiceRolledThisTurn  bool         `json:"dice_rolled_this_turn"`
+	TurnStartTime       time.Time    `json:"turn_start_time"`
+	IsStarted           bool         `json:"is_started"`
+	IsOver              bool         `json:"is_over"`
+	WinnerID            string       `json:"winner_id,omitempty"`
+	Deck                *DeckManager `json:"deck,omitempty"`
+	LastCard            *Card        `json:"last_card,omitempty"`
+	LastCardResult      *CardResult  `json:"last_card_result,omitempty"`
 }
 
 // NewGame initializes a game instance for the given room and board.
 func NewGame(roomID string, board *Board) *Game {
+	var deck *DeckManager
+	if board != nil {
+		deck = NewDeckManager(board.City)
+	}
 	return &Game{
 		RoomID:    roomID,
 		Board:     board,
 		Players:   make([]*Player, 0),
 		TurnIndex: 0,
+		Deck:      deck,
 	}
 }
 
@@ -150,7 +161,7 @@ func (g *Game) RollDice(playerID string, d1, d2 int) (*DiceResult, error) {
 		NewPosition: newPos,
 	}
 
-	// Resolução automática de taxa/aluguel
+	// Resolução automática de taxa/aluguel/cartas
 	tile := &g.Board.Tiles[newPos]
 	switch tile.Type {
 	case TileTax:
@@ -177,9 +188,26 @@ func (g *Game) RollDice(playerID string, d1, d2 int) (*DiceResult, error) {
 				g.declareBankruptcy(p)
 			}
 		}
+	case TileChance:
+		if g.Deck != nil {
+			card := g.Deck.DrawChance()
+			if cardResult, err := g.ResolveCard(p.ID, card); err == nil {
+				res.CardDrawn = cardResult
+				g.LastCardResult = cardResult
+			}
+		}
+	case TileChest:
+		if g.Deck != nil {
+			card := g.Deck.DrawChest()
+			if cardResult, err := g.ResolveCard(p.ID, card); err == nil {
+				res.CardDrawn = cardResult
+				g.LastCardResult = cardResult
+			}
+		}
 	case TileGoToJail:
 		p.Position = 10
 		p.InJail = true
+		p.IsJailed = true
 	}
 
 	return res, nil
@@ -252,40 +280,136 @@ func (g *Game) BuildHouse(playerID string, tileIndex int) error {
 	return nil
 }
 
-// TradeProperties transfers a property between two players for an agreed cash amount.
-func (g *Game) TradeProperties(sellerID, buyerID string, tileIndex, cashAmount int) error {
+// resolveTileLanding resolves tax or rent after a player moves.
+func (g *Game) resolveTileLanding(p *Player) {
+	if p.Position < 0 || p.Position >= len(g.Board.Tiles) {
+		return
+	}
+	tile := &g.Board.Tiles[p.Position]
+	switch tile.Type {
+	case TileTax:
+		tax := tile.TaxAmount
+		if tax == 0 {
+			tax = 100
+		}
+		p.Money -= tax
+		if p.Money < 0 {
+			g.declareBankruptcy(p)
+		}
+	case TileProperty, TileStation, TileUtility:
+		if tile.OwnerID != "" && tile.OwnerID != p.ID {
+			rent := g.calculateRent(tile, 7)
+			p.Money -= rent
+			owner := g.getPlayer(tile.OwnerID)
+			if owner != nil {
+				owner.Money += rent
+			}
+			if p.Money < 0 {
+				g.declareBankruptcy(p)
+			}
+		}
+	case TileGoToJail:
+		p.Position = 10
+		p.InJail = true
+		p.IsJailed = true
+	}
+}
+
+// TradeExchangeRequest specifies properties and cash to swap between two players.
+type TradeExchangeRequest struct {
+	SenderID       string `json:"sender_id"`
+	ReceiverID     string `json:"receiver_id"`
+	OfferedTiles   []int  `json:"offered_tiles"`
+	OfferedCash    int    `json:"offered_cash"`
+	RequestedTiles []int  `json:"requested_tiles"`
+	RequestedCash  int    `json:"requested_cash"`
+}
+
+// TradeExchange executes a multi-property and cash swap atomically.
+func (g *Game) TradeExchange(req TradeExchangeRequest) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	seller := g.getPlayer(sellerID)
-	buyer := g.getPlayer(buyerID)
-	if seller == nil || buyer == nil {
-		return errors.New("jogadores inválidos")
+	sender := g.getPlayer(req.SenderID)
+	receiver := g.getPlayer(req.ReceiverID)
+	if sender == nil || receiver == nil {
+		return errors.New("jogadores inválidos para negociação")
 	}
-	if buyer.Money < cashAmount {
-		return errors.New("comprador com saldo insuficiente")
+	if sender.IsBankrupt || receiver.IsBankrupt {
+		return errors.New("jogador falido não pode negociar")
 	}
-	if tileIndex < 0 || tileIndex >= len(g.Board.Tiles) {
-		return errors.New("propriedade inválida")
+	if sender.Money < req.OfferedCash {
+		return errors.New("remetente com saldo insuficiente para oferta em dinheiro")
 	}
-	tile := &g.Board.Tiles[tileIndex]
-	if tile.OwnerID != sellerID {
-		return errors.New("vendedor não é dono da propriedade")
+	if receiver.Money < req.RequestedCash {
+		return errors.New("destinatário com saldo insuficiente para contrapartida em dinheiro")
 	}
 
-	buyer.Money -= cashAmount
-	seller.Money += cashAmount
-	tile.OwnerID = buyerID
-
-	newSellerProps := make([]int, 0, len(seller.Properties))
-	for _, idx := range seller.Properties {
-		if idx != tileIndex {
-			newSellerProps = append(newSellerProps, idx)
+	for _, idx := range req.OfferedTiles {
+		if idx < 0 || idx >= len(g.Board.Tiles) {
+			return errors.New("propriedade ofertada inválida")
+		}
+		t := &g.Board.Tiles[idx]
+		if t.OwnerID != req.SenderID {
+			return errors.New("remetente não é dono da propriedade ofertada")
+		}
+		if t.Houses > 0 {
+			return errors.New("não é permitido negociar propriedades com casas ou hotel construídos")
 		}
 	}
-	seller.Properties = newSellerProps
-	buyer.Properties = append(buyer.Properties, tileIndex)
+
+	for _, idx := range req.RequestedTiles {
+		if idx < 0 || idx >= len(g.Board.Tiles) {
+			return errors.New("propriedade solicitada inválida")
+		}
+		t := &g.Board.Tiles[idx]
+		if t.OwnerID != req.ReceiverID {
+			return errors.New("destinatário não é dono da propriedade solicitada")
+		}
+		if t.Houses > 0 {
+			return errors.New("não é permitido negociar propriedades com casas ou hotel construídos")
+		}
+	}
+
+	// Execução atômica
+	sender.Money = sender.Money - req.OfferedCash + req.RequestedCash
+	receiver.Money = receiver.Money + req.OfferedCash - req.RequestedCash
+
+	for _, idx := range req.OfferedTiles {
+		g.Board.Tiles[idx].OwnerID = req.ReceiverID
+		sender.Properties = removeInt(sender.Properties, idx)
+		receiver.Properties = append(receiver.Properties, idx)
+	}
+
+	for _, idx := range req.RequestedTiles {
+		g.Board.Tiles[idx].OwnerID = req.SenderID
+		receiver.Properties = removeInt(receiver.Properties, idx)
+		sender.Properties = append(sender.Properties, idx)
+	}
+
 	return nil
+}
+
+func removeInt(slice []int, val int) []int {
+	out := make([]int, 0, len(slice))
+	for _, x := range slice {
+		if x != val {
+			out = append(out, x)
+		}
+	}
+	return out
+}
+
+// TradeProperties transfers a property between two players for an agreed cash amount (wrapper around TradeExchange).
+func (g *Game) TradeProperties(sellerID, buyerID string, tileIndex, cashAmount int) error {
+	return g.TradeExchange(TradeExchangeRequest{
+		SenderID:       sellerID,
+		ReceiverID:     buyerID,
+		OfferedTiles:   []int{tileIndex},
+		OfferedCash:    0,
+		RequestedTiles: nil,
+		RequestedCash:  cashAmount,
+	})
 }
 
 // PassTurn advances the turn to next active player.
