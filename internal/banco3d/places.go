@@ -377,8 +377,17 @@ func offlinePlace(key string) (string, float64, float64, bool) {
 }
 
 // GetLandmarks returns 4 candidates and 28 landmarks (22 properties, 4 stations, 2 utilities) of the chosen city.
+// Optional extras are user-typed custom places: they enter the board first and lead the candidates.
 // City is always the real name of the resolved place; places never come from another municipality.
-func (s *PlacesService) GetLandmarks(cityName string, placeID string) (*CityLandmarksResult, error) {
+func (s *PlacesService) GetLandmarks(cityName string, placeID string, extras ...string) (*CityLandmarksResult, error) {
+	res, err := s.getLandmarks(cityName, placeID)
+	if err != nil {
+		return nil, err
+	}
+	return withExtras(res, extras), nil
+}
+
+func (s *PlacesService) getLandmarks(cityName string, placeID string) (*CityLandmarksResult, error) {
 	cityName = strings.TrimSpace(cityName)
 	placeID = strings.TrimSpace(placeID)
 
@@ -410,6 +419,10 @@ func (s *PlacesService) GetLandmarks(cityName string, placeID string) (*CityLand
 	var real []realPlace
 	if lat != 0 || lon != 0 {
 		real, _ = s.fetchOverpassPlaces(cityName, lat, lon)
+		if countKind(real, "property") < 22 || countTop(real) < 4 {
+			regional, _ := s.fetchRegionalPlaces(cityName, lat, lon)
+			real = append(real, regional...) // city places always rank ahead of regional ones
+		}
 	}
 	res := buildLandmarks(cityName, real)
 	if len(real) >= minRealPlaces { // never cache a degraded (API-failed) answer
@@ -422,6 +435,80 @@ func (s *PlacesService) GetLandmarks(cityName string, placeID string) (*CityLand
 }
 
 const minRealPlaces = 12
+
+func countKind(ps []realPlace, kind string) (n int) {
+	for _, p := range ps {
+		if p.Kind == kind {
+			n++
+		}
+	}
+	return
+}
+
+func countTop(ps []realPlace) (n int) {
+	for _, p := range ps {
+		if p.Top && p.Kind == "property" {
+			n++
+		}
+	}
+	return
+}
+
+// fetchRegionalPlaces is the last resort when the city itself lacks famous places: well-known
+// (wikidata-tagged) attractions within ~80 km, i.e. the surrounding state/region.
+func (s *PlacesService) fetchRegionalPlaces(cityName string, lat, lon float64) ([]realPlace, error) {
+	f := fmt.Sprintf("(around:80000,%.4f,%.4f)", lat, lon)
+	q := `[out:json][timeout:65];(nwr` + f + `["tourism"~"^(attraction|museum)$"]["wikidata"]["name"];nwr` + f + `["historic"]["wikidata"]["name"];nwr` + f + `["leisure"="park"]["wikidata"]["name"];);out tags 300;`
+	els, err := s.overpass(q)
+	if err != nil {
+		return nil, err
+	}
+	var out []realPlace
+	for _, p := range classifyElements(cityName, els) {
+		if p.Kind == "property" {
+			out = append(out, p)
+		}
+	}
+	return out, nil
+}
+
+// withExtras puts user-typed custom places first among the properties and candidates (returns a copy).
+func withExtras(res *CityLandmarksResult, extras []string) *CityLandmarksResult {
+	var custom []string
+	seen := map[string]bool{}
+	for _, e := range extras {
+		e = strings.TrimSpace(e)
+		if k := strings.ToLower(e); len(e) >= 2 && len(e) <= 34 && !seen[k] && len(custom) < 8 {
+			seen[k] = true
+			custom = append(custom, e)
+		}
+	}
+	if len(custom) == 0 {
+		return res
+	}
+	out := &CityLandmarksResult{City: res.City}
+	for _, n := range custom {
+		out.Landmarks = append(out.Landmarks, LandmarkItem{Name: n, Type: "property", ImageKind: ClassifyImageKind(n, TileProperty)})
+	}
+	props := 0
+	for _, l := range res.Landmarks {
+		if l.Type == "property" && (seen[strings.ToLower(l.Name)] || props+len(custom) >= 22) {
+			continue
+		}
+		if l.Type == "property" {
+			props++
+		}
+		out.Landmarks = append(out.Landmarks, l)
+	}
+	out.Candidates = slices.Clone(custom)
+	for _, c := range res.Candidates {
+		if !seen[strings.ToLower(c)] {
+			out.Candidates = append(out.Candidates, c)
+		}
+	}
+	out.Candidates = out.Candidates[:min(4, len(out.Candidates))]
+	return out
+}
 
 // realPlace is a named OSM feature after classification and fame scoring.
 type realPlace struct {

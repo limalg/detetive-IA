@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -282,5 +283,49 @@ func TestPlacesIntegrationOptional(t *testing.T) {
 	res, err := NewPlacesService().GetLandmarks("", "osm_12024671")
 	if err != nil || res.City != "Maringá" {
 		t.Fatalf("%+v %v", res, err)
+	}
+}
+
+func TestLandmarksCityFirstThenRegion(t *testing.T) {
+	svc := mockService(func(r *http.Request) (int, string) {
+		if r.URL.Host == "nominatim.openstreetmap.org" {
+			return 200, `{"localname":"Cidadela","centroid":{"coordinates":[-50,-20]}}`
+		}
+		if strings.Contains(r.URL.Query().Get("data"), "80000") {
+			return 200, `{"elements":[{"tags":{"name":"Cataratas Regionais","tourism":"attraction","wikidata":"Q9"}},{"tags":{"name":"Museu do Estado","tourism":"museum","wikidata":"Q8"}}]}`
+		}
+		var els []string
+		for i := 0; i < 14; i++ {
+			els = append(els, fmt.Sprintf(`{"tags":{"name":"Rua Local %d","highway":"secondary"}}`, i))
+		}
+		els = append(els, `{"tags":{"name":"Praça da Matriz","historic":"yes","wikidata":"Q1"}}`)
+		return 200, `{"elements":[` + strings.Join(els, ",") + `]}`
+	})
+	res, err := svc.GetLandmarks("", "osm_5")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Candidates[0] != "Praça da Matriz" {
+		t.Errorf("city landmark must lead candidates: %v", res.Candidates)
+	}
+	if !slices.Contains(res.Candidates, "Cataratas Regionais") {
+		t.Errorf("regional fame should top up candidates: %v", res.Candidates)
+	}
+	if res.Landmarks[0].Name != "Praça da Matriz" {
+		t.Errorf("city places must precede regional: %v", res.Landmarks[:3])
+	}
+}
+
+func TestWithExtras(t *testing.T) {
+	base := buildLandmarks("Cidadela", nil)
+	res := withExtras(base, []string{" Minha Casa ", "minha casa", "Praça do Avô"})
+	if res.Candidates[0] != "Minha Casa" || res.Candidates[1] != "Praça do Avô" || len(res.Candidates) != 4 {
+		t.Errorf("candidates: %v", res.Candidates)
+	}
+	if len(res.Landmarks) != 28 || res.Landmarks[1].ImageKind != "square" {
+		t.Errorf("want 28 tiles with custom first, got %d %+v", len(res.Landmarks), res.Landmarks[1])
+	}
+	if withExtras(base, []string{" "}) != base {
+		t.Error("no valid extras must return the base result")
 	}
 }

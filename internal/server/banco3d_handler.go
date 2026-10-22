@@ -71,7 +71,7 @@ func (h *Handler) HandleBanco3DPlacesLandmarks(w http.ResponseWriter, r *http.Re
 		city = r.URL.Query().Get("q")
 	}
 
-	res, err := banco3d.GlobalPlacesService.GetLandmarks(city, placeID)
+	res, err := banco3d.GlobalPlacesService.GetLandmarks(city, placeID, r.URL.Query()["extra"]...)
 	if err != nil {
 		h.error(w, http.StatusInternalServerError, err.Error())
 		return
