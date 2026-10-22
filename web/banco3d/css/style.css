@@ -9,7 +9,7 @@
   --ok: #22c55e;
   --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --tilt: 30deg;
-  --s: min(96vw, calc((100dvh - 168px) * 1.15));
+  --s: min(96vw, calc((100dvh - 196px) * 1.15));
   --ease: cubic-bezier(.25, .1, .25, 1);
   --g-brown: #8b5a3c; --g-light_blue: #3fb6e8; --g-pink: #c43bd6; --g-orange: #f08a1c;
   --g-red: #e0303a; --g-yellow: #f2b705; --g-green: #1fb85a; --g-dark_blue: #2f6bff;
@@ -41,7 +41,7 @@ button { cursor: pointer; touch-action: manipulation; }
 .pl .crown { margin-left: auto; color: #fbbf24; font-size: 14px; }
 
 /* table */
-.table-wrap { position: absolute; inset: 0 0 84px 0; display: grid; place-items: center; perspective: 1500px; perspective-origin: 50% 20%; }
+.table-wrap { position: absolute; inset: 0 0 112px 0; display: grid; place-items: center; perspective: 1500px; perspective-origin: 50% 20%; }
 .table { transform-style: preserve-3d; transform: rotateX(var(--tilt)); transition: transform .7s var(--ease); width: var(--s); height: var(--s); }
 .table.flat { transform: rotateX(0); }
 .board { --fs: calc(var(--s) * .0145); position: relative; width: 100%; height: 100%; display: grid; gap: calc(var(--s) * .004); padding: calc(var(--s) * .012); border-radius: calc(var(--s) * .02);
