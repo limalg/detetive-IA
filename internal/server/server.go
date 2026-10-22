@@ -7,6 +7,7 @@ import (
 
 	"detetive-ia/internal/auth"
 	"detetive-ia/internal/banco"
+	"detetive-ia/internal/banco3d"
 	"detetive-ia/internal/game"
 	"detetive-ia/internal/room"
 )
@@ -20,6 +21,7 @@ type Config struct {
 	RoomManager  *room.Manager
 	Weaver       *game.Weaver
 	BancoManager *banco.Manager
+	Banco3DHub   *banco3d.RoomHub
 	StaticFS     http.Handler
 }
 
@@ -46,6 +48,9 @@ func NewRouter(cfg Config) http.Handler {
 	if cfg.BancoManager == nil {
 		cfg.BancoManager = banco.NewManager(cfg.DB)
 	}
+	if cfg.Banco3DHub == nil {
+		cfg.Banco3DHub = banco3d.NewRoomHub()
+	}
 
 	mux := http.NewServeMux()
 	h := NewHandler(cfg)
@@ -56,7 +61,7 @@ func NewRouter(cfg Config) http.Handler {
 	// Hub games catalog
 	mux.HandleFunc("/api/hub/games", h.HandleHubGames)
 
-	// Banco Imobiliário IA endpoints
+	// Banco Imobiliário IA endpoints (2D)
 	mux.HandleFunc("/api/banco/start", h.HandleBancoStart)
 	mux.HandleFunc("/api/banco/state", h.HandleBancoState)
 	mux.HandleFunc("/api/banco/roll", h.HandleBancoRoll)
@@ -68,6 +73,13 @@ func NewRouter(cfg Config) http.Handler {
 	mux.HandleFunc("/api/banco/room/join", h.HandleBancoRoomJoin)
 	mux.HandleFunc("/api/banco/room/start", h.HandleBancoRoomStart)
 	mux.HandleFunc("/api/banco/room/state", h.HandleBancoRoomState)
+
+	// Banco Imobiliário 3D endpoints (40 casas, busca de cidades, votação relâmpago e salas)
+	mux.HandleFunc("/api/banco3d/city", h.HandleBanco3DCity)
+	mux.HandleFunc("/api/banco3d/room/create", h.HandleBanco3DRoomCreate)
+	mux.HandleFunc("/api/banco3d/room/join", h.HandleBanco3DRoomJoin)
+	mux.HandleFunc("/api/banco3d/room/vote", h.HandleBanco3DRoomVote)
+	mux.HandleFunc("/api/banco3d/room/state", h.HandleBanco3DRoomState)
 
 	// Authentication endpoints
 	mux.HandleFunc("/api/auth/register", h.HandleRegister)
