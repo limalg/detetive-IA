@@ -45,7 +45,8 @@
     const buyable = t && t.price > 0 && !t.owner_id && ['PROPERTY', 'STATION', 'UTILITY'].includes(t.type);
     const win = players.find((p) => p.id === g.winner_id);
     return { city: r.city, board, players, current_turn: cur, status: g.is_over ? 'finished' : 'in_progress', winner: win && win.name, turn_start: g.turn_start_time,
-      can_roll: mine && !rolled, can_buy: mine && rolled && !!buyable, can_end_turn: mine && rolled };
+      can_roll: mine && !rolled, can_buy: mine && rolled && !!buyable, can_end_turn: mine && rolled,
+      card: g.last_card_result && g.last_card_result.card ? { key: g.turn_index + ':' + g.last_card_result.card.id + ':' + g.last_card_result.player_id, deck: g.last_card_result.card.deck || g.last_card_result.card.type, title: g.last_card_result.card.title, delta: g.last_card_result.money_delta, jail: g.last_card_result.went_to_jail, who: g.last_card_result.player_id } : null };
   }
 
   // ---------- board ----------
@@ -163,7 +164,8 @@
     $('btnRoll').disabled = busy || !state.can_roll;
     $('btnBuy').disabled = busy || !state.can_buy;
     $('btnEnd').disabled = busy || !state.can_end_turn;
-    [$('btnBuild'), $('btnTrade')].forEach((b) => { b.disabled = true; b.title = 'Em breve'; });
+    $('btnBuild').disabled = true; $('btnBuild').title = 'Em breve';
+    $('btnTrade').disabled = busy || state.status !== 'in_progress' || state.players.filter((p) => !p.bankrupt).length < 2;
     state.board.forEach((t, i) => {
       const el = $('board').children[i];
       const o = state.players.find((p) => p.id === t.owner_id);
@@ -192,7 +194,9 @@
   }
 
   // apply a fresh room payload: animate pawn moves, then redraw
-  async function commit(r) {
+  let seenCard; // undefined until the first state, so a reload doesn't replay an old card
+  const cardMsg = (c) => { const p = state.players.find((x) => x.id === c.who); return `${c.deck === 'CHEST' ? 'Revés' : 'Sorte'}${p && p.id !== meId ? ' de ' + p.name : ''}: ${c.title}${c.delta ? ` (${c.delta > 0 ? '+' : '−'}${brl(Math.abs(c.delta))})` : ''}${c.jail ? ' · Cadeia!' : ''}`; };
+  async function commit(r, quiet) {
     raw = r;
     const next = norm(r), old = new Map(prevPos);
     if (!boardBuilt || $('board').children.length < next.board.length) { state = next; buildBoard(); }
@@ -204,6 +208,11 @@
       prevPos.set(p.id, p.position);
     }
     render();
+    checkOffer();
+    const c = state.card;
+    if (seenCard === undefined) { seenCard = c ? c.key : ''; return ''; }
+    if (c && c.key !== seenCard) { seenCard = c.key; if (!quiet) toast(cardMsg(c)); return cardMsg(c); }
+    return '';
   }
 
   // ---------- game actions ----------
@@ -221,9 +230,9 @@
     const d = r.dice || r.result || {};
     const dice = [d.die1 || (d.dice && d.dice[0]) || 1, d.die2 || (d.dice && d.dice[1]) || 1];
     await rollDice(dice);
-    await commit(r.game ? r : await getRoom(roomId));
+    const card = await commit(r.game ? r : await getRoom(roomId), true);
     const me = state.players.find((p) => p.id === meId), t = state.board[me.position];
-    toast(`Tirou ${dice[0] + dice[1]}. ${t.name}.` + (state.can_buy ? ` Comprar por ${brl(t.price)}?` : ''));
+    toast(`Tirou ${dice[0] + dice[1]}. ${t.name}.` + (state.can_buy ? ` Comprar por ${brl(t.price)}?` : '') + (card ? ' ' + card : ''));
   });
   $('btnBuy').onclick = () => run(async () => { const r = await act('buy'); await commit(r.game ? r : await getRoom(roomId)); toast('Comprado!'); });
   $('btnEnd').onclick = () => run(async () => { const r = await act('pass'); await commit(r.game ? r : await getRoom(roomId)); });
@@ -236,6 +245,59 @@
     const t = state.board[i], o = state.players.find((p) => p.id === t.owner_id);
     sheet(CORNER[t.type] || t.name, `${t.queen ? '<p>★ Ícone da cidade (votado)</p>' : ''}<p>${t.price ? 'Preço ' + brl(t.price) : ''}</p>${t.rent_base ? `<p>Aluguel ${brl(t.rent_base)}</p>` : ''}<p>${o ? 'Dono: ' + esc(o.name) : t.price ? 'Livre' : ''}</p>`);
   }
+
+  // ---------- incoming trade offer ----------
+  let offerKey = null;
+  const tilesTxt = (ids, cash) => [...ids.map((i) => state.board[i].name), cash ? brl(cash) : ''].filter(Boolean).join(', ') || 'nada';
+  function checkOffer() {
+    const t = raw && raw.pending_trade;
+    if (!t || t.status !== 'pending') { if (offerKey) { offerKey = null; if ($('sheetTitle').textContent === 'Proposta de troca') $('sheet').hidden = true; } return; }
+    if (t.receiver_id !== meId) return;
+    const key = t.id + t.created_at;
+    if (key === offerKey) return;
+    offerKey = key;
+    const from = state.players.find((p) => p.id === t.sender_id);
+    sheet('Proposta de troca', `<p><b>${esc(from ? from.name : 'Jogador')}</b> oferece:</p><p>${esc(tilesTxt(t.offered_tiles || [], t.offered_cash))}</p><p>e pede:</p><p>${esc(tilesTxt(t.requested_tiles || [], t.requested_cash))}</p><div class="row"><button class="mini ghost" id="offNo" type="button">Recusar</button><button class="mini" id="offYes" type="button">Aceitar</button></div>`);
+    const answer = (action) => run(async () => {
+      try { const r = await api('/api/banco3d/room/trade', { room_id: roomId, action, player_id: meId }); await commit(r.game ? r : await getRoom(roomId)); toast(action === 'accept' ? 'Troca feita!' : 'Proposta recusada'); } finally { $('sheet').hidden = true; }
+    });
+    $('offYes').onclick = () => answer('accept');
+    $('offNo').onclick = () => answer('decline');
+  }
+
+  // ---------- trade modal ----------
+  let tradeOpener = null;
+  const mineOf = (id) => state.board.filter((t) => t.owner_id === id && t.houses === 0 && !t.hotel);
+  function tileChecks(list, name) {
+    return list.length ? list.map((t) => `<label class="chk"><input type="checkbox" name="${name}" value="${t.position}"><span>${esc(t.name)}</span></label>`).join('') : '<p class="none">Sem imóveis livres de construção.</p>';
+  }
+  function fillTrade() {
+    const f = $('tradeForm'), to = f.to.value;
+    $('tradeGive').innerHTML = tileChecks(mineOf(meId), 'give');
+    $('tradeWant').innerHTML = tileChecks(mineOf(to), 'want');
+  }
+  function openTrade() {
+    const others = state.players.filter((p) => p.id !== meId && !p.bankrupt);
+    $('tradeTo').innerHTML = others.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');
+    $('tradeForm').giveCash.value = 0; $('tradeForm').wantCash.value = 0;
+    $('tradeMsg').textContent = 'A troca vale na hora, sem aceite do outro jogador.'; $('tradeMsg').classList.remove('bad');
+    tradeOpener = document.activeElement; fillTrade(); $('trade').hidden = false; $('tradeTo').focus();
+  }
+  function closeTrade() { $('trade').hidden = true; if (tradeOpener && tradeOpener.focus) tradeOpener.focus(); }
+  $('btnTrade').onclick = openTrade;
+  $('tradeTo').onchange = fillTrade;
+  $('tradeX').onclick = $('tradeCancel').onclick = closeTrade;
+  $('trade').addEventListener('keydown', (e) => { if (e.key === 'Escape') closeTrade(); });
+  $('tradeForm').onsubmit = (e) => {
+    e.preventDefault();
+    const f = e.target, ids = (n) => [...f.querySelectorAll(`[name=${n}]:checked`)].map((i) => +i.value);
+    const body = { room_id: roomId, action: 'propose', player_id: meId, to_player_id: f.to.value, give: { props: ids('give'), cash: +f.giveCash.value || 0 }, want: { props: ids('want'), cash: +f.wantCash.value || 0 } };
+    if (!body.give.props.length && !body.want.props.length && !body.give.cash && !body.want.cash) { $('tradeMsg').textContent = 'Escolha algo para trocar.'; $('tradeMsg').classList.add('bad'); return; }
+    run(async () => {
+      try { const r = await api('/api/banco3d/room/trade', body); await commit(r.game ? r : await getRoom(roomId)); closeTrade(); toast(r.pending_trade ? 'Proposta enviada. Aguardando resposta.' : 'Troca feita!'); }
+      catch (x) { $('tradeMsg').textContent = x.message; $('tradeMsg').classList.add('bad'); }
+    });
+  };
 
   // ---------- match config modal ----------
   const CFG_KEY = 'banco3d:config';
@@ -435,13 +497,23 @@
       room.voting.votes[b.player_id] = b.candidate; return ok({ status: 'vote_recorded' });
     }
     if (P.endsWith('/room/start')) { g.is_started = true; g.current_turn_player_id = g.players[0].id; return ok(room); }
-    const me = g.players.find((x) => x.id === b.player_id);
+    const me = g.players.find((x) => x.id === (b.player_id || b.sender_id));
     if (P.endsWith('/room/roll')) {
       const d1 = 1 + Math.floor(Math.random() * 6), d2 = 1 + Math.floor(Math.random() * 6);
       me.position = (me.position + d1 + d2) % 40; g.dice_rolled_this_turn = true;
+      const tt = room.board.tiles[me.position].type;
+      if (tt === 'CHANCE' || tt === 'CHEST') { const dl = [200, -100, 50][Math.floor(Math.random() * 3)]; me.money += dl; g.turn_index = (g.turn_index || 0) + 1; g.last_card_result = { card: { id: 'c' + g.turn_index, deck: tt, title: tt === 'CHANCE' ? 'Feira de artesanato lotada' : 'Conserto do bonde', text: '' }, player_id: me.id, money_delta: dl }; }
       return ok({ ...room, dice: { die1: d1, die2: d2 } });
     }
     if (P.endsWith('/room/buy')) { const t = room.board.tiles[me.position]; t.owner_id = me.id; me.money -= t.price; me.properties.push(t.index); return ok(room); }
+    if (P.endsWith('/room/trade')) {
+      const swap = (t) => { const a = g.players.find((x) => x.id === t.sender_id), o = g.players.find((x) => x.id === t.receiver_id); t.offered_tiles.forEach((k) => { room.board.tiles[k].owner_id = o.id; }); t.requested_tiles.forEach((k) => { room.board.tiles[k].owner_id = a.id; }); a.money += t.requested_cash - t.offered_cash; o.money += t.offered_cash - t.requested_cash; };
+      if (b.action === 'accept') { swap(room.pending_trade); room.pending_trade = null; return ok(room); }
+      if (b.action === 'decline') { room.pending_trade = null; return ok(room); }
+      const t = { id: 'trade-1', created_at: String(Date.now()), status: 'pending', sender_id: b.player_id, receiver_id: b.to_player_id, offered_tiles: b.give.props, offered_cash: b.give.cash, requested_tiles: b.want.props, requested_cash: b.want.cash };
+      if (b.to_player_id.startsWith('b')) swap(t); else room.pending_trade = t;
+      return ok(room);
+    }
     if (P.endsWith('/room/pass')) { g.players.slice(1).forEach((p) => { p.position = (p.position + 2 + Math.floor(Math.random() * 10)) % 40; }); g.dice_rolled_this_turn = false; return ok(room); }
     return no('Indisponível no modo demo');
   }
