@@ -36,6 +36,7 @@ type CityLandmarksResult struct {
 	City       string         `json:"city"`
 	Candidates []string       `json:"candidates"`
 	Landmarks  []LandmarkItem `json:"landmarks"`
+	Partial    bool           `json:"partial"` // true when the real sources yielded fewer than 28 landmarks
 }
 
 // PlaceDetails stores resolved geocoding info for a place.
@@ -223,6 +224,7 @@ func (s *PlacesService) fetchNominatimSuggest(query string) ([]PlaceSuggestion, 
 			Lon:  lonF,
 		}
 	}
+	s.saveDiskLocked() // lock already held; keeps place_id -> city across restarts
 
 	return suggestions, nil
 }
@@ -265,86 +267,6 @@ func (s *PlacesService) filterOfflineCatalog(query string) []PlaceSuggestion {
 	return matched
 }
 
-// resolvePlaceID maps place_id (e.g. osm_12024671 or pl_londrina) to the real city name and lat/lon.
-func (s *PlacesService) resolvePlaceID(placeID string) (string, float64, float64, error) {
-	placeID = strings.TrimSpace(placeID)
-	if placeID == "" {
-		return "", 0, 0, fmt.Errorf("empty place_id")
-	}
-
-	s.mu.Lock()
-	d, ok := s.detailsCache[placeID]
-	s.mu.Unlock()
-	if ok && d.City != "" {
-		return d.City, d.Lat, d.Lon, nil
-	}
-
-	if name, lat, lon, ok := offlinePlace(placeID); ok {
-		return name, lat, lon, nil
-	}
-
-	if numID, ok := strings.CutPrefix(placeID, "osm_"); ok {
-		name, lat, lon, err := s.fetchNominatimDetails(numID)
-		if err != nil {
-			return "", 0, 0, err
-		}
-		s.mu.Lock()
-		s.detailsCache[placeID] = PlaceDetails{City: name, Lat: lat, Lon: lon}
-		s.saveDiskLocked()
-		s.mu.Unlock()
-		return name, lat, lon, nil
-	}
-	return "", 0, 0, fmt.Errorf("place_id %s not resolved", placeID)
-}
-
-// fetchNominatimDetails resolves a Nominatim place_id to its name and centroid.
-func (s *PlacesService) fetchNominatimDetails(numID string) (string, float64, float64, error) {
-	var details struct {
-		LocalName string            `json:"localname"`
-		Names     map[string]string `json:"names"`
-		Centroid  struct {
-			Coordinates [2]float64 `json:"coordinates"` // [lon, lat]
-		} `json:"centroid"`
-	}
-	endpoint := "https://nominatim.openstreetmap.org/details?format=json&place_id=" + url.QueryEscape(numID)
-	if err := s.getJSON(endpoint, nominatimTimeout, true, &details); err != nil {
-		return "", 0, 0, err
-	}
-	name := details.LocalName
-	if name == "" {
-		name = details.Names["name"]
-	}
-	lat, lon := details.Centroid.Coordinates[1], details.Centroid.Coordinates[0]
-	if name == "" || (lat == 0 && lon == 0) {
-		return "", 0, 0, fmt.Errorf("nominatim place %s has no name/centroid", numID)
-	}
-	return name, lat, lon, nil
-}
-
-// geocodeCity resolves a typed city name to its real name and coordinates via Nominatim search (first hit).
-func (s *PlacesService) geocodeCity(cityName string) (string, float64, float64, error) {
-	var hits []struct {
-		Name string `json:"name"`
-		Lat  string `json:"lat"`
-		Lon  string `json:"lon"`
-	}
-	endpoint := "https://nominatim.openstreetmap.org/search?format=json&limit=1&q=" + url.QueryEscape(cityName)
-	if err := s.getJSON(endpoint, nominatimTimeout, true, &hits); err != nil {
-		return "", 0, 0, err
-	}
-	if len(hits) == 0 {
-		return "", 0, 0, fmt.Errorf("city %q not found", cityName)
-	}
-	var lat, lon float64
-	_, _ = fmt.Sscanf(hits[0].Lat, "%f", &lat)
-	_, _ = fmt.Sscanf(hits[0].Lon, "%f", &lon)
-	name := hits[0].Name
-	if name == "" {
-		name = cityName
-	}
-	return name, lat, lon, nil
-}
-
 // offlineCities is the offline catalog: name, lat, lon and the lookup aliases (matched by equality).
 var offlineCities = []struct {
 	name     string
@@ -376,210 +298,12 @@ func offlinePlace(key string) (string, float64, float64, bool) {
 	return "", 0, 0, false
 }
 
-// GetLandmarks returns 4 candidates and 28 landmarks (22 properties, 4 stations, 2 utilities) of the chosen city.
-// Optional extras are user-typed custom places: they enter the board first and lead the candidates.
-// City is always the real name of the resolved place; places never come from another municipality.
-func (s *PlacesService) GetLandmarks(cityName string, placeID string, extras ...string) (*CityLandmarksResult, error) {
-	res, err := s.getLandmarks(cityName, placeID)
-	if err != nil {
-		return nil, err
-	}
-	return withExtras(res, extras), nil
-}
-
-func (s *PlacesService) getLandmarks(cityName string, placeID string) (*CityLandmarksResult, error) {
-	cityName = strings.TrimSpace(cityName)
-	placeID = strings.TrimSpace(placeID)
-
-	var lat, lon float64
-	if placeID != "" {
-		if rCity, rLat, rLon, err := s.resolvePlaceID(placeID); err == nil {
-			cityName, lat, lon = rCity, rLat, rLon
-		}
-	}
-	if cityName == "" {
-		cityName = "Curitiba"
-	}
-	if lat == 0 && lon == 0 {
-		if oName, oLat, oLon, ok := offlinePlace(cityName); ok {
-			cityName, lat, lon = oName, oLat, oLon
-		} else if gName, gLat, gLon, err := s.geocodeCity(cityName); err == nil {
-			cityName, lat, lon = gName, gLat, gLon
-		}
-	}
-
-	cacheKey := fmt.Sprintf("%s|%.2f,%.2f", strings.ToLower(cityName), lat, lon)
-	s.mu.Lock()
-	cached, ok := s.landmarkCache[cacheKey]
-	s.mu.Unlock()
-	if ok {
-		return cached, nil
-	}
-
-	var real []realPlace
-	if lat != 0 || lon != 0 {
-		real, _ = s.fetchOverpassPlaces(cityName, lat, lon)
-		if countKind(real, "property") < 22 || countTop(real) < 4 {
-			regional, _ := s.fetchRegionalPlaces(cityName, lat, lon)
-			real = append(real, regional...) // city places always rank ahead of regional ones
-		}
-	}
-	res := buildLandmarks(cityName, real)
-	if len(real) >= minRealPlaces { // never cache a degraded (API-failed) answer
-		s.mu.Lock()
-		s.landmarkCache[cacheKey] = res
-		s.saveDiskLocked()
-		s.mu.Unlock()
-	}
-	return res, nil
-}
-
-const minRealPlaces = 12
-
-func countKind(ps []realPlace, kind string) (n int) {
-	for _, p := range ps {
-		if p.Kind == kind {
-			n++
-		}
-	}
-	return
-}
-
-func countTop(ps []realPlace) (n int) {
-	for _, p := range ps {
-		if p.Top && p.Kind == "property" {
-			n++
-		}
-	}
-	return
-}
-
-// fetchRegionalPlaces is the last resort when the city itself lacks famous places: well-known
-// (wikidata-tagged) attractions within ~80 km, i.e. the surrounding state/region.
-func (s *PlacesService) fetchRegionalPlaces(cityName string, lat, lon float64) ([]realPlace, error) {
-	f := fmt.Sprintf("(around:80000,%.4f,%.4f)", lat, lon)
-	q := `[out:json][timeout:65];(nwr` + f + `["tourism"~"^(attraction|museum)$"]["wikidata"]["name"];nwr` + f + `["historic"]["wikidata"]["name"];nwr` + f + `["leisure"="park"]["wikidata"]["name"];);out tags 300;`
-	els, err := s.overpass(q)
-	if err != nil {
-		return nil, err
-	}
-	var out []realPlace
-	for _, p := range classifyElements(cityName, els) {
-		if p.Kind == "property" {
-			out = append(out, p)
-		}
-	}
-	return out, nil
-}
-
-// withExtras puts user-typed custom places first among the properties and candidates (returns a copy).
-func withExtras(res *CityLandmarksResult, extras []string) *CityLandmarksResult {
-	var custom []string
-	seen := map[string]bool{}
-	for _, e := range extras {
-		e = strings.TrimSpace(e)
-		if k := strings.ToLower(e); len(e) >= 2 && len(e) <= 34 && !seen[k] && len(custom) < 8 {
-			seen[k] = true
-			custom = append(custom, e)
-		}
-	}
-	if len(custom) == 0 {
-		return res
-	}
-	out := &CityLandmarksResult{City: res.City}
-	for _, n := range custom {
-		out.Landmarks = append(out.Landmarks, LandmarkItem{Name: n, Type: "property", ImageKind: ClassifyImageKind(n, TileProperty)})
-	}
-	props := 0
-	for _, l := range res.Landmarks {
-		if l.Type == "property" && (seen[strings.ToLower(l.Name)] || props+len(custom) >= 22) {
-			continue
-		}
-		if l.Type == "property" {
-			props++
-		}
-		out.Landmarks = append(out.Landmarks, l)
-	}
-	out.Candidates = slices.Clone(custom)
-	for _, c := range res.Candidates {
-		if !seen[strings.ToLower(c)] {
-			out.Candidates = append(out.Candidates, c)
-		}
-	}
-	out.Candidates = out.Candidates[:min(4, len(out.Candidates))]
-	return out
-}
-
 // realPlace is a named OSM feature after classification and fame scoring.
 type realPlace struct {
 	Name  string
 	Kind  string // "property", "station", "utility"
 	Score int
 	Top   bool // landmark-grade (park/tourism/historic/wikipedia): eligible as vote candidate
-}
-
-func (s *PlacesService) fetchOverpassPlaces(cityName string, lat, lon float64) ([]realPlace, error) {
-	// Prefer the municipality's own boundary (never a neighbouring town); fall back to a radius.
-	byArea := fmt.Sprintf(`rel(around:3000,%.4f,%.4f)["boundary"="administrative"]["admin_level"~"^[5-8]$"]["name"="%s"];map_to_area->.a;`,
-		lat, lon, strings.ReplaceAll(cityName, `"`, ``))
-	var lastErr error
-	for _, scope := range []struct{ prelude, filter string }{
-		{byArea, "(area.a)"},
-		{"", fmt.Sprintf("(around:6000,%.4f,%.4f)", lat, lon)},
-	} {
-		els, err := s.overpass(overpassQuery(scope.prelude, scope.filter))
-		if err != nil {
-			lastErr = err
-			continue
-		}
-		if places := classifyElements(cityName, els); len(places) >= minRealPlaces {
-			return places, nil
-		}
-	}
-	if lastErr == nil {
-		lastErr = fmt.Errorf("overpass returned too few named places for %s", cityName)
-	}
-	return nil, lastErr
-}
-
-func overpassQuery(prelude, f string) string {
-	return `[out:json][timeout:65];` + prelude + `(
-way` + f + `["highway"~"^(primary|secondary|tertiary)$"]["name"];
-nwr` + f + `["leisure"="park"]["name"];
-nwr` + f + `["tourism"~"^(attraction|museum)$"]["name"];
-nwr` + f + `["historic"]["name"];
-nwr` + f + `["railway"="station"]["name"];
-nwr` + f + `["amenity"="bus_station"]["name"];
-nwr` + f + `["man_made"~"^(water_tower|water_works|wastewater_plant)$"]["name"];
-nwr` + f + `["power"="plant"]["name"];
-nwr` + f + `["place"~"^(suburb|neighbourhood)$"]["name"];
-);out tags 4000;`
-}
-
-var overpassEndpoints = []string{
-	"https://maps.mail.ru/osm/tools/overpass/api/interpreter", // slow but rarely saturated
-	"https://overpass-api.de/api/interpreter",
-}
-
-func (s *PlacesService) overpass(query string) ([]map[string]string, error) {
-	var lastErr error
-	for _, ep := range overpassEndpoints {
-		var data struct {
-			Elements []struct {
-				Tags map[string]string `json:"tags"`
-			} `json:"elements"`
-		}
-		if err := s.getJSON(ep+"?data="+url.QueryEscape(query), overpassTimeout, false, &data); err != nil {
-			lastErr = err
-			continue
-		}
-		out := make([]map[string]string, 0, len(data.Elements))
-		for _, el := range data.Elements {
-			out = append(out, el.Tags)
-		}
-		return out, nil
-	}
-	return nil, lastErr
 }
 
 // classifyElements merges same-named elements (one street = many OSM ways) and scores their fame.
@@ -631,10 +355,451 @@ func classifyElements(cityName string, tagsList []map[string]string) []realPlace
 	return places
 }
 
-// buildLandmarks assembles 22 properties + 4 stations + 2 utilities + 4 candidates from real places,
-// padding with the city's own catalog preset (offline catalog cities) or procedural names of the same city.
+// resolvePlaceID maps place_id (e.g. osm_12024671 or pl_londrina) to the real city name and lat/lon.
+func (s *PlacesService) resolvePlaceID(ctx context.Context, placeID string) (string, float64, float64, error) {
+	placeID = strings.TrimSpace(placeID)
+	if placeID == "" {
+		return "", 0, 0, fmt.Errorf("empty place_id")
+	}
+
+	s.mu.Lock()
+	d, ok := s.detailsCache[placeID]
+	s.mu.Unlock()
+	if ok && d.City != "" {
+		return d.City, d.Lat, d.Lon, nil
+	}
+
+	if name, lat, lon, ok := offlinePlace(placeID); ok {
+		return name, lat, lon, nil
+	}
+
+	if numID, ok := strings.CutPrefix(placeID, "osm_"); ok {
+		name, lat, lon, err := s.fetchNominatimDetails(ctx, numID)
+		if err != nil && ctx.Err() == nil { // one retry: Nominatim sometimes answers 429/5xx once
+			name, lat, lon, err = s.fetchNominatimDetails(ctx, numID)
+		}
+		if err != nil {
+			return "", 0, 0, err
+		}
+		s.mu.Lock()
+		s.detailsCache[placeID] = PlaceDetails{City: name, Lat: lat, Lon: lon}
+		s.saveDiskLocked()
+		s.mu.Unlock()
+		return name, lat, lon, nil
+	}
+	return "", 0, 0, fmt.Errorf("place_id %s not resolved", placeID)
+}
+
+// fetchNominatimDetails resolves a Nominatim place_id to its name and centroid.
+func (s *PlacesService) fetchNominatimDetails(ctx context.Context, numID string) (string, float64, float64, error) {
+	var details struct {
+		LocalName string            `json:"localname"`
+		Names     map[string]string `json:"names"`
+		Centroid  struct {
+			Coordinates [2]float64 `json:"coordinates"` // [lon, lat]
+		} `json:"centroid"`
+	}
+	endpoint := "https://nominatim.openstreetmap.org/details?format=json&place_id=" + url.QueryEscape(numID)
+	if err := s.getJSON(ctx, endpoint, nominatimTimeout, true, &details); err != nil {
+		return "", 0, 0, err
+	}
+	name := details.LocalName
+	if name == "" {
+		name = details.Names["name"]
+	}
+	lat, lon := details.Centroid.Coordinates[1], details.Centroid.Coordinates[0]
+	if name == "" || (lat == 0 && lon == 0) {
+		return "", 0, 0, fmt.Errorf("nominatim place %s has no name/centroid", numID)
+	}
+	return name, lat, lon, nil
+}
+
+// geocodeCity resolves a typed city name to its real name and coordinates via Nominatim search (first hit).
+func (s *PlacesService) geocodeCity(ctx context.Context, cityName string) (string, float64, float64, error) {
+	var hits []struct {
+		Name string `json:"name"`
+		Lat  string `json:"lat"`
+		Lon  string `json:"lon"`
+	}
+	endpoint := "https://nominatim.openstreetmap.org/search?format=json&limit=1&q=" + url.QueryEscape(cityName)
+	if err := s.getJSON(ctx, endpoint, nominatimTimeout, true, &hits); err != nil {
+		return "", 0, 0, err
+	}
+	if len(hits) == 0 {
+		return "", 0, 0, fmt.Errorf("city %q not found", cityName)
+	}
+	var lat, lon float64
+	_, _ = fmt.Sscanf(hits[0].Lat, "%f", &lat)
+	_, _ = fmt.Sscanf(hits[0].Lon, "%f", &lon)
+	name := hits[0].Name
+	if name == "" {
+		name = cityName
+	}
+	return name, lat, lon, nil
+}
+
+// GetLandmarks returns up to 4 candidates and 28 landmarks (22 properties, 4 stations, 2 utilities) of the chosen city.
+// City is always the real name of the resolved place. Names are never invented: when the sources yield less,
+// fewer landmarks are returned and Partial is set. Optional extras are user-typed custom places: they enter
+// the board first and lead the candidates.
+func (s *PlacesService) GetLandmarks(cityName string, placeID string, extras ...string) (*CityLandmarksResult, error) {
+	res, err := s.getLandmarks(cityName, placeID)
+	if err != nil {
+		return nil, err
+	}
+	return withExtras(res, extras), nil
+}
+
+// totalBudget caps one GetLandmarks call; sourceTimeout caps each data source inside it.
+const (
+	totalBudget   = 13 * time.Second // below the server WriteTimeout (15s)
+	sourceTimeout = 8 * time.Second
+)
+
+func (s *PlacesService) getLandmarks(cityName string, placeID string) (*CityLandmarksResult, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), totalBudget)
+	defer cancel()
+	cityName = strings.TrimSpace(cityName)
+	placeID = strings.TrimSpace(placeID)
+
+	var lat, lon float64
+	if placeID != "" {
+		if rCity, rLat, rLon, err := s.resolvePlaceID(ctx, placeID); err == nil {
+			cityName, lat, lon = rCity, rLat, rLon
+		}
+	}
+	if cityName == "" {
+		if placeID != "" { // never guess another city when a chosen place could not be resolved
+			return nil, fmt.Errorf("place_id %s could not be resolved", placeID)
+		}
+		cityName = "Curitiba"
+	}
+	if lat == 0 && lon == 0 {
+		if oName, oLat, oLon, ok := offlinePlace(cityName); ok {
+			cityName, lat, lon = oName, oLat, oLon
+		} else if gName, gLat, gLon, err := s.geocodeCity(ctx, cityName); err == nil {
+			cityName, lat, lon = gName, gLat, gLon
+		}
+	}
+
+	cacheKey := placeID
+	if cacheKey == "" || lat == 0 && lon == 0 {
+		cacheKey = fmt.Sprintf("%s|%.2f,%.2f", strings.ToLower(cityName), lat, lon)
+	}
+	s.mu.Lock()
+	cached, ok := s.landmarkCache[cacheKey]
+	s.mu.Unlock()
+	if ok {
+		return cached, nil
+	}
+
+	var real []realPlace
+	if lat != 0 || lon != 0 {
+		real = s.fetchAllSources(ctx, cityName, lat, lon)
+	}
+	res := buildLandmarks(cityName, real)
+	if len(real) >= minRealPlaces { // never cache a degraded (sources-failed) answer
+		s.mu.Lock()
+		s.landmarkCache[cacheKey] = res
+		s.saveDiskLocked()
+		s.mu.Unlock()
+	}
+	return res, nil
+}
+
+const minRealPlaces = 12
+
+func countKind(ps []realPlace, kind string) (n int) {
+	for _, p := range ps {
+		if p.Kind == kind {
+			n++
+		}
+	}
+	return
+}
+
+func countTop(ps []realPlace) (n int) {
+	for _, p := range ps {
+		if p.Top && p.Kind == "property" {
+			n++
+		}
+	}
+	return
+}
+
+// fetchAllSources queries the city sources in parallel (Overpass municipality, Wikipedia geosearch pt,
+// Nominatim city search), merges them by fame, and only if the city is short on famous places appends
+// the regional ones (strictly after every city place).
+func (s *PlacesService) fetchAllSources(ctx context.Context, cityName string, lat, lon float64) []realPlace {
+	var wg sync.WaitGroup
+	results := make([][]realPlace, 3)
+	for i, fn := range []func(context.Context, string, float64, float64) []realPlace{
+		s.fetchOverpassPlaces, s.fetchWikipediaPlaces, s.fetchNominatimPlaces,
+	} {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			results[i] = fn(ctx, cityName, lat, lon)
+		}()
+	}
+	wg.Wait()
+
+	byName := map[string]realPlace{}
+	for _, r := range results {
+		for _, p := range r {
+			k := strings.ToLower(p.Name)
+			if old, ok := byName[k]; !ok || p.Score > old.Score {
+				byName[k] = p
+			}
+		}
+	}
+	merged := make([]realPlace, 0, len(byName))
+	for _, p := range byName {
+		merged = append(merged, p)
+	}
+	sort.Slice(merged, func(i, j int) bool {
+		if merged[i].Score != merged[j].Score {
+			return merged[i].Score > merged[j].Score
+		}
+		return merged[i].Name < merged[j].Name
+	})
+
+	if countKind(merged, "property") < 22 || countTop(merged) < 4 {
+		for _, p := range s.fetchRegionalPlaces(ctx, cityName, lat, lon) {
+			if _, dup := byName[strings.ToLower(p.Name)]; !dup {
+				merged = append(merged, p)
+			}
+		}
+	}
+	return merged
+}
+
+// fetchRegionalPlaces is the last resort when the city lacks famous places: well-known
+// (wikidata-tagged) attractions within ~80 km, i.e. the surrounding state/region.
+func (s *PlacesService) fetchRegionalPlaces(ctx context.Context, cityName string, lat, lon float64) []realPlace {
+	f := fmt.Sprintf("(around:80000,%.4f,%.4f)", lat, lon)
+	q := `[out:json][timeout:7];(nwr` + f + `["tourism"~"^(attraction|museum)$"]["wikidata"]["name"];nwr` + f + `["historic"]["wikidata"]["name"];nwr` + f + `["leisure"="park"]["wikidata"]["name"];);out tags 300;`
+	els, err := s.overpass(ctx, q)
+	if err != nil {
+		return nil
+	}
+	var out []realPlace
+	for _, p := range classifyElements(cityName, els) {
+		if p.Kind == "property" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// withExtras puts user-typed custom places first among the properties and candidates (returns a copy).
+func withExtras(res *CityLandmarksResult, extras []string) *CityLandmarksResult {
+	var custom []string
+	seen := map[string]bool{}
+	for _, e := range extras {
+		e = strings.TrimSpace(e)
+		if k := strings.ToLower(e); len(e) >= 2 && len(e) <= 34 && !seen[k] && len(custom) < 8 {
+			seen[k] = true
+			custom = append(custom, e)
+		}
+	}
+	if len(custom) == 0 {
+		return res
+	}
+	out := &CityLandmarksResult{City: res.City, Partial: res.Partial}
+	for _, n := range custom {
+		out.Landmarks = append(out.Landmarks, LandmarkItem{Name: n, Type: "property", ImageKind: ClassifyImageKind(n, TileProperty)})
+	}
+	props := 0
+	for _, l := range res.Landmarks {
+		if l.Type == "property" && (seen[strings.ToLower(l.Name)] || props+len(custom) >= 22) {
+			continue
+		}
+		if l.Type == "property" {
+			props++
+		}
+		out.Landmarks = append(out.Landmarks, l)
+	}
+	out.Candidates = slices.Clone(custom)
+	for _, c := range res.Candidates {
+		if !seen[strings.ToLower(c)] {
+			out.Candidates = append(out.Candidates, c)
+		}
+	}
+	out.Candidates = out.Candidates[:min(4, len(out.Candidates))]
+	out.Partial = out.Partial && countProps(out.Landmarks) < 22
+	return out
+}
+
+func countProps(ls []LandmarkItem) (n int) {
+	for _, l := range ls {
+		if l.Type == "property" {
+			n++
+		}
+	}
+	return
+}
+
+// fetchOverpassPlaces lists named features inside the municipality's own boundary (radius only as a fallback).
+func (s *PlacesService) fetchOverpassPlaces(ctx context.Context, cityName string, lat, lon float64) []realPlace {
+	byArea := fmt.Sprintf(`rel(around:3000,%.4f,%.4f)["boundary"="administrative"]["admin_level"~"^[5-8]$"]["name"="%s"];map_to_area->.a;`,
+		lat, lon, strings.ReplaceAll(cityName, `"`, ``))
+	for _, scope := range []struct{ prelude, filter string }{
+		{byArea, "(area.a)"},
+		{"", fmt.Sprintf("(around:6000,%.4f,%.4f)", lat, lon)},
+	} {
+		els, err := s.overpass(ctx, overpassQuery(scope.prelude, scope.filter))
+		if err != nil {
+			if ctx.Err() != nil {
+				return nil
+			}
+			continue
+		}
+		if places := classifyElements(cityName, els); len(places) >= minRealPlaces {
+			return places
+		}
+	}
+	return nil
+}
+
+func overpassQuery(prelude, f string) string {
+	return `[out:json][timeout:7];` + prelude + `(
+way` + f + `["highway"~"^(primary|secondary|tertiary)$"]["name"];
+nwr` + f + `["leisure"="park"]["name"];
+nwr` + f + `["tourism"~"^(attraction|museum)$"]["name"];
+nwr` + f + `["historic"]["name"];
+nwr` + f + `["railway"="station"]["name"];
+nwr` + f + `["amenity"="bus_station"]["name"];
+nwr` + f + `["man_made"~"^(water_tower|water_works|wastewater_plant)$"]["name"];
+nwr` + f + `["power"="plant"]["name"];
+nwr` + f + `["place"~"^(suburb|neighbourhood)$"]["name"];
+);out tags 4000;`
+}
+
+var overpassEndpoints = []string{
+	"https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+	"https://overpass-api.de/api/interpreter",
+	"https://overpass.kumi.systems/api/interpreter",
+}
+
+// overpass races all mirrors in parallel and returns the first successful answer.
+func (s *PlacesService) overpass(ctx context.Context, query string) ([]map[string]string, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	type result struct {
+		tags []map[string]string
+		err  error
+	}
+	ch := make(chan result, len(overpassEndpoints))
+	for _, ep := range overpassEndpoints {
+		go func() {
+			var data struct {
+				Elements []struct {
+					Tags map[string]string `json:"tags"`
+				} `json:"elements"`
+			}
+			if err := s.getJSON(ctx, ep+"?data="+url.QueryEscape(query), sourceTimeout, false, &data); err != nil {
+				ch <- result{err: err}
+				return
+			}
+			out := make([]map[string]string, 0, len(data.Elements))
+			for _, el := range data.Elements {
+				out = append(out, el.Tags)
+			}
+			ch <- result{tags: out}
+		}()
+	}
+	var lastErr error
+	for range overpassEndpoints {
+		r := <-ch
+		if r.err == nil {
+			return r.tags, nil
+		}
+		lastErr = r.err
+	}
+	return nil, lastErr
+}
+
+// fetchWikipediaPlaces returns geotagged pt.wikipedia articles within 10 km (the API maximum): famous by definition.
+func (s *PlacesService) fetchWikipediaPlaces(ctx context.Context, cityName string, lat, lon float64) []realPlace {
+	var data struct {
+		Query struct {
+			Geosearch []struct {
+				Title string `json:"title"`
+			} `json:"geosearch"`
+		} `json:"query"`
+	}
+	endpoint := fmt.Sprintf("https://pt.wikipedia.org/w/api.php?action=query&list=geosearch&gscoord=%.4f|%.4f&gsradius=10000&gslimit=100&format=json", lat, lon)
+	if err := s.getJSON(ctx, endpoint, sourceTimeout, false, &data); err != nil {
+		return nil
+	}
+	var out []realPlace
+	for _, g := range data.Query.Geosearch {
+		t := strings.TrimSpace(g.Title)
+		if i := strings.Index(t, " ("); i > 0 { // "Praça X (Londrina)" -> "Praça X"
+			t = t[:i]
+		}
+		if len(t) < 4 || len(t) > 34 || strings.EqualFold(t, cityName) || isMediaOrClub(t) {
+			continue
+		}
+		score, top := 20, false
+		if isPlaceLike(t) { // only real landmarks may lead the vote candidates
+			score, top = 60, true
+		}
+		out = append(out, realPlace{Name: t, Kind: "property", Score: score, Top: top})
+	}
+	return out
+}
+
+// fetchNominatimPlaces searches avenues, squares, parks and museums by name and keeps only hits whose
+// address municipality is the chosen city.
+func (s *PlacesService) fetchNominatimPlaces(ctx context.Context, cityName string, lat, lon float64) []realPlace {
+	var out []realPlace
+	for _, q := range []struct {
+		word  string
+		score int
+		top   bool
+	}{{"museu", 25, true}, {"parque", 14, true}, {"praça", 6, false}, {"avenida", 3, false}} {
+		var hits []struct {
+			Name    string            `json:"name"`
+			Address map[string]string `json:"address"`
+		}
+		endpoint := fmt.Sprintf("https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=40&q=%s",
+			url.QueryEscape(q.word+" "+cityName))
+		if err := s.getJSON(ctx, endpoint, sourceTimeout, true, &hits); err != nil {
+			if ctx.Err() != nil {
+				break
+			}
+			continue
+		}
+		for _, h := range hits {
+			a := h.Address
+			if city := firstNonEmpty(a["city"], a["town"], a["municipality"], a["village"]); !strings.EqualFold(city, cityName) {
+				continue
+			}
+			n := strings.TrimSpace(h.Name)
+			if len(n) < 4 || len(n) > 34 || strings.EqualFold(n, cityName) || !strings.HasPrefix(strings.ToLower(n), q.word) && q.score < 14 {
+				continue
+			}
+			out = append(out, realPlace{Name: n, Kind: "property", Score: q.score, Top: q.top})
+		}
+	}
+	return out
+}
+
+func firstNonEmpty(ss ...string) string {
+	for _, s := range ss {
+		if s != "" {
+			return s
+		}
+	}
+	return ""
+}
+
+// buildLandmarks assembles up to 22 properties + 4 stations + 2 utilities + 4 candidates from real places.
+// Catalog cities pad with their own real preset names; any other city returns fewer landmarks and Partial.
 func buildLandmarks(cityName string, real []realPlace) *CityLandmarksResult {
-	preset := proceduralPreset(cityName)
+	var preset cityPreset
 	if _, _, _, ok := offlinePlace(cityName); ok {
 		preset = resolveCityPreset(cityName)
 	}
@@ -643,7 +808,7 @@ func buildLandmarks(cityName string, real []realPlace) *CityLandmarksResult {
 	var props, stations, utils, tops []string
 	add := func(list *[]string, name string, limit int) {
 		k := strings.ToLower(name)
-		if len(*list) < limit && !seen[k] {
+		if name != "" && len(*list) < limit && !seen[k] {
 			seen[k] = true
 			*list = append(*list, name)
 		}
@@ -655,7 +820,7 @@ func buildLandmarks(cityName string, real []realPlace) *CityLandmarksResult {
 		case "utility":
 			add(&utils, p.Name, 2)
 		default:
-			if p.Top && len(tops) < 4 {
+			if p.Top && len(tops) < 4 && !slices.Contains(tops, p.Name) {
 				tops = append(tops, p.Name)
 			}
 			add(&props, p.Name, 22)
@@ -691,20 +856,21 @@ func buildLandmarks(cityName string, real []realPlace) *CityLandmarksResult {
 	for _, n := range utils {
 		landmarks = append(landmarks, LandmarkItem{Name: n, Type: "utility", ImageKind: "utility"})
 	}
-	return &CityLandmarksResult{City: cityName, Candidates: candidates, Landmarks: landmarks}
+	return &CityLandmarksResult{
+		City:       cityName,
+		Candidates: candidates,
+		Landmarks:  landmarks,
+		Partial:    len(props) < 22 || len(stations) < 4 || len(utils) < 2 || len(candidates) < 4,
+	}
 }
 
-const (
-	nominatimTimeout = 5 * time.Second
-	overpassTimeout  = 70 * time.Second
-)
-
-// getJSON GETs url (context timeout, mandatory User-Agent; throttled to 1 req/s for Nominatim) and decodes JSON into out.
-func (s *PlacesService) getJSON(endpoint string, timeout time.Duration, nominatim bool, out any) error {
+// getJSON GETs url (bounded by ctx and timeout, mandatory User-Agent; throttled to 1 req/s for Nominatim)
+// and decodes JSON into out.
+func (s *PlacesService) getJSON(ctx context.Context, endpoint string, timeout time.Duration, nominatim bool, out any) error {
 	if nominatim {
 		s.throttle()
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
@@ -721,6 +887,8 @@ func (s *PlacesService) getJSON(endpoint string, timeout time.Duration, nominati
 	}
 	return json.NewDecoder(resp.Body).Decode(out)
 }
+
+const nominatimTimeout = 5 * time.Second
 
 const userAgent = "DetetiveIABanco3D/0.7.2 (https://github.com/LimaEdu-7x/tabuleiro-ia)"
 
@@ -767,4 +935,27 @@ func (s *PlacesService) saveDiskLocked() {
 	if os.WriteFile(tmp, b, 0o644) == nil {
 		_ = os.Rename(tmp, s.diskPath)
 	}
+}
+
+// isMediaOrClub drops Wikipedia hits that are broadcasters, clubs or weather stations, not places.
+func isMediaOrClub(title string) bool {
+	l := strings.ToLower(title)
+	for _, w := range []string{"meteorológica", "rádio", "futebol clube", "esporte clube", "clube de regatas", "tv ", " tv", "cnt ", "record", "rpc ", "futsal", " fm", "rede "} {
+		if strings.Contains(l, w) || strings.HasPrefix(l, w) {
+			return true
+		}
+	}
+	return false
+}
+
+// isPlaceLike reports whether a title names a visitable landmark (museum, park, church, square...).
+func isPlaceLike(title string) bool {
+	l := strings.ToLower(title)
+	for _, w := range []string{"museu", "parque", "praça", "catedral", "igreja", "basílica", "teatro", "memorial", "bosque", "monumento",
+		"mercado", "estação", "palácio", "jardim", "biblioteca", "santuário", "mirante", "zoológico", "ópera", "forte", "casa ", "centro cultural"} {
+		if strings.Contains(l, w) {
+			return true
+		}
+	}
+	return false
 }

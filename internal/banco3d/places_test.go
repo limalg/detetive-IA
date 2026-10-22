@@ -1,6 +1,7 @@
 package banco3d
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -218,7 +219,7 @@ func TestGetLandmarksRealPlacesByPlaceID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.City != "Maringá" || len(res.Candidates) != 4 || len(res.Landmarks) != 28 {
+	if res.City != "Maringá" || len(res.Candidates) != 4 || len(res.Landmarks) != 24 || !res.Partial {
 		t.Fatalf("city=%q cands=%d lm=%d", res.City, len(res.Candidates), len(res.Landmarks))
 	}
 	if res.Candidates[0] != "Catedral Basílica" && res.Candidates[0] != "Parque do Ingá" {
@@ -245,19 +246,14 @@ func TestGetLandmarksRealPlacesByPlaceID(t *testing.T) {
 func TestGetLandmarksAPIFailure(t *testing.T) {
 	svc := mockService(func(r *http.Request) (int, string) { return 503, "" })
 
-	// Not in catalog: pad with the city's own names, never another municipality.
+	// Not in catalog: nothing is invented, the answer is empty and flagged partial.
 	res, _ := svc.GetLandmarks("Sorocaba", "")
-	if res.City != "Sorocaba" || len(res.Landmarks) != 28 || len(res.Candidates) != 4 {
+	if res.City != "Sorocaba" || len(res.Landmarks) != 0 || len(res.Candidates) != 0 || !res.Partial {
 		t.Fatalf("bad result %+v", res)
-	}
-	for _, l := range res.Landmarks {
-		if !strings.Contains(l.Name, "Sorocaba") {
-			t.Errorf("non-municipal name %q", l.Name)
-		}
 	}
 	// In catalog: preset names.
 	res, _ = svc.GetLandmarks("Londrina", "")
-	if res.City != "Londrina" || len(res.Landmarks) != 28 {
+	if res.City != "Londrina" || len(res.Landmarks) != 28 || res.Partial {
 		t.Fatalf("bad catalog result %+v", res)
 	}
 }
@@ -267,11 +263,11 @@ func TestDiskCachePersistsDetails(t *testing.T) {
 	svc := mockService(func(r *http.Request) (int, string) {
 		return 200, `{"localname":"Caxias do Sul","centroid":{"coordinates":[-51.18,-29.16]}}`
 	}).WithDiskCache(path)
-	if _, _, _, err := svc.resolvePlaceID("osm_1"); err != nil {
+	if _, _, _, err := svc.resolvePlaceID(context.Background(), "osm_1"); err != nil {
 		t.Fatal(err)
 	}
 	down := mockService(func(r *http.Request) (int, string) { return 500, "" }).WithDiskCache(path)
-	if name, _, _, err := down.resolvePlaceID("osm_1"); err != nil || name != "Caxias do Sul" {
+	if name, _, _, err := down.resolvePlaceID(context.Background(), "osm_1"); err != nil || name != "Caxias do Sul" {
 		t.Fatalf("disk cache miss: %q %v", name, err)
 	}
 }
@@ -317,7 +313,7 @@ func TestLandmarksCityFirstThenRegion(t *testing.T) {
 }
 
 func TestWithExtras(t *testing.T) {
-	base := buildLandmarks("Cidadela", nil)
+	base := buildLandmarks("Curitiba", nil)
 	res := withExtras(base, []string{" Minha Casa ", "minha casa", "Praça do Avô"})
 	if res.Candidates[0] != "Minha Casa" || res.Candidates[1] != "Praça do Avô" || len(res.Candidates) != 4 {
 		t.Errorf("candidates: %v", res.Candidates)
@@ -327,5 +323,26 @@ func TestWithExtras(t *testing.T) {
 	}
 	if withExtras(base, []string{" "}) != base {
 		t.Error("no valid extras must return the base result")
+	}
+}
+
+func TestWikipediaIsMainSourceWhenOverpassDown(t *testing.T) {
+	svc := mockService(func(r *http.Request) (int, string) {
+		switch r.URL.Host {
+		case "pt.wikipedia.org":
+			var gs []string
+			for _, n := range []string{"Catedral de Maringá", "Parque do Japão (Maringá)", "Estação Meteorológica de Maringá", "Teatro Calil Haddad"} {
+				gs = append(gs, fmt.Sprintf(`{"title":%q}`, n))
+			}
+			return 200, `{"query":{"geosearch":[` + strings.Join(gs, ",") + `]}}`
+		case "nominatim.openstreetmap.org":
+			return 200, `{"localname":"Maringá","centroid":{"coordinates":[-51.9,-23.4]}}`
+		}
+		return 502, ""
+	})
+	res, _ := svc.GetLandmarks("", "osm_9")
+	got := strings.Join(res.Candidates, "|")
+	if !strings.Contains(got, "Parque do Japão") || strings.Contains(got, "Meteorológica") || !res.Partial {
+		t.Errorf("candidates %v partial=%v", res.Candidates, res.Partial)
 	}
 }
