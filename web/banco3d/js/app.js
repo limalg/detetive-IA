@@ -14,13 +14,14 @@
   const pawns = new Map(), prevPos = new Map();
 
   // ---------- API ----------
-  async function api(path, body) {
+  async function api(path, body, signal) {
     if (DEMO) return demoApi(path, body);
     const res = await fetch(API + path, {
       method: body ? 'POST' : 'GET',
       headers: body ? { 'Content-Type': 'application/json' } : undefined,
       body: body ? JSON.stringify(body) : undefined,
       credentials: 'include',
+      signal,
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || data.message || 'Erro ' + res.status);
@@ -31,6 +32,7 @@
   // saved player id per room, so a reload reconnects instead of re-joining
   const saveKey = (id) => 'banco3d:' + id;
   const loadSaved = (id) => { try { return JSON.parse(localStorage.getItem(saveKey(id))); } catch { return null; } };
+  const forget = (id) => { try { localStorage.removeItem(saveKey(id)); if (localStorage.getItem('banco3d:last') === id) localStorage.removeItem('banco3d:last'); } catch { /* private mode */ } };
   const save = (id, v) => { try { localStorage.setItem(saveKey(id), JSON.stringify(v)); } catch { /* private mode */ } };
 
   // ---------- backend shape -> view shape ----------
@@ -38,13 +40,13 @@
   function norm(r) {
     const g = r.game || {}, tiles = (r.board && r.board.tiles) || [];
     const players = (g.players || []).map((p) => ({ id: p.id, name: p.name, color: p.color, balance: p.money, position: p.position, bankrupt: p.is_bankrupt, properties: p.properties || [] }));
-    const board = tiles.map((t) => ({ position: t.index, type: TT[t.type] || t.type, name: t.name, group: t.group, price: t.price, rent_base: (t.rent || [])[0] || 0, build_cost: t.house_cost, owner_id: t.owner_id, houses: t.houses >= 5 ? 0 : t.houses, hotel: t.houses >= 5, queen: t.is_queen }));
+    const board = tiles.map((t) => ({ position: t.index, type: TT[t.type] || t.type, name: t.name, group: t.group, price: t.price, rent: t.rent || [], rent_base: (t.rent || [])[0] || 0, build_cost: t.house_cost, image_kind: t.image_kind, description: t.description, mortgage: t.mortgage_value, owner_id: t.owner_id, houses: t.houses >= 5 ? 0 : t.houses, hotel: t.houses >= 5, queen: t.is_queen }));
     const cur = g.current_turn_player_id, me = players.find((p) => p.id === meId);
     const mine = cur === meId && g.is_started && !g.is_over, rolled = !!g.dice_rolled_this_turn;
     const t = me && board[me.position];
     const buyable = t && t.price > 0 && !t.owner_id && ['PROPERTY', 'STATION', 'UTILITY'].includes(t.type);
     const win = players.find((p) => p.id === g.winner_id);
-    return { city: r.city, board, players, current_turn: cur, status: g.is_over ? 'finished' : 'in_progress', winner: win && win.name, turn_start: g.turn_start_time,
+    return { city: r.city, board, players, current_turn: cur, status: g.is_over ? 'finished' : 'in_progress', winner: win && win.name, turn_start: g.turn_start_time, decision_deadline: g.decision_deadline || r.decision_deadline || null,
       can_roll: mine && !rolled, can_buy: mine && rolled && !!buyable, can_end_turn: mine && rolled,
       card: g.last_card_result && g.last_card_result.card ? { key: g.turn_index + ':' + g.last_card_result.card.id + ':' + g.last_card_result.player_id, deck: g.last_card_result.card.deck || g.last_card_result.card.type, title: g.last_card_result.card.title, delta: g.last_card_result.money_delta, jail: g.last_card_result.went_to_jail, who: g.last_card_result.player_id } : null };
   }
@@ -94,7 +96,8 @@
       if (t.type === 'PROPERTY') el.style.setProperty('--gc', `var(--g-${t.group})`);
       const nm = CORNER[t.type] || (t.type === 'LUCK' ? 'Sorte ou Revés' : t.name);
       const icon = tileIcon(t, t.type === 'STATION' || t.type === 'UTILITY' ? sn++ : i);
-      el.innerHTML = `${use(icon)}<span class="nm">${esc(nm)}</span>${t.price && !corner ? `<span class="pr">${brl(t.price)}</span>` : ''}<span class="hs"></span>`;
+      const th = ['PROPERTY', 'STATION', 'UTILITY'].includes(t.type) ? thumbFor(t) : null;
+      el.innerHTML = `${th ? `<img class="th" src="${th}" alt="" onerror="this.remove()">` : ''}${use(icon)}<span class="nm">${esc(nm)}</span>${t.price && !corner ? `<span class="pr">${brl(t.price)}</span>` : ''}<span class="hs"></span>`;
       el.setAttribute('aria-label', `${nm}${t.price ? ', ' + brl(t.price) : ''}`);
       el.onclick = () => showTile(i);
       board.appendChild(el);
@@ -141,17 +144,91 @@
     for (let pos = from; pos !== to;) { pos = (pos + 1) % N; placePawn(p, pos, i); await sleep(200); }
   }
 
+  // ---------- property art (assets/props): manifest or probing, graceful when absent ----------
+  const KINDS = ['street', 'avenue', 'square', 'park', 'landmark', 'station', 'utility'];
+  const KIND_LABEL = { street: 'Rua', avenue: 'Avenida', square: 'Praça', park: 'Parque', landmark: 'Ponto turístico', station: 'Estação', utility: 'Serviço' };
+  const PROPS = {}; // kind -> [urls]
+  const probe = (u) => new Promise((ok) => { const i = new Image(); i.onload = () => ok(true); i.onerror = () => ok(false); i.src = u; });
+  const propsReady = (async () => {
+    const base = 'assets/props/';
+    let m = null;
+    try { const r = await fetch(base + 'manifest.json'); if (r.ok) m = await r.json(); } catch { /* no manifest */ }
+    const ext = (m && m.ext) || 'webp';
+    await Promise.all(KINDS.map(async (k) => {
+      const v = m ? m[k] : undefined, urls = [];
+      if (Array.isArray(v)) v.forEach((f) => urls.push(base + f));
+      else if (typeof v === 'number') for (let i = 1; i <= v; i++) urls.push(`${base}${k}-${i}.${ext}`);
+      else if (!m) {
+        for (let i = 1; i <= 8 && await probe(`${base}${k}-${i}.${ext}`); i++) urls.push(`${base}${k}-${i}.${ext}`);
+        if (!urls.length && await probe(`${base}${k}.${ext}`)) urls.push(`${base}${k}.${ext}`);
+      }
+      PROPS[k] = urls;
+    }));
+  })();
+  const hash = (str) => [...str].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7);
+  function kindOf(t) {
+    if (t.image_kind) return t.image_kind;
+    if (t.queen) return 'landmark';
+    if (t.type === 'STATION') return 'station';
+    if (t.type === 'UTILITY') return 'utility';
+    const n = t.name;
+    if (/^av(\.|enida)?\s/i.test(n)) return 'avenue';
+    if (/^(praça|pça|largo)\b/i.test(n)) return 'square';
+    if (/(parque|jardim|bosque|lago)/i.test(n)) return 'park';
+    if (/(museu|catedral|teatro|ópera|mercado|mirante|palácio|torre|estádio|centro histórico)/i.test(n)) return 'landmark';
+    return 'street';
+  }
+  // same name -> same variant, so a tile keeps its picture across reloads
+  function thumbFor(t) { const l = PROPS[kindOf(t)] || []; return l.length ? l[hash(t.name) % l.length] : null; }
+
+  // ---------- players panel: persistent rows, balance tween, floating deltas ----------
+  const rows = new Map(), bal = new Map();
+  function tweenTo(id, el, to) {
+    const b = bal.get(id), from = b.shown, t0 = performance.now();
+    b.target = to; cancelAnimationFrame(b.raf);
+    const step = (now) => {
+      const k = Math.min(1, (now - t0) / 700);
+      b.shown = Math.round(from + (to - from) * (1 - Math.pow(1 - k, 3)));
+      el.textContent = brl(b.shown);
+      if (k < 1) b.raf = requestAnimationFrame(step);
+    };
+    b.raf = requestAnimationFrame(step);
+  }
+  function renderPlayers() {
+    const box = $('players');
+    state.players.forEach((p) => {
+      let r = rows.get(p.id);
+      if (!r) {
+        r = document.createElement('div');
+        r.innerHTML = `<div class="av">${use('user')}</div><div class="who"><b></b><span class="bal"></span></div><span class="crown" aria-label="Vez de jogar">●</span>`;
+        rows.set(p.id, r); box.appendChild(r);
+        bal.set(p.id, { shown: p.balance, target: p.balance, raf: 0 });
+        r.querySelector('.bal').textContent = brl(p.balance);
+      }
+      r.className = 'pl' + (p.id === state.current_turn ? ' turn' : '') + (p.bankrupt ? ' out' : '');
+      r.style.setProperty('--c', p.color);
+      r.querySelector('b').textContent = p.name + (p.id === meId ? ' (você)' : '');
+      r.querySelector('.crown').hidden = p.id !== state.current_turn;
+      const b = bal.get(p.id);
+      if (b.target !== p.balance) {
+        const d = p.balance - b.target, f = document.createElement('span');
+        f.className = 'fly ' + (d > 0 ? 'up' : 'down'); f.textContent = (d > 0 ? '+' : '−') + Math.abs(d).toLocaleString('pt-BR');
+        r.appendChild(f); setTimeout(() => f.remove(), 1600);
+        tweenTo(p.id, r.querySelector('.bal'), p.balance);
+      }
+    });
+  }
+
   // ---------- render ----------
   function render() {
-    $('players').innerHTML = state.players.map((p) =>
-      `<div class="pl${p.id === state.current_turn ? ' turn' : ''}${p.bankrupt ? ' out' : ''}" style="--c:${esc(p.color)}"><div class="av">${use('user')}</div><div><b>${esc(p.name)}${p.id === meId ? ' (você)' : ''}</b><span>${brl(p.balance)}</span></div>${p.id === state.current_turn ? '<span class="crown" aria-label="Vez de jogar">●</span>' : ''}</div>`).join('');
+    renderPlayers();
     $('cityName').textContent = state.city || 'Sua cidade';
     const mine = state.current_turn === meId && state.status === 'in_progress';
     const cur = state.players.find((p) => p.id === state.current_turn);
     $('statusText').textContent = state.status === 'finished' ? `Fim! ${state.winner || ''} venceu` : mine ? 'Sua vez' : `Vez de ${cur ? cur.name : '…'}`;
     $('btnRoll').disabled = busy || !state.can_roll;
     $('btnBuy').disabled = busy || !state.can_buy;
-    $('btnEnd').disabled = busy || !state.can_end_turn;
+    $('btnEnd').disabled = busy || !state.can_buy;
     $('btnBuild').disabled = true; $('btnBuild').title = 'Em breve';
     $('btnTrade').disabled = busy || state.status !== 'in_progress' || state.players.filter((p) => !p.bankrupt).length < 2;
     state.board.forEach((t, i) => {
@@ -181,26 +258,91 @@
     await sleep(1000);
   }
 
-  // apply a fresh room payload: animate pawn moves, then redraw
+  // apply a fresh room payload: roll dice + walk pawns for every mover, then redraw
   let seenCard; // undefined until the first state, so a reload doesn't replay an old card
   const cardMsg = (c) => { const p = state.players.find((x) => x.id === c.who); return `${c.deck === 'CHEST' ? 'Revés' : 'Sorte'}${p && p.id !== meId ? ' de ' + p.name : ''}: ${c.title}${c.delta ? ` (${c.delta > 0 ? '+' : '−'}${brl(Math.abs(c.delta))})` : ''}${c.jail ? ' · Cadeia!' : ''}`; };
-  async function commit(r, quiet) {
+  // events[]: only entries not seen before are new; the first payload just primes the set
+  const seenEv = new Set();
+  const evKey = (e) => e.seq ?? e.id ?? `${e.timestamp}|${e.type}|${e.player_id}`;
+  function freshEvents(r) {
+    const list = Array.isArray(r.events) ? r.events : (r.game && Array.isArray(r.game.events) ? r.game.events : null);
+    if (!list) return null;
+    const first = seenEv.size === 0 && !seenEv.primed;
+    seenEv.primed = true;
+    const out = list.filter((e) => !seenEv.has(evKey(e)));
+    list.forEach((e) => seenEv.add(evKey(e)));
+    if (seenEv.size > 500) seenEv.clear();
+    return first ? [] : out;
+  }
+  // no events from the server: split the distance walked into two plausible dice
+  function guessDice(from, to, N) {
+    const d = (to - from + N) % N;
+    if (d < 2 || d > 12) return null;
+    const a = Math.ceil(d / 2), b = d - a;
+    return Math.random() < .5 ? [a, b] : [b, a];
+  }
+  async function commit(r, quiet, rolled) {
     raw = r;
     const next = norm(r), old = new Map(prevPos);
+    await propsReady;
     if (!boardBuilt || $('board').children.length < next.board.length) { state = next; buildBoard(); }
     state = next;
+    const evs = freshEvents(r), diceBy = new Map(), N = state.board.length;
+    (evs || []).filter((e) => e.type === 'roll' && e.dice).forEach((e) => diceBy.set(e.player_id, e.dice));
     for (const p of state.players) {
       const from = old.get(p.id);
-      if (from !== undefined && from !== p.position && !p.bankrupt) await walk(p, from, p.position);
-      else if (!pawns.has(p.id)) placePawn(p, p.position, state.players.indexOf(p));
+      if (from !== undefined && from !== p.position && !p.bankrupt) {
+        if (!(rolled && p.id === meId)) {
+          const dice = diceBy.get(p.id) || guessDice(from, p.position, N);
+          if (dice) { if (p.id !== meId) toast(`${p.name} tirou ${dice[0] + dice[1]}`); await rollDice(dice); }
+        }
+        if ((p.position - from + N) % N > 14) placePawn(p, p.position, state.players.indexOf(p)); // card/jail teleport
+        else await walk(p, from, p.position);
+      } else if (!pawns.has(p.id)) placePawn(p, p.position, state.players.indexOf(p));
       prevPos.set(p.id, p.position);
     }
     render();
     checkOffer();
+    autoTurn();
+    if (evs) {
+      const msgs = evs.filter((e) => e.message && e.type !== 'roll' && e.type !== 'pass').map((e) => e.message);
+      if (msgs.length && !quiet) toast(msgs[msgs.length - 1]);
+      return msgs.join(' · ');
+    }
     const c = state.card;
     if (seenCard === undefined) { seenCard = c ? c.key : ''; return ''; }
     if (c && c.key !== seenCard) { seenCard = c.key; if (!quiet) toast(cardMsg(c)); return cardMsg(c); }
     return '';
+  }
+
+  // ---------- automatic turn: 8s window to buy, then the turn passes by itself ----------
+  let autoKey = null, autoT = null, cdI = null;
+  function stopAuto() { clearTimeout(autoT); clearInterval(cdI); autoT = cdI = autoKey = null; $('btnEnd').hidden = true; $('buyCd').hidden = true; }
+  async function passTurn(msg) {
+    if (busy) return void setTimeout(() => passTurn(msg), 400);
+    await run(async () => {
+      const fresh = await getRoom(roomId); // the server may have passed already
+      if (fresh.game.current_turn_player_id !== meId) { await commit(fresh); return; }
+      if (msg) toast(msg);
+      const r = await act('pass');
+      await commit(r.game ? r : await getRoom(roomId));
+    });
+  }
+  function autoTurn() {
+    const mine = state.current_turn === meId && state.status === 'in_progress';
+    const key = `${state.current_turn}:${raw.game.turn_index}:${state.can_buy ? 'b' : state.can_end_turn ? 'p' : 'r'}`;
+    if (key === autoKey) return;
+    stopAuto(); autoKey = key;
+    if (!mine) return;
+    if (state.can_buy) {
+      const server = !!state.decision_deadline, dl = server ? new Date(state.decision_deadline).getTime() : Date.now() + 8000;
+      $('btnEnd').hidden = false; $('buyCd').hidden = false;
+      const upd = () => { $('buyCd').textContent = Math.max(0, Math.ceil((dl - Date.now()) / 1000)); };
+      cdI = setInterval(upd, 250); upd();
+      autoT = setTimeout(() => passTurn('Tempo esgotado: não comprou'), Math.max(0, dl - Date.now()) + (server ? 2500 : 0)); // server passes first when it can
+    } else if (state.can_end_turn) {
+      autoT = setTimeout(() => passTurn(), 2200);
+    }
   }
 
   // ---------- game actions ----------
@@ -218,12 +360,12 @@
     const d = r.dice || r.result || {};
     const dice = [d.die1 || (d.dice && d.dice[0]) || 1, d.die2 || (d.dice && d.dice[1]) || 1];
     await rollDice(dice);
-    const card = await commit(r.game ? r : await getRoom(roomId), true);
+    const card = await commit(r.game ? r : await getRoom(roomId), true, true);
     const me = state.players.find((p) => p.id === meId), t = state.board[me.position];
     toast(`Tirou ${dice[0] + dice[1]}. ${t.name}.` + (state.can_buy ? ` Comprar por ${brl(t.price)}?` : '') + (card ? ' ' + card : ''));
   });
   $('btnBuy').onclick = () => run(async () => { const r = await act('buy'); await commit(r.game ? r : await getRoom(roomId)); toast('Comprado!'); });
-  $('btnEnd').onclick = () => run(async () => { const r = await act('pass'); await commit(r.game ? r : await getRoom(roomId)); });
+  $('btnEnd').onclick = () => passTurn();
   $('btnMap').onclick = () => { const f = $('table').classList.toggle('flat'); $('btnMap').setAttribute('aria-pressed', f); setTimeout(placeAll, 720); };
 
   function sheet(title, html) { $('sheetTitle').textContent = title; $('sheetBody').innerHTML = html; $('sheet').hidden = false; }
@@ -231,7 +373,12 @@
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') $('sheet').hidden = true; });
   function showTile(i) {
     const t = state.board[i], o = state.players.find((p) => p.id === t.owner_id);
-    sheet(CORNER[t.type] || t.name, `${t.queen ? '<p>★ Ícone da cidade (votado)</p>' : ''}<p>${t.price ? 'Preço ' + brl(t.price) : ''}</p>${t.rent_base ? `<p>Aluguel ${brl(t.rent_base)}</p>` : ''}<p>${o ? 'Dono: ' + esc(o.name) : t.price ? 'Livre' : ''}</p>`);
+    if (!t.price) return sheet(CORNER[t.type] || (t.type === 'LUCK' ? 'Sorte ou Revés' : t.name), t.description ? `<p>${esc(t.description)}</p>` : '<p class="dim">Casa especial.</p>');
+    const k = kindOf(t), th = thumbFor(t), gc = t.type === 'PROPERTY' ? `var(--g-${t.group})` : '#38bdf8';
+    const rent = t.type === 'PROPERTY' && t.rent.length > 5
+      ? ['Aluguel base', '1 casa', '2 casas', '3 casas', '4 casas', 'Hotel'].map((l, n) => `<dt>${l}</dt><dd>${brl(t.rent[n])}</dd>`).join('')
+      : (t.rent_base ? `<dt>Aluguel</dt><dd>${brl(t.rent_base)}</dd>` : '');
+    sheet(t.name, `<div class="pc"><div class="pc-img" style="--gc:${gc}">${th ? `<img src="${th}" alt="" onerror="this.remove()">` : ''}<span class="pc-ic">${use(tileIcon(t, i))}</span></div><p class="kind">${KIND_LABEL[k] || ''}${t.queen ? ' · ★ ícone da cidade' : ''}</p>${t.description ? `<p>${esc(t.description)}</p>` : ''}<dl><dt>Preço</dt><dd>${brl(t.price)}</dd>${rent}${t.build_cost ? `<dt>Casa custa</dt><dd>${brl(t.build_cost)}</dd>` : ''}${t.mortgage ? `<dt>Hipoteca</dt><dd>${brl(t.mortgage)}</dd>` : ''}<dt>Dono</dt><dd>${o ? esc(o.name) : 'Livre'}</dd></dl></div>`);
   }
 
   // ---------- incoming trade offer ----------
@@ -289,14 +436,14 @@
 
   // ---------- match config modal ----------
   const CFG_KEY = 'banco3d:config';
-  const DEFAULT_CFG = { city: 'Curitiba, PR', players: 4, balance: 1500, bots: 0, difficulty: 'normal', turn: 30, bail: true, triple: true, freecard: true };
+  const DEFAULT_CFG = { city: '', players: 4, balance: 1500, bots: 0, difficulty: 'normal', turn: 30, bail: true, triple: true, freecard: true };
   let cfg = { ...DEFAULT_CFG };
   try { cfg = { ...cfg, ...JSON.parse(localStorage.getItem(CFG_KEY)) }; } catch { /* first run */ }
   let cfgOpener = null;
   const cf = () => $('cfgForm');
   function fillCfg() {
     const f = cf();
-    f.city.value = $('fHome').city.value || cfg.city;
+    f.city.value = $('fHome').city.value;
     f.balance.value = cfg.balance;
     for (const k of ['players', 'bots', 'difficulty', 'turn']) f.querySelectorAll(`[name=${k}]`).forEach((r) => (r.checked = String(r.value) === String(cfg[k])));
     for (const k of ['bail', 'triple', 'freecard']) f[k].checked = cfg[k];
@@ -318,9 +465,9 @@
   cf().onsubmit = (e) => {
     e.preventDefault();
     const f = cf();
-    cfg = { city: f.city.value.trim() || DEFAULT_CFG.city, players: +f.players.value, balance: Math.min(10000, Math.max(500, +f.balance.value || 1500)), bots: +f.bots.value, difficulty: f.difficulty.value, turn: +f.turn.value, bail: f.bail.checked, triple: f.triple.checked, freecard: f.freecard.checked };
+    cfg = { players: +f.players.value, balance: Math.min(10000, Math.max(500, +f.balance.value || 1500)), bots: +f.bots.value, difficulty: f.difficulty.value, turn: +f.turn.value, bail: f.bail.checked, triple: f.triple.checked, freecard: f.freecard.checked };
     try { localStorage.setItem(CFG_KEY, JSON.stringify(cfg)); } catch { /* private mode */ }
-    $('fHome').city.value = cfg.city;
+    $('fHome').city.value = f.city.value.trim();
     closeCfg();
   };
   const cfgPayload = () => ({ max_players: cfg.players, bots: { count: cfg.bots, difficulty: cfg.difficulty }, starting_balance: cfg.balance, turn_seconds: cfg.turn, rules: { jail_bail: cfg.bail, jail_triple_doubles: cfg.triple, get_out_free_card: cfg.freecard } });
@@ -339,6 +486,7 @@
     const j = await api('/api/banco3d/room/join', { room_id: id, player_id: saved ? saved.player_id : '', name, color: COLORS[st.game.players.length % COLORS.length], piece: 'car' });
     roomId = id; meId = j.player.id;
     save(id, { player_id: meId, name });
+    try { localStorage.setItem('banco3d:last', id); } catch { /* private mode */ }
     const u = new URL(location.href); u.searchParams.set('sala', id); history.replaceState(null, '', u);
     startPolling();
   }
@@ -348,7 +496,7 @@
     const f = e.target;
     try {
       const id = newCode();
-      const c = await api('/api/banco3d/room/create', { room_id: id, city: f.city.value.trim(), config: cfgPayload() });
+      const c = await api('/api/banco3d/room/create', { room_id: id, city: f.city.value.trim(), place_id: f.city.dataset.placeId || undefined, config: cfgPayload() });
       localVoting = { candidates: c.candidates };
       await join(id, f.name.value.trim());
     } catch (x) { err(x.message); }
@@ -426,7 +574,7 @@
         setView('vote'); await drawVote();
       } else { setView('lobby'); drawLobby(); }
     } catch (x) {
-      if (/não encontrada|not found/i.test(x.message)) { err('Sala não existe mais.'); roomId = null; setView('home'); }
+      if (/não encontrada|not found/i.test(x.message)) { clearInterval(timer); forget(roomId); roomId = null; stopAuto(); setView('home'); err('A sala não existe mais (o servidor pode ter reiniciado). Crie uma nova.'); }
     }
     polling = false;
   }
@@ -434,19 +582,72 @@
   function startPolling() { clearInterval(timer); tick(); timer = setInterval(tick, 1000); }
   addEventListener('resize', () => state && placeAll());
 
-  // ---------- boot: reconnect from ?sala= ----------
+  // ---------- city combobox: GET /api/banco3d/places/suggest?q= (free text always allowed) ----------
+  function attachCombo(input) {
+    const wrap = document.createElement('div');
+    wrap.className = 'combo';
+    input.replaceWith(wrap); wrap.appendChild(input);
+    const lb = document.createElement('ul');
+    lb.className = 'combo-list'; lb.id = 'lb-' + Math.random().toString(36).slice(2, 7); lb.hidden = true; lb.setAttribute('role', 'listbox'); lb.setAttribute('aria-label', 'Sugestões de lugares');
+    wrap.appendChild(lb);
+    input.setAttribute('role', 'combobox'); input.setAttribute('aria-autocomplete', 'list'); input.setAttribute('aria-expanded', 'false'); input.setAttribute('aria-controls', lb.id); input.autocomplete = 'off';
+    let items = [], act = -1, timer, ctl;
+    const open = (v) => { lb.hidden = !v; input.setAttribute('aria-expanded', String(v)); wrap.toggleAttribute('data-open', v); if (!v) { act = -1; input.removeAttribute('aria-activedescendant'); } };
+    const note = (t) => { items = []; lb.innerHTML = `<li class="note" role="presentation">${t}</li>`; open(true); };
+    const draw = () => {
+      lb.innerHTML = items.map((it, i) => `<li role="option" id="${lb.id}-${i}" aria-selected="${i === act}" class="${i === act ? 'on' : ''}"><b>${esc(it.name)}</b>${it.desc ? `<span>${esc(it.desc)}</span>` : ''}</li>`).join('');
+      if (act >= 0) input.setAttribute('aria-activedescendant', `${lb.id}-${act}`); else input.removeAttribute('aria-activedescendant');
+    };
+    const pick = (i) => { const it = items[i]; input.value = it.desc ? `${it.name}, ${it.desc}` : it.name; input.dataset.placeId = it.id; open(false); };
+    lb.addEventListener('mousedown', (e) => { const li = e.target.closest('[role=option]'); if (li) { e.preventDefault(); pick(+li.id.split('-').pop()); } });
+    input.addEventListener('input', () => {
+      delete input.dataset.placeId; clearTimeout(timer); if (ctl) ctl.abort();
+      const q = input.value.trim();
+      if (q.length < 2) return open(false);
+      timer = setTimeout(async () => {
+        note('Buscando…'); ctl = new AbortController();
+        try {
+          const d = await api('/api/banco3d/places/suggest?q=' + encodeURIComponent(q), null, ctl.signal);
+          const list = Array.isArray(d) ? d : d.suggestions || d.places || d.results || [];
+          items = list.slice(0, 6).map((it) => ({ id: it.id || it.place_id || '', name: it.name || it.label || it.description || '', desc: it.name || it.label ? it.description || it.subtitle || '' : '' })).filter((it) => it.name);
+          if (!items.length) return note('Nenhum lugar encontrado. Pode digitar livremente.');
+          act = -1; draw(); open(true);
+        } catch (x) { if (x.name !== 'AbortError') note('Sugestões indisponíveis. Digite livremente.'); }
+      }, 300);
+    });
+    input.addEventListener('keydown', (e) => {
+      if (lb.hidden || !items.length) { if (e.key === 'Escape' && !lb.hidden) { e.stopPropagation(); open(false); } return; }
+      if (e.key === 'ArrowDown') { e.preventDefault(); act = (act + 1) % items.length; draw(); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); act = (act - 1 + items.length) % items.length; draw(); }
+      else if (e.key === 'Enter' && act >= 0) { e.preventDefault(); pick(act); }
+      else if (e.key === 'Escape') { e.stopPropagation(); open(false); }
+    });
+    input.addEventListener('blur', () => setTimeout(() => open(false), 120));
+  }
+  attachCombo($('fHome').city);
+  attachCombo(cf().city);
+
+  // ---------- boot: reopen the room from ?sala= (or the last one) via saved player_id ----------
   (async () => {
-    $('fHome').city.value = cfg.city;
-    const id = (qs.get('sala') || '').toUpperCase();
     if (qs.get('config') === '1') openCfg();
+    let id = (qs.get('sala') || '').toUpperCase(), auto = false;
+    if (!id) { try { id = localStorage.getItem('banco3d:last') || ''; auto = !!id; } catch { /* private mode */ } }
     if (!id) return setView('home');
     $('joinCode').textContent = id; roomId = id;
-    try {
-      const st = await getRoom(id);
-      $('joinCity').textContent = st.city;
-      const saved = loadSaved(id);
-      if (saved) await join(id, saved.name || 'Jogador'); else setView('join');
-    } catch (x) { roomId = null; setView('home'); err(x.message); }
+    for (let n = 0; n < 3; n++) {
+      try {
+        const st = await getRoom(id);
+        $('joinCity').textContent = st.city;
+        const saved = loadSaved(id);
+        if (saved) await join(id, saved.name || 'Jogador');
+        else if (auto) { roomId = null; setView('home'); } else setView('join');
+        return;
+      } catch (x) {
+        if (/não encontrada|not found|404/i.test(x.message)) { roomId = null; forget(id); setView('home'); if (!auto) err('Essa sala não existe mais (o servidor pode ter reiniciado). Crie uma nova.'); return; }
+        await sleep(1500);
+      }
+    }
+    roomId = null; setView('home'); err('Sem conexão com o servidor. Recarregue a página.');
   })();
 
   // ---------- demo engine (?demo): in-memory banco3d backend for visual checks ----------
@@ -454,6 +655,10 @@
   function demoApi(path, b) {
     const ok = (v) => Promise.resolve(structuredClone(v)), no = (m) => Promise.reject(new Error(m));
     const P = path.split('?')[0];
+    if (P.endsWith('/places/suggest')) {
+      const q = decodeURIComponent(path.split('q=')[1] || '').toLowerCase();
+      return ok({ suggestions: [['Curitiba', 'Paraná, Brasil'], ['Cuiabá', 'Mato Grosso, Brasil'], ['Cusco', 'Peru'], ['Recife', 'Pernambuco, Brasil'], ['Rio de Janeiro', 'Brasil'], ['Roma', 'Itália']].filter(([n]) => n.toLowerCase().includes(q)).map(([name, description], i) => ({ id: 'pl' + i, name, description })) });
+    }
     if (P.endsWith('/room/create')) {
       const names = ['Rua das Flores', 'Rua do Sol', 'Rua Aurora', 'Rua dos Ipês', 'Estação de Energia', 'Avenida Central', 'Avenida Paulista', 'Avenida Brasil', 'Avenida Atlântica', 'Rua 6 de Novembro', 'Rua Sete de Setembro', 'Rua Marechal Deodoro', 'Rua Floriano Peixoto', 'Estação de Água', 'Praça da República', 'Praça XV', 'Praça Mauá', 'Praça Tiradentes', 'Rua da Liberdade', 'Rua Galvão Bueno', 'Rua 25 de Março', 'Rua Direita', 'Estação de Trem', 'Rua Augusta', 'Rua Oscar Freire', 'Rua Haddock Lobo', 'Rua da Consolação', 'Rua Carlos Gomes', 'Rua Uruguai', 'Rua Rio Branco', 'Rua da Bahia', 'Estação de Internet', 'Rua Prudente de Morais'];
       const G = ['brown', 'light_blue', 'pink', 'orange', 'red', 'yellow', 'green', 'dark_blue'];
@@ -502,7 +707,17 @@
       if (b.to_player_id.startsWith('b')) swap(t); else room.pending_trade = t;
       return ok(room);
     }
-    if (P.endsWith('/room/pass')) { g.players.slice(1).forEach((p) => { p.position = (p.position + 2 + Math.floor(Math.random() * 10)) % 40; }); g.dice_rolled_this_turn = false; return ok(room); }
+    if (P.endsWith('/room/pass')) {
+      room.events = room.events || [];
+      g.players.slice(1).forEach((p) => {
+        const d1 = 1 + Math.floor(Math.random() * 6), d2 = 1 + Math.floor(Math.random() * 6);
+        p.position = (p.position + d1 + d2) % 40;
+        room.events.push({ type: 'roll', player_id: p.id, player_name: p.name, dice: [d1, d2], timestamp: Date.now() + '' + p.id });
+        if (Math.random() < .5) { const a = 20 * (1 + Math.floor(Math.random() * 4)); p.money -= a; g.players[0].money += a; room.events.push({ type: 'rent', player_id: p.id, player_name: p.name, value: a, message: `${p.name} pagou $ ${a} de aluguel`, timestamp: Date.now() + 'r' + p.id }); }
+      });
+      room.events = room.events.slice(-30); g.dice_rolled_this_turn = false; g.turn_index = (g.turn_index || 0) + 1;
+      return ok(room);
+    }
     return no('Indisponível no modo demo');
   }
 })();
