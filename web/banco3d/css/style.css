@@ -219,3 +219,8 @@ button { cursor: pointer; touch-action: manipulation; }
 .trade-card .dim.wide { grid-column: 1 / -1; margin: 0; }
 .trade-card .dim.bad { color: #f87171; }
 .tl input[type=checkbox] { margin: 0; min-height: 0; padding: 0; border: 0; background: none; }
+
+/* cover art behind hub/lobby/vote/config; darkened + blurred so the (illegible) in-image text never reads */
+.start::before { content: ""; position: absolute; inset: -12px; z-index: -1; background: linear-gradient(rgba(3, 8, 20, .72), rgba(3, 8, 20, .84)), url("../assets/capa-imperio-urbano.webp") center / cover no-repeat; filter: blur(4px); }
+.start > * { position: relative; }
+#trade::before { display: none; }
