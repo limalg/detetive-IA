@@ -44,7 +44,7 @@
   function tileIcon(t, n) {
     if (t.type === 'START') return 'arrow';
     if (t.type === 'JAIL') return 'bank';
-    if (t.type === 'PARKING') return 'bank';
+    if (t.type === 'PARKING') return 'user';
     if (t.type === 'GO_TO_JAIL') return 'car';
     if (t.type === 'LUCK') return 'q';
     if (t.type === 'TAX') return 'coin';
@@ -52,6 +52,7 @@
     return 'house';
   }
 
+  const CORNER = { START: 'Saída', JAIL: 'Prisão', PARKING: 'Visitante', GO_TO_JAIL: 'Vá para a Cadeia' };
   function buildBoard() {
     const board = $('board');
     const tiles = state.board, N = tiles.length, q = N / 4, S = q + 1;
@@ -71,7 +72,7 @@
       el.dataset.side = side(i, q);
       el.style.gridArea = `${r} / ${c}`;
       if (t.type === 'PROPERTY') el.style.setProperty('--gc', `var(--g-${t.group})`);
-      const nm = t.type === 'LUCK' ? 'Sorte ou Revés' : t.name;
+      const nm = CORNER[t.type] || (t.type === 'LUCK' ? 'Sorte ou Revés' : t.name);
       const icon = tileIcon(t, t.type === 'STATION' || t.type === 'UTILITY' ? sn++ : i);
       el.innerHTML = `${use(icon)}<span class="nm">${esc(nm)}</span>${t.price && !corner ? `<span class="pr">${brl(t.price)}</span>` : ''}<span class="hs"></span>`;
       el.setAttribute('aria-label', `${nm}${t.price ? ', ' + brl(t.price) : ''}`);
