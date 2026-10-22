@@ -440,7 +440,7 @@
     render();
     checkOffer();
     autoTurn();
-    cardEvs.forEach((e) => cardQ.push({ deck: e.deck, title: e.title, text: e.text, amount: e.amount ?? e.value, jail: e.went_to_jail, who: e.player_id }));
+    cardEvs.forEach((e) => cardQ.push({ deck: e.deck, title: e.title, text: e.text, amount: e.amount ?? e.value, jail: e.went_to_jail || /jail|prisao|cadeia/i.test(e.effect || ''), who: e.player_id }));
     const c = state.card, fresh = c && seenCard !== undefined && c.key !== seenCard;
     seenCard = c ? c.key : (seenCard === undefined ? '' : seenCard);
     if (fresh && !cardEvs.length) cardQ.push({ deck: c.deck, title: c.title, text: '', amount: c.delta, jail: c.jail, who: c.who });
