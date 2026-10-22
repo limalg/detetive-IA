@@ -70,9 +70,6 @@ func (h *Handler) HandleBanco3DPlacesLandmarks(w http.ResponseWriter, r *http.Re
 	if city == "" {
 		city = r.URL.Query().Get("q")
 	}
-	if city == "" {
-		city = "Curitiba"
-	}
 
 	res, err := banco3d.GlobalPlacesService.GetLandmarks(city, placeID)
 	if err != nil {

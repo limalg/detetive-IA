@@ -114,3 +114,54 @@ func TestPlacesLandmarks(t *testing.T) {
 		})
 	}
 }
+
+func TestPlacesLandmarksByPlaceID(t *testing.T) {
+	svc := NewPlacesService()
+
+	// 1. Repro case: place_id=osm_420024688 with empty city name
+	res, err := svc.GetLandmarks("", "osm_420024688")
+	if err != nil {
+		t.Fatalf("unexpected error getting landmarks by place_id osm_420024688: %v", err)
+	}
+	if res.City != "Londrina" {
+		t.Errorf("expected city 'Londrina', got '%s'", res.City)
+	}
+	if len(res.Candidates) != 4 {
+		t.Fatalf("expected 4 candidates, got %d", len(res.Candidates))
+	}
+	for _, cand := range res.Candidates {
+		if strings.Contains(cand, "Praça Central de ") || strings.Contains(cand, "Centro Histórico de ") || cand == "" {
+			t.Errorf("got procedural placeholder candidate: '%s'", cand)
+		}
+	}
+	if len(res.Landmarks) < 28 {
+		t.Errorf("expected at least 28 landmarks, got %d", len(res.Landmarks))
+	}
+
+	// 2. Offline catalog place_ids: Recife and Porto Alegre with empty city
+	cases := []struct {
+		placeID      string
+		expectedCity string
+	}{
+		{"pl_recife", "Recife"},
+		{"pl_poa", "Porto Alegre"},
+	}
+
+	for _, c := range cases {
+		r, err := svc.GetLandmarks("", c.placeID)
+		if err != nil {
+			t.Fatalf("[%s] error: %v", c.placeID, err)
+		}
+		if r.City != c.expectedCity {
+			t.Errorf("[%s] expected city '%s', got '%s'", c.placeID, c.expectedCity, r.City)
+		}
+		if len(r.Candidates) != 4 {
+			t.Errorf("[%s] expected 4 candidates, got %d", c.placeID, len(r.Candidates))
+		}
+		for _, cand := range r.Candidates {
+			if strings.Contains(cand, "Praça Central de ") || cand == "" {
+				t.Errorf("[%s] got procedural candidate: %s", c.placeID, cand)
+			}
+		}
+	}
+}

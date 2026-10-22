@@ -561,6 +561,25 @@ func TestBanco3DPlacesAndEventsAPI(t *testing.T) {
 		t.Errorf("expected landmarks list to be populated")
 	}
 
+	// 2b. Test GET /api/banco3d/places/landmarks?place_id=osm_420024688 (Londrina without city param)
+	reqLondrina := httptest.NewRequest("GET", "/api/banco3d/places/landmarks?place_id=osm_420024688", nil)
+	rrLondrina := httptest.NewRecorder()
+	router.ServeHTTP(rrLondrina, reqLondrina)
+	if rrLondrina.Code != http.StatusOK {
+		t.Fatalf("expected 200 for place_id=osm_420024688, got %d", rrLondrina.Code)
+	}
+	var londrinaRes struct {
+		City       string   `json:"city"`
+		Candidates []string `json:"candidates"`
+	}
+	_ = json.Unmarshal(rrLondrina.Body.Bytes(), &londrinaRes)
+	if londrinaRes.City != "Londrina" {
+		t.Errorf("expected city 'Londrina' from place_id lookup, got '%s'", londrinaRes.City)
+	}
+	if len(londrinaRes.Candidates) != 4 {
+		t.Errorf("expected 4 candidates, got %d", len(londrinaRes.Candidates))
+	}
+
 	// 3. Test Room Events & Automatic Turn Flow
 	createBody, _ := json.Marshal(map[string]interface{}{
 		"room_id": "sala-events-test",

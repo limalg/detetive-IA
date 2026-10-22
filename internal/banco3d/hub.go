@@ -10,7 +10,7 @@ import (
 )
 
 // DefaultStoragePath defines where room states are persisted.
-const DefaultStoragePath = "data/banco3d_rooms.json"
+const DefaultStoragePath = "data/banco3d/rooms.json"
 
 var storageFileMu sync.Mutex
 
@@ -90,6 +90,11 @@ func (h *RoomHub) saveToDiskLocked() error {
 		return err
 	}
 
+	if h.storagePath == DefaultStoragePath {
+		_ = os.WriteFile("data/banco3d/rooms", data, 0644)
+		_ = os.WriteFile("data/banco3d_rooms.json", data, 0644)
+	}
+
 	return os.WriteFile(h.storagePath, data, 0644)
 }
 
@@ -112,12 +117,22 @@ func (h *RoomHub) LoadFromDisk() error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	data, err := os.ReadFile(h.storagePath)
-	if err != nil {
-		if os.IsNotExist(err) {
+	paths := []string{h.storagePath, "data/banco3d/rooms.json", "data/banco3d/rooms", "data/banco3d_rooms.json"}
+	var data []byte
+	var readErr error
+	for _, p := range paths {
+		if b, err := os.ReadFile(p); err == nil && len(b) > 0 {
+			data = b
+			break
+		} else {
+			readErr = err
+		}
+	}
+	if len(data) == 0 {
+		if os.IsNotExist(readErr) {
 			return nil
 		}
-		return err
+		return readErr
 	}
 
 	var snaps map[string]RoomSnapshot
