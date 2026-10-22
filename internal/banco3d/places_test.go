@@ -1,6 +1,11 @@
 package banco3d
 
 import (
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -57,7 +62,7 @@ func TestPlacesSuggestOfflineAndCache(t *testing.T) {
 }
 
 func TestPlacesLandmarks(t *testing.T) {
-	svc := NewPlacesService()
+	svc := mockService(func(*http.Request) (int, string) { return 503, "" })
 
 	cities := []string{
 		"Curitiba",
@@ -116,7 +121,7 @@ func TestPlacesLandmarks(t *testing.T) {
 }
 
 func TestPlacesLandmarksByPlaceID(t *testing.T) {
-	svc := NewPlacesService()
+	svc := mockService(func(*http.Request) (int, string) { return 503, "" })
 
 	// 1. Repro case: place_id=osm_420024688 with empty city name
 	res, err := svc.GetLandmarks("", "osm_420024688")
@@ -163,5 +168,119 @@ func TestPlacesLandmarksByPlaceID(t *testing.T) {
 				t.Errorf("[%s] got procedural candidate: %s", c.placeID, cand)
 			}
 		}
+	}
+}
+
+type rtFunc func(*http.Request) (*http.Response, error)
+
+func (f rtFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func mockService(h func(r *http.Request) (int, string)) *PlacesService {
+	svc := NewPlacesService()
+	svc.minGap = 0
+	svc.client = &http.Client{Transport: rtFunc(func(r *http.Request) (*http.Response, error) {
+		code, body := h(r)
+		return &http.Response{StatusCode: code, Body: io.NopCloser(strings.NewReader(body)), Header: http.Header{}}, nil
+	})}
+	return svc
+}
+
+func overpassBody(n int) string {
+	var els []string
+	for i := 0; i < n; i++ {
+		els = append(els, fmt.Sprintf(`{"tags":{"name":"Rua Real %d","highway":"tertiary"}}`, i))
+	}
+	els = append(els,
+		`{"tags":{"name":"Catedral Basílica","historic":"church","wikidata":"Q1"}}`,
+		`{"tags":{"name":"Parque do Ingá","leisure":"park","wikipedia":"pt:Parque"}}`,
+		`{"tags":{"name":"Avenida Colombo","highway":"primary"}}`,
+		`{"tags":{"name":"Avenida Colombo","highway":"primary"}}`,
+		`{"tags":{"name":"Rodoviária Velha","amenity":"bus_station"}}`,
+		`{"tags":{"name":"Torre d'Água","man_made":"water_tower"}}`,
+		`{"tags":{"name":"Maringá","place":"suburb"}}`)
+	return `{"elements":[` + strings.Join(els, ",") + `]}`
+}
+
+func TestGetLandmarksRealPlacesByPlaceID(t *testing.T) {
+	svc := mockService(func(r *http.Request) (int, string) {
+		switch r.URL.Host {
+		case "nominatim.openstreetmap.org":
+			if r.Header.Get("User-Agent") == "" {
+				t.Error("missing User-Agent")
+			}
+			return 200, `{"localname":"Maringá","centroid":{"coordinates":[-51.93,-23.42]}}`
+		default:
+			return 200, overpassBody(30)
+		}
+	})
+	res, err := svc.GetLandmarks("", "osm_12024671")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.City != "Maringá" || len(res.Candidates) != 4 || len(res.Landmarks) != 28 {
+		t.Fatalf("city=%q cands=%d lm=%d", res.City, len(res.Candidates), len(res.Landmarks))
+	}
+	if res.Candidates[0] != "Catedral Basílica" && res.Candidates[0] != "Parque do Ingá" {
+		t.Errorf("famous places should lead candidates: %v", res.Candidates)
+	}
+	seen := map[string]bool{}
+	for _, l := range res.Landmarks {
+		if seen[l.Name] {
+			t.Errorf("duplicate %s", l.Name)
+		}
+		seen[l.Name] = true
+		if strings.Contains(l.Name, "Curitiba") {
+			t.Errorf("other municipality leaked: %s", l.Name)
+		}
+	}
+	if !seen["Rodoviária Velha"] || !seen["Torre d'Água"] {
+		t.Errorf("station/utility not classified: %v", seen)
+	}
+	if seen["Maringá"] {
+		t.Error("city name itself must not be a tile")
+	}
+}
+
+func TestGetLandmarksAPIFailure(t *testing.T) {
+	svc := mockService(func(r *http.Request) (int, string) { return 503, "" })
+
+	// Not in catalog: pad with the city's own names, never another municipality.
+	res, _ := svc.GetLandmarks("Sorocaba", "")
+	if res.City != "Sorocaba" || len(res.Landmarks) != 28 || len(res.Candidates) != 4 {
+		t.Fatalf("bad result %+v", res)
+	}
+	for _, l := range res.Landmarks {
+		if !strings.Contains(l.Name, "Sorocaba") {
+			t.Errorf("non-municipal name %q", l.Name)
+		}
+	}
+	// In catalog: preset names.
+	res, _ = svc.GetLandmarks("Londrina", "")
+	if res.City != "Londrina" || len(res.Landmarks) != 28 {
+		t.Fatalf("bad catalog result %+v", res)
+	}
+}
+
+func TestDiskCachePersistsDetails(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "c.json")
+	svc := mockService(func(r *http.Request) (int, string) {
+		return 200, `{"localname":"Caxias do Sul","centroid":{"coordinates":[-51.18,-29.16]}}`
+	}).WithDiskCache(path)
+	if _, _, _, err := svc.resolvePlaceID("osm_1"); err != nil {
+		t.Fatal(err)
+	}
+	down := mockService(func(r *http.Request) (int, string) { return 500, "" }).WithDiskCache(path)
+	if name, _, _, err := down.resolvePlaceID("osm_1"); err != nil || name != "Caxias do Sul" {
+		t.Fatalf("disk cache miss: %q %v", name, err)
+	}
+}
+
+func TestPlacesIntegrationOptional(t *testing.T) {
+	if os.Getenv("BANCO3D_INTEGRATION") == "" {
+		t.Skip("set BANCO3D_INTEGRATION=1 for live Nominatim/Overpass")
+	}
+	res, err := NewPlacesService().GetLandmarks("", "osm_12024671")
+	if err != nil || res.City != "Maringá" {
+		t.Fatalf("%+v %v", res, err)
 	}
 }
