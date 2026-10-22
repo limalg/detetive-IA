@@ -87,7 +87,7 @@
       const [r, c] = cell(i, q), corner = i % q === 0;
       const el = document.createElement('button');
       el.type = 'button';
-      el.className = 'tile ' + (corner ? 'corner ' : '') + t.type.toLowerCase().replace(/_/g, '') + (t.type === 'PROPERTY' ? ' prop' : '') + (t.queen ? ' queen' : '');
+      el.className = 'tile ' + (corner ? 'corner ' : '') + 'tt-' + t.type.toLowerCase().replace(/_/g, '') + (t.type === 'PROPERTY' ? ' prop' : '') + (t.queen ? ' queen' : '');
       el.dataset.side = side(i, q);
       el.style.gridArea = `${r} / ${c}`;
       if (t.type === 'PROPERTY') el.style.setProperty('--gc', `var(--g-${t.group})`);
