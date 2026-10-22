@@ -37,3 +37,6 @@ vendor/
 # Agent local tooling directories
 .claude/
 agent/
+
+# generated source art (kept outside the repo)
+web/banco3d/assets/props-src/

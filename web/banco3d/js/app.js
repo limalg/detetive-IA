@@ -368,17 +368,31 @@
   $('btnEnd').onclick = () => passTurn();
   $('btnMap').onclick = () => { const f = $('table').classList.toggle('flat'); $('btnMap').setAttribute('aria-pressed', f); setTimeout(placeAll, 720); };
 
-  function sheet(title, html) { $('sheetTitle').textContent = title; $('sheetBody').innerHTML = html; $('sheet').hidden = false; }
-  $('sheetClose').onclick = () => ($('sheet').hidden = true);
+  let cardTimer = null;
+  const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
+  function sheet(title, html) { clearInterval(cardTimer); $('sheetTitle').textContent = title; $('sheetBody').innerHTML = html; $('sheet').hidden = false; }
+  $('sheetClose').onclick = () => { clearInterval(cardTimer); $('sheet').hidden = true; };
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') $('sheet').hidden = true; });
   function showTile(i) {
     const t = state.board[i], o = state.players.find((p) => p.id === t.owner_id);
     if (!t.price) return sheet(CORNER[t.type] || (t.type === 'LUCK' ? 'Sorte ou Revés' : t.name), t.description ? `<p>${esc(t.description)}</p>` : '<p class="dim">Casa especial.</p>');
-    const k = kindOf(t), th = thumbFor(t), gc = t.type === 'PROPERTY' ? `var(--g-${t.group})` : '#38bdf8';
+    const k = kindOf(t), list = PROPS[k] || [], idx = list.length ? hash(t.name) % list.length : -1, gc = t.type === 'PROPERTY' ? `var(--g-${t.group})` : '#38bdf8';
     const rent = t.type === 'PROPERTY' && t.rent.length > 5
       ? ['Aluguel base', '1 casa', '2 casas', '3 casas', '4 casas', 'Hotel'].map((l, n) => `<dt>${l}</dt><dd>${brl(t.rent[n])}</dd>`).join('')
       : (t.rent_base ? `<dt>Aluguel</dt><dd>${brl(t.rent_base)}</dd>` : '');
-    sheet(t.name, `<div class="pc"><div class="pc-img" style="--gc:${gc}">${th ? `<img src="${th}" alt="" onerror="this.remove()">` : ''}<span class="pc-ic">${use(tileIcon(t, i))}</span></div><p class="kind">${KIND_LABEL[k] || ''}${t.queen ? ' · ★ ícone da cidade' : ''}</p>${t.description ? `<p>${esc(t.description)}</p>` : ''}<dl><dt>Preço</dt><dd>${brl(t.price)}</dd>${rent}${t.build_cost ? `<dt>Casa custa</dt><dd>${brl(t.build_cost)}</dd>` : ''}${t.mortgage ? `<dt>Hipoteca</dt><dd>${brl(t.mortgage)}</dd>` : ''}<dt>Dono</dt><dd>${o ? esc(o.name) : 'Livre'}</dd></dl></div>`);
+    const layers = idx < 0 ? '' : `<img class="on" src="${list[idx]}" alt="">${list.length > 1 ? '<img alt="">' : ''}`;
+    sheet(t.name, `<div class="pc"><div class="pc-img" style="--gc:${gc}">${layers}<span class="pc-ic">${use(tileIcon(t, i))}</span><span class="pc-cap">${KIND_LABEL[k] || ''}${t.queen ? ' · ★ ícone da cidade' : ''}</span></div>${t.description ? `<p>${esc(t.description)}</p>` : ''}<dl><dt>Preço</dt><dd>${brl(t.price)}</dd>${rent}${t.build_cost ? `<dt>Casa custa</dt><dd>${brl(t.build_cost)}</dd>` : ''}${t.mortgage ? `<dt>Hipoteca</dt><dd>${brl(t.mortgage)}</dd>` : ''}<dt>Dono</dt><dd>${o ? esc(o.name) : 'Livre'}</dd></dl></div>`);
+    // every ~6s fade to the next variant of this kind (skipped with reduced motion)
+    const imgs = $('sheetBody').querySelectorAll('.pc-img img');
+    if (imgs.length === 2 && !reduceMotion.matches) {
+      let cur = idx, front = 0;
+      cardTimer = setInterval(() => {
+        cur = (cur + 1) % list.length;
+        const back = imgs[1 - front];
+        back.onload = () => { imgs[front].classList.remove('on'); back.classList.add('on'); front = 1 - front; };
+        back.src = list[cur];
+      }, 6000);
+    }
   }
 
   // ---------- incoming trade offer ----------
