@@ -53,6 +53,19 @@ func DefaultRoomConfig() RoomConfig {
 	}
 }
 
+// TradeProposal represents a pending negotiation between two players.
+type TradeProposal struct {
+	ID             string    `json:"id"`
+	SenderID       string    `json:"sender_id"`
+	ReceiverID     string    `json:"receiver_id"`
+	OfferedTiles   []int     `json:"offered_tiles"`
+	OfferedCash    int       `json:"offered_cash"`
+	RequestedTiles []int     `json:"requested_tiles"`
+	RequestedCash  int       `json:"requested_cash"`
+	CreatedAt      time.Time `json:"created_at"`
+	Status         string    `json:"status"` // "pending", "accepted", "rejected"
+}
+
 // Room represents a multiplayer room for 40-tile Banco Imobiliário.
 type Room struct {
 	mu           sync.Mutex
@@ -63,6 +76,7 @@ type Room struct {
 	Candidates   []string       `json:"candidates"`
 	Voting       *VotingSession `json:"voting,omitempty"`
 	Game         *Game          `json:"game"`
+	PendingTrade *TradeProposal `json:"pending_trade,omitempty"`
 	TurnTimeout  time.Duration  `json:"turn_timeout"`
 	LastActivity time.Time      `json:"last_activity"`
 }
@@ -235,4 +249,56 @@ func (r *Room) CheckTurnTimeout() bool {
 		return true
 	}
 	return false
+}
+
+// ProposeTrade registers a new trade offer in the room.
+func (r *Room) ProposeTrade(proposal TradeProposal) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	proposal.CreatedAt = time.Now()
+	proposal.Status = "pending"
+	r.PendingTrade = &proposal
+	r.LastActivity = time.Now()
+	return nil
+}
+
+// AcceptTrade executes the pending trade atomically.
+func (r *Room) AcceptTrade() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.PendingTrade == nil || r.PendingTrade.Status != "pending" {
+		return errors.New("nenhuma proposta de troca pendente")
+	}
+
+	err := r.Game.TradeExchange(TradeExchangeRequest{
+		SenderID:       r.PendingTrade.SenderID,
+		ReceiverID:     r.PendingTrade.ReceiverID,
+		OfferedTiles:   r.PendingTrade.OfferedTiles,
+		OfferedCash:    r.PendingTrade.OfferedCash,
+		RequestedTiles: r.PendingTrade.RequestedTiles,
+		RequestedCash:  r.PendingTrade.RequestedCash,
+	})
+	if err != nil {
+		return err
+	}
+
+	r.PendingTrade.Status = "accepted"
+	r.PendingTrade = nil
+	r.LastActivity = time.Now()
+	return nil
+}
+
+// DeclineTrade rejects the current trade offer.
+func (r *Room) DeclineTrade() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.PendingTrade != nil {
+		r.PendingTrade.Status = "rejected"
+		r.PendingTrade = nil
+	}
+	r.LastActivity = time.Now()
+	return nil
 }

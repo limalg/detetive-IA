@@ -2,6 +2,13 @@
 
 Todas as alterações notáveis do módulo Banco Imobiliário são documentadas neste arquivo.
 
+## [banco-v0.5.1] - 2026-10-22
+### Added
+- Protocolo assíncrono de negociação (`TradeProposal`):
+  - Suporte integral ao payload do frontend (`give: {props, cash}`, `want: {props, cash}`) com `player_id` e `to_player_id`.
+  - Fluxo de ações `propose`, `accept` e `decline` via `POST /api/banco3d/room/trade`.
+  - Exposição de `pending_trade` em `room/state` para sincronização em tempo real e resolução automática de trocas com bots.
+
 ## [banco-v0.5.0] - 2026-10-22
 ### Added
 - Baralhos de Cartas Sorte e Revés temáticas por cidade (`internal/banco3d/cards.go`):

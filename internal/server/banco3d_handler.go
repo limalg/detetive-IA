@@ -18,13 +18,14 @@ func (h *Handler) getBanco3DHub() *banco3d.RoomHub {
 func (h *Handler) formatRoomState(room *banco3d.Room, dice *banco3d.DiceResult) map[string]interface{} {
 	room.CheckTurnTimeout()
 	res := map[string]interface{}{
-		"room_id":    room.ID,
-		"city":       room.City,
-		"config":     room.Config,
-		"board":      room.Board,
-		"candidates": room.Candidates,
-		"game":       room.Game,
-		"voting":     room.Voting,
+		"room_id":       room.ID,
+		"city":          room.City,
+		"config":        room.Config,
+		"board":         room.Board,
+		"candidates":    room.Candidates,
+		"game":          room.Game,
+		"voting":        room.Voting,
+		"pending_trade": room.PendingTrade,
 	}
 	if dice != nil {
 		res["dice"] = dice
@@ -386,7 +387,7 @@ func (h *Handler) HandleBanco3DRoomBuild(w http.ResponseWriter, r *http.Request)
 	h.json(w, http.StatusOK, h.formatRoomState(room, nil))
 }
 
-// HandleBanco3DRoomTrade executes a property transfer between players.
+// HandleBanco3DRoomTrade executes or negotiates property transfers between players.
 func (h *Handler) HandleBanco3DRoomTrade(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		h.error(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -395,6 +396,7 @@ func (h *Handler) HandleBanco3DRoomTrade(w http.ResponseWriter, r *http.Request)
 
 	var req struct {
 		RoomID         string `json:"room_id"`
+		Action         string `json:"action"` // "propose", "accept", "decline", or "" (immediate)
 		SellerID       string `json:"seller_id"`
 		BuyerID        string `json:"buyer_id"`
 		TileIndex      int    `json:"tile_index"`
@@ -405,10 +407,32 @@ func (h *Handler) HandleBanco3DRoomTrade(w http.ResponseWriter, r *http.Request)
 		OfferedCash    int    `json:"offered_cash"`
 		RequestedTiles []int  `json:"requested_tiles"`
 		RequestedCash  int    `json:"requested_cash"`
+
+		// Pixel proposed format
+		PlayerID   string `json:"player_id"`
+		ToPlayerID string `json:"to_player_id"`
+		Give       struct {
+			Props []int `json:"props"`
+			Cash  int   `json:"cash"`
+		} `json:"give"`
+		Want struct {
+			Props []int `json:"props"`
+			Cash  int   `json:"cash"`
+		} `json:"want"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		h.error(w, http.StatusBadRequest, "invalid payload")
 		return
+	}
+
+	// Normalizar campos Pixel -> internal
+	if req.PlayerID != "" && req.ToPlayerID != "" {
+		req.SenderID = req.PlayerID
+		req.ReceiverID = req.ToPlayerID
+		req.OfferedTiles = req.Give.Props
+		req.OfferedCash = req.Give.Cash
+		req.RequestedTiles = req.Want.Props
+		req.RequestedCash = req.Want.Cash
 	}
 
 	hub := h.getBanco3DHub()
@@ -419,17 +443,40 @@ func (h *Handler) HandleBanco3DRoomTrade(w http.ResponseWriter, r *http.Request)
 	}
 
 	var tradeErr error
-	if len(req.OfferedTiles) > 0 || len(req.RequestedTiles) > 0 || req.SenderID != "" {
-		tradeErr = room.Game.TradeExchange(banco3d.TradeExchangeRequest{
+	switch req.Action {
+	case "accept":
+		tradeErr = room.AcceptTrade()
+	case "decline":
+		tradeErr = room.DeclineTrade()
+	case "propose":
+		proposal := banco3d.TradeProposal{
+			ID:             "trade-1",
 			SenderID:       req.SenderID,
 			ReceiverID:     req.ReceiverID,
 			OfferedTiles:   req.OfferedTiles,
 			OfferedCash:    req.OfferedCash,
 			RequestedTiles: req.RequestedTiles,
 			RequestedCash:  req.RequestedCash,
-		})
-	} else {
-		tradeErr = room.Game.TradeProperties(req.SellerID, req.BuyerID, req.TileIndex, req.CashAmount)
+		}
+		tradeErr = room.ProposeTrade(proposal)
+		// Se o destinatário for bot, auto-aceita
+		if tradeErr == nil && (strings.HasPrefix(req.ReceiverID, "b") || req.ReceiverID == "p2" || req.ReceiverID == "p3") {
+			_ = room.AcceptTrade()
+		}
+	default:
+		// Execução direta imediata
+		if len(req.OfferedTiles) > 0 || len(req.RequestedTiles) > 0 || req.SenderID != "" {
+			tradeErr = room.Game.TradeExchange(banco3d.TradeExchangeRequest{
+				SenderID:       req.SenderID,
+				ReceiverID:     req.ReceiverID,
+				OfferedTiles:   req.OfferedTiles,
+				OfferedCash:    req.OfferedCash,
+				RequestedTiles: req.RequestedTiles,
+				RequestedCash:  req.RequestedCash,
+			})
+		} else {
+			tradeErr = room.Game.TradeProperties(req.SellerID, req.BuyerID, req.TileIndex, req.CashAmount)
+		}
 	}
 
 	if tradeErr != nil {
