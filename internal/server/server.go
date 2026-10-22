@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"detetive-ia/internal/auth"
-	"detetive-ia/internal/banco"
 	"detetive-ia/internal/banco3d"
 	"detetive-ia/internal/game"
 	"detetive-ia/internal/room"
@@ -14,15 +13,14 @@ import (
 
 // Config holds server dependencies and configuration.
 type Config struct {
-	Addr         string
-	DB           *sql.DB
-	AuthService  *auth.Service
-	GameService  *game.Service
-	RoomManager  *room.Manager
-	Weaver       *game.Weaver
-	BancoManager *banco.Manager
-	Banco3DHub   *banco3d.RoomHub
-	StaticFS     http.Handler
+	Addr        string
+	DB          *sql.DB
+	AuthService *auth.Service
+	GameService *game.Service
+	RoomManager *room.Manager
+	Weaver      *game.Weaver
+	Banco3DHub  *banco3d.RoomHub
+	StaticFS    http.Handler
 }
 
 // NewServer returns an *http.Server configured with the Detetive IA router and network timeouts.
@@ -45,9 +43,6 @@ func NewRouter(cfg Config) http.Handler {
 	if cfg.Weaver == nil && cfg.DB != nil {
 		cfg.Weaver = game.NewWeaver(cfg.DB)
 	}
-	if cfg.BancoManager == nil {
-		cfg.BancoManager = banco.NewManager(cfg.DB)
-	}
 	if cfg.Banco3DHub == nil {
 		cfg.Banco3DHub = banco3d.NewRoomHub()
 	}
@@ -60,19 +55,6 @@ func NewRouter(cfg Config) http.Handler {
 
 	// Hub games catalog
 	mux.HandleFunc("/api/hub/games", h.HandleHubGames)
-
-	// Banco Imobiliário IA endpoints (2D)
-	mux.HandleFunc("/api/banco/start", h.HandleBancoStart)
-	mux.HandleFunc("/api/banco/state", h.HandleBancoState)
-	mux.HandleFunc("/api/banco/roll", h.HandleBancoRoll)
-	mux.HandleFunc("/api/banco/buy", h.HandleBancoBuy)
-	mux.HandleFunc("/api/banco/build", h.HandleBancoBuild)
-	mux.HandleFunc("/api/banco/end-turn", h.HandleBancoEndTurn)
-	mux.HandleFunc("/api/banco/negotiate", h.HandleBancoNegotiate)
-	mux.HandleFunc("/api/banco/room/create", h.HandleBancoRoomCreate)
-	mux.HandleFunc("/api/banco/room/join", h.HandleBancoRoomJoin)
-	mux.HandleFunc("/api/banco/room/start", h.HandleBancoRoomStart)
-	mux.HandleFunc("/api/banco/room/state", h.HandleBancoRoomState)
 
 	// Banco Imobiliário 3D endpoints (40 casas, busca de cidades, votação relâmpago e salas)
 	mux.HandleFunc("/api/banco3d/city", h.HandleBanco3DCity)

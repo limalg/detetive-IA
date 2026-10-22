@@ -11,7 +11,6 @@ import (
 	"detetive-ia/web"
 )
 
-
 func TestEmbeddedTemplates(t *testing.T) {
 	file, err := web.Assets.Open("templates/index.html")
 	if err != nil {
@@ -656,9 +655,6 @@ func TestCentralizedInterrogationStage(t *testing.T) {
 	}
 }
 
-
-
-
 func TestBoardGameHub(t *testing.T) {
 	// 1. Verify index.html hub section structure: felt table, tactile cards,
 	// header navigation button and Banco Imobiliário preview modal
@@ -947,6 +943,7 @@ func TestLobbyGameStartModes(t *testing.T) {
 }
 
 func TestBancoImobiliarioFrontend(t *testing.T) {
+	// 1. Hub card verification in templates/index.html (old 2D sections removed, hub buttons route to 3D)
 	file, err := web.Assets.Open("templates/index.html")
 	if err != nil {
 		t.Fatalf("failed to open templates/index.html: %v", err)
@@ -960,26 +957,29 @@ func TestBancoImobiliarioFrontend(t *testing.T) {
 	content := string(contentBytes)
 
 	requiredSnippets := []string{
+		`data-game-id="banco-imobiliario-ia"`,
+		`data-hub-action="open-banco"`,
+		`data-hub-action="open-custom-banco"`,
+	}
+	for _, s := range requiredSnippets {
+		if !strings.Contains(content, s) {
+			t.Errorf("templates/index.html missing Banco Imobiliário Hub snippet: %s", s)
+		}
+	}
+
+	removedSnippets := []string{
 		`id="banco-section"`,
 		`id="banco-lobby-section"`,
 		`id="banco-custom-modal"`,
 		`id="banco-board-grid"`,
-		`id="banco-dice-panel"`,
-		`id="banco-action-panel"`,
-		`id="banco-portfolio-panel"`,
-		`id="banco-players-panel"`,
-		`id="banco-ticker-feed"`,
-		`data-game-id="banco-imobiliario-ia"`,
-		`data-hub-action="open-banco"`,
 	}
-
-	for _, s := range requiredSnippets {
-		if !strings.Contains(content, s) {
-			t.Errorf("templates/index.html missing Banco Imobiliário snippet: %s", s)
+	for _, s := range removedSnippets {
+		if strings.Contains(content, s) {
+			t.Errorf("templates/index.html still contains deprecated Banco snippet: %s", s)
 		}
 	}
 
-	// 2. CSS verification for Emerald Felt and 8x8 perimeter grid
+	// 2. CSS verification (deprecated 2D board styles removed)
 	cssFile, err := web.Assets.Open("static/css/style.css")
 	if err != nil {
 		t.Fatalf("failed to open static/css/style.css: %v", err)
@@ -992,24 +992,11 @@ func TestBancoImobiliarioFrontend(t *testing.T) {
 	}
 	css := string(cssBytes)
 
-	requiredCSS := []string{
-		".banco-board-grid",
-		".tile-pos-0",
-		".tile-pos-27",
-		".banco-tile",
-		".banco-pawn",
-		".banco-die",
-		".banco-center-desk",
-		".banco-action-panel",
-		".banco-hud-container",
-	}
-	for _, rule := range requiredCSS {
-		if !strings.Contains(css, rule) {
-			t.Errorf("static/css/style.css missing Banco Imobiliário rule: %s", rule)
-		}
+	if strings.Contains(css, ".banco-board-grid") || strings.Contains(css, ".banco-table-wrapper") {
+		t.Errorf("static/css/style.css still contains deprecated Banco 2D CSS rules")
 	}
 
-	// 3. JS verification for state management, actions & rendering
+	// 3. JS verification (hub actions redirect to /banco/ and /banco/?config=1)
 	jsFile, err := web.Assets.Open("static/js/app.js")
 	if err != nil {
 		t.Fatalf("failed to open static/js/app.js: %v", err)
@@ -1022,28 +1009,13 @@ func TestBancoImobiliarioFrontend(t *testing.T) {
 	}
 	js := string(jsBytes)
 
-	requiredJS := []string{
-		"startBancoGame(",
-		"rollBancoDice(",
-		"buyBancoProperty(",
-		"buildBancoHouse(",
-		"endBancoTurn(",
-		"renderBancoBoard(",
-		"renderBancoPlayers(",
-		"renderBancoPortfolio(",
-		"setupBancoEvents(",
-		"showBancoView(",
-		"showBancoLobbyView(",
-		"/api/banco/start",
-		"/api/banco/roll",
-		"/api/banco/buy",
-		"/api/banco/build",
-		"/api/banco/end-turn",
+	expectedRedirects := []string{
+		"window.location.href = '/banco/'",
+		"window.location.href = '/banco/?config=1'",
 	}
-	for _, snippet := range requiredJS {
+	for _, snippet := range expectedRedirects {
 		if !strings.Contains(js, snippet) {
-			t.Errorf("static/js/app.js missing Banco Imobiliário logic: %s", snippet)
+			t.Errorf("static/js/app.js missing Banco 3D routing snippet: %s", snippet)
 		}
 	}
 }
-
