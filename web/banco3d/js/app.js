@@ -373,7 +373,7 @@
   // apply a fresh room payload: roll dice + walk pawns for every mover, then redraw
   let seenCard; // undefined until the first state, so a reload doesn't replay an old card
   // Sorte/Revés reveal: queued so back-to-back cards (bots) play one after another; closes by itself or on click
-  const cardQ = []; let cardBusy = false, cardClose = null;
+  const cardQ = []; let cardBusy = false, cardClose = null, cardEvSeen = false;
   async function pumpCards() {
     if (cardBusy) return;
     cardBusy = true;
@@ -440,14 +440,15 @@
     render();
     checkOffer();
     autoTurn();
+    if (cardEvs.length) cardEvSeen = true; // server emits card events: last_card_result is then only a stale duplicate
     cardEvs.forEach((e) => cardQ.push({ deck: e.deck, title: e.title, text: e.text, amount: e.amount ?? e.value, jail: e.went_to_jail || /jail|prisao|cadeia/i.test(e.effect || ''), who: e.player_id }));
     const c = state.card, fresh = c && seenCard !== undefined && c.key !== seenCard;
     seenCard = c ? c.key : (seenCard === undefined ? '' : seenCard);
-    if (fresh && !cardEvs.length) cardQ.push({ deck: c.deck, title: c.title, text: '', amount: c.delta, jail: c.jail, who: c.who });
+    if (fresh && !cardEvSeen) cardQ.push({ deck: c.deck, title: c.title, text: '', amount: c.delta, jail: c.jail, who: c.who });
     if (cardQ.length) pumpCards();
     if (!evs) return '';
     const evMsg = (e) => e.message || (e.type === 'salary' ? `${(state.players.find((x) => x.id === e.player_id) || {}).name || 'Jogador'} recebeu ${brl(e.amount ?? e.value ?? 0)} ao passar pela Saída` : '');
-    const msgs = evs.filter((e) => e.type !== 'roll' && e.type !== 'pass' && e.type !== 'card').map(evMsg).filter(Boolean);
+    const msgs = evs.filter((e) => !['roll', 'pass', 'card', 'move'].includes(e.type)).map(evMsg).filter(Boolean);
     if (msgs.length && !quiet) toast(msgs[msgs.length - 1]);
     return msgs.join(' · ');
   }
@@ -455,11 +456,12 @@
   // ---------- automatic turn: 8s window to buy, then the turn passes by itself ----------
   let autoKey = null, autoT = null, cdI = null;
   function stopAuto() { clearTimeout(autoT); clearInterval(cdI); autoT = cdI = autoKey = null; $('btnEnd').hidden = true; $('buyCd').hidden = true; }
-  async function passTurn(msg) {
-    if (busy) return void setTimeout(() => passTurn(msg), 400);
+  // `ti` = turn the pass was meant for: if the server already moved on (even back to me), don't pass the new turn
+  async function passTurn(msg, ti = raw.game.turn_start_time) {
+    if (busy) return void setTimeout(() => passTurn(msg, ti), 400);
     await run(async () => {
-      const fresh = await getRoom(roomId); // the server may have passed already
-      if (fresh.game.current_turn_player_id !== meId) { await commit(fresh); return; }
+      const fresh = await getRoom(roomId);
+      if (fresh.game.current_turn_player_id !== meId || fresh.game.turn_start_time !== ti || !fresh.game.dice_rolled_this_turn) { await commit(fresh); return; }
       if (msg) toast(msg);
       const r = await act('pass');
       await commit(r.game ? r : await getRoom(roomId));
@@ -467,7 +469,7 @@
   }
   function autoTurn() {
     const mine = state.current_turn === meId && state.status === 'in_progress';
-    const key = `${state.current_turn}:${raw.game.turn_index}:${state.can_buy ? 'b' : state.can_end_turn ? 'p' : 'r'}`;
+    const ti = raw.game.turn_start_time, key = `${state.current_turn}:${ti}:${state.can_buy ? 'b' : state.can_end_turn ? 'p' : 'r'}`;
     if (key === autoKey) return;
     stopAuto(); autoKey = key;
     if (!mine) return;
@@ -476,9 +478,9 @@
       $('btnEnd').hidden = false; $('buyCd').hidden = false;
       const upd = () => { $('buyCd').textContent = Math.max(0, Math.ceil((dl - Date.now()) / 1000)); };
       cdI = setInterval(upd, 250); upd();
-      autoT = setTimeout(() => passTurn('Tempo esgotado: não comprou'), Math.max(0, dl - Date.now()) + (server ? 2500 : 0)); // server passes first when it can
+      autoT = setTimeout(() => passTurn('Tempo esgotado: não comprou', ti), Math.max(0, dl - Date.now()) + (server ? 2500 : 0)); // server passes first when it can
     } else if (state.can_end_turn) {
-      autoT = setTimeout(() => passTurn(), 2200);
+      autoT = setTimeout(() => passTurn(undefined, ti), 2200);
     }
   }
 
