@@ -58,6 +58,8 @@ func NewRouter(cfg Config) http.Handler {
 
 	// Banco Imobiliário 3D endpoints (40 casas, busca de cidades, votação relâmpago e salas)
 	mux.HandleFunc("/api/banco3d/city", h.HandleBanco3DCity)
+	mux.HandleFunc("/api/banco3d/places/suggest", h.HandleBanco3DPlacesSuggest)
+	mux.HandleFunc("/api/banco3d/places/landmarks", h.HandleBanco3DPlacesLandmarks)
 	mux.HandleFunc("/api/banco3d/room/create", h.HandleBanco3DRoomCreate)
 	mux.HandleFunc("/api/banco3d/room/join", h.HandleBanco3DRoomJoin)
 	mux.HandleFunc("/api/banco3d/room/vote", h.HandleBanco3DRoomVote)

@@ -2,6 +2,7 @@ package banco3d
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 )
@@ -115,6 +116,10 @@ func (v *VotingSession) CloseAndElect(board *Board) (string, error) {
 		queen.Price = 800
 		queen.Rent = [6]int{60, 300, 900, 1750, 2000, 2500}
 		queen.HouseCost = 200
+		queen.ImageKind = "prop_strip_queen"
+		queen.DarkMode = true
+		queen.MortgageValue = 400
+		queen.Description = fmt.Sprintf("Propriedade Real Suprema: %s", winner)
 	}
 
 	return winner, nil

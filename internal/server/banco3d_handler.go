@@ -2,8 +2,11 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
+	"math/rand"
 	"net/http"
 	"strings"
+	"time"
 
 	"detetive-ia/internal/banco3d"
 )
@@ -18,19 +21,63 @@ func (h *Handler) getBanco3DHub() *banco3d.RoomHub {
 func (h *Handler) formatRoomState(room *banco3d.Room, dice *banco3d.DiceResult) map[string]interface{} {
 	room.CheckTurnTimeout()
 	res := map[string]interface{}{
-		"room_id":       room.ID,
-		"city":          room.City,
-		"config":        room.Config,
-		"board":         room.Board,
-		"candidates":    room.Candidates,
-		"game":          room.Game,
-		"voting":        room.Voting,
-		"pending_trade": room.PendingTrade,
+		"room_id":           room.ID,
+		"city":              room.City,
+		"config":            room.Config,
+		"board":             room.Board,
+		"candidates":        room.Candidates,
+		"game":              room.Game,
+		"voting":            room.Voting,
+		"pending_trade":     room.PendingTrade,
+		"events":            room.Events,
+		"pending_decision":  room.PendingDecision,
+		"decision_deadline": room.DecisionDeadline,
 	}
 	if dice != nil {
 		res["dice"] = dice
 	}
 	return res
+}
+
+// HandleBanco3DPlacesSuggest handles autocomplete search for cities/places.
+func (h *Handler) HandleBanco3DPlacesSuggest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		h.error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	q := r.URL.Query().Get("q")
+	suggestions, err := banco3d.GlobalPlacesService.Suggest(q)
+	if err != nil {
+		h.error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	h.json(w, http.StatusOK, map[string]interface{}{
+		"suggestions": suggestions,
+	})
+}
+
+// HandleBanco3DPlacesLandmarks returns real landmarks for a city/place.
+func (h *Handler) HandleBanco3DPlacesLandmarks(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		h.error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	city := r.URL.Query().Get("city")
+	placeID := r.URL.Query().Get("place_id")
+	if city == "" {
+		city = r.URL.Query().Get("q")
+	}
+
+	res, err := banco3d.GlobalPlacesService.GetLandmarks(city, placeID)
+	if err != nil {
+		h.error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	h.json(w, http.StatusOK, res)
 }
 
 // HandleBanco3DCity returns the 40-tile board and 4 iconic candidates for a city query.
@@ -284,10 +331,78 @@ func (h *Handler) HandleBanco3DRoomRoll(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	dice, err := room.Game.RollDice(req.PlayerID, req.D1, req.D2)
+	d1 := req.D1
+	d2 := req.D2
+	if (d1 <= 0 && d2 <= 0) || d1 > 6 || d2 > 6 || d1 < 0 || d2 < 0 {
+		d1 = 1 + rand.Intn(6)
+		d2 = 1 + rand.Intn(6)
+	}
+
+	dice, err := room.Game.RollDice(req.PlayerID, d1, d2)
 	if err != nil {
 		h.error(w, http.StatusBadRequest, err.Error())
 		return
+	}
+
+	p := room.Game.GetPlayer(req.PlayerID)
+	pName := req.PlayerID
+	if p != nil {
+		pName = p.Name
+	}
+	diceArr := [2]int{dice.Die1, dice.Die2}
+	room.RecordEvent(banco3d.GameEvent{
+		Type:       "roll",
+		PlayerID:   req.PlayerID,
+		PlayerName: pName,
+		Dice:       &diceArr,
+		From:       dice.OldPosition,
+		To:         dice.NewPosition,
+		Text:       fmt.Sprintf("%s tirou %d (%d+%d)", pName, dice.Total, dice.Die1, dice.Die2),
+	})
+
+	if dice.RentPaid > 0 {
+		room.RecordEvent(banco3d.GameEvent{
+			Type:       "rent",
+			PlayerID:   req.PlayerID,
+			PlayerName: pName,
+			Amount:     dice.RentPaid,
+			ToPlayerID: dice.RentTo,
+			Tile:       dice.NewPosition,
+			Text:       fmt.Sprintf("%s pagou $ %d de aluguel", pName, dice.RentPaid),
+		})
+	}
+	if dice.CardDrawn != nil {
+		room.RecordEvent(banco3d.GameEvent{
+			Type:       "card",
+			PlayerID:   req.PlayerID,
+			PlayerName: pName,
+			Amount:     dice.CardDrawn.MoneyDelta,
+			Tile:       dice.NewPosition,
+			Text:       fmt.Sprintf("%s tirou carta: %s", pName, dice.CardDrawn.Card.Title),
+		})
+	}
+
+	tile := &room.Board.Tiles[dice.NewPosition]
+	canBuy := (tile.Type == banco3d.TileProperty || tile.Type == banco3d.TileStation || tile.Type == banco3d.TileUtility) &&
+		tile.OwnerID == "" && p != nil && p.Money >= tile.Price
+
+	if canBuy {
+		deadline := time.Now().Add(8 * time.Second)
+		room.DecisionDeadline = &deadline
+		room.PendingDecision = "buy"
+		room.DecisionPlayerID = req.PlayerID
+	} else {
+		// Se não há decisão de compra, passa a vez automaticamente
+		room.PendingDecision = ""
+		room.DecisionDeadline = nil
+		room.DecisionPlayerID = ""
+		_ = room.Game.AutoPassTurn()
+		room.RecordEvent(banco3d.GameEvent{
+			Type:       "pass",
+			PlayerID:   req.PlayerID,
+			PlayerName: pName,
+			Text:       fmt.Sprintf("%s passou a vez", pName),
+		})
 	}
 
 	h.json(w, http.StatusOK, h.formatRoomState(room, dice))
@@ -321,6 +436,39 @@ func (h *Handler) HandleBanco3DRoomBuy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	p := room.Game.GetPlayer(req.PlayerID)
+	pName := req.PlayerID
+	tileIdx := 0
+	tilePrice := 0
+	tileName := ""
+	if p != nil {
+		pName = p.Name
+		tileIdx = p.Position
+		tilePrice = room.Board.Tiles[tileIdx].Price
+		tileName = room.Board.Tiles[tileIdx].Name
+	}
+
+	room.RecordEvent(banco3d.GameEvent{
+		Type:       "buy",
+		PlayerID:   req.PlayerID,
+		PlayerName: pName,
+		Tile:       tileIdx,
+		Amount:     tilePrice,
+		Text:       fmt.Sprintf("%s comprou %s por $ %d", pName, tileName, tilePrice),
+	})
+
+	// Compra realizada -> encerra decisão e passa a vez automaticamente
+	room.PendingDecision = ""
+	room.DecisionDeadline = nil
+	room.DecisionPlayerID = ""
+	_ = room.Game.AutoPassTurn()
+	room.RecordEvent(banco3d.GameEvent{
+		Type:       "pass",
+		PlayerID:   req.PlayerID,
+		PlayerName: pName,
+		Text:       fmt.Sprintf("%s passou a vez", pName),
+	})
+
 	h.json(w, http.StatusOK, h.formatRoomState(room, nil))
 }
 
@@ -347,10 +495,26 @@ func (h *Handler) HandleBanco3DRoomPass(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	room.PendingDecision = ""
+	room.DecisionDeadline = nil
+	room.DecisionPlayerID = ""
+
 	if err := room.Game.PassTurn(req.PlayerID); err != nil {
 		h.error(w, http.StatusBadRequest, err.Error())
 		return
 	}
+
+	p := room.Game.GetPlayer(req.PlayerID)
+	pName := req.PlayerID
+	if p != nil {
+		pName = p.Name
+	}
+	room.RecordEvent(banco3d.GameEvent{
+		Type:       "pass",
+		PlayerID:   req.PlayerID,
+		PlayerName: pName,
+		Text:       fmt.Sprintf("%s passou a vez", pName),
+	})
 
 	h.json(w, http.StatusOK, h.formatRoomState(room, nil))
 }

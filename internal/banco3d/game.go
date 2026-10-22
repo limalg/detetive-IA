@@ -546,6 +546,13 @@ func (g *Game) declareBankruptcy(p *Player) {
 	}
 }
 
+// GetPlayer finds a player by ID.
+func (g *Game) GetPlayer(id string) *Player {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.getPlayer(id)
+}
+
 func (g *Game) getPlayer(id string) *Player {
 	for _, p := range g.Players {
 		if p.ID == id {

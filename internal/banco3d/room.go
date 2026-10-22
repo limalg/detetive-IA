@@ -2,6 +2,8 @@ package banco3d
 
 import (
 	"errors"
+	"fmt"
+	"math/rand"
 	"sync"
 	"time"
 )
@@ -66,19 +68,82 @@ type TradeProposal struct {
 	Status         string    `json:"status"` // "pending", "accepted", "rejected"
 }
 
+// GameEvent represents an action in the match for frontend animation and logs.
+type GameEvent struct {
+	Seq        int       `json:"seq"`
+	ID         string    `json:"id"`
+	Type       string    `json:"type"` // "roll", "buy", "rent", "card", "pass", "jail", "bankrupt", "build", "trade"
+	Turn       int       `json:"turn,omitempty"`
+	PlayerID   string    `json:"player_id"`
+	PlayerName string    `json:"player_name,omitempty"`
+	Dice       *[2]int   `json:"dice,omitempty"`
+	Die1       int       `json:"die1,omitempty"`
+	Die2       int       `json:"die2,omitempty"`
+	From       int       `json:"from,omitempty"`
+	To         int       `json:"to,omitempty"`
+	Amount     int       `json:"amount,omitempty"`
+	Value      int       `json:"value,omitempty"`
+	ToPlayerID string    `json:"to_player_id,omitempty"`
+	Tile       int       `json:"tile,omitempty"`
+	TileIndex  int       `json:"tile_index,omitempty"`
+	Text       string    `json:"text"`
+	Message    string    `json:"message,omitempty"`
+	Timestamp  time.Time `json:"timestamp"`
+	TS         int64     `json:"ts"` // unix ms
+}
+
 // Room represents a multiplayer room for 40-tile Banco Imobiliário.
 type Room struct {
-	mu           sync.Mutex
-	ID           string         `json:"id"`
-	City         string         `json:"city"`
-	Config       RoomConfig     `json:"config"`
-	Board        *Board         `json:"board"`
-	Candidates   []string       `json:"candidates"`
-	Voting       *VotingSession `json:"voting,omitempty"`
-	Game         *Game          `json:"game"`
-	PendingTrade *TradeProposal `json:"pending_trade,omitempty"`
-	TurnTimeout  time.Duration  `json:"turn_timeout"`
-	LastActivity time.Time      `json:"last_activity"`
+	mu               sync.Mutex
+	ID               string         `json:"id"`
+	City             string         `json:"city"`
+	Config           RoomConfig     `json:"config"`
+	Board            *Board         `json:"board"`
+	Candidates       []string       `json:"candidates"`
+	Voting           *VotingSession `json:"voting,omitempty"`
+	Game             *Game          `json:"game"`
+	PendingTrade     *TradeProposal `json:"pending_trade,omitempty"`
+	TurnTimeout      time.Duration  `json:"turn_timeout"`
+	LastActivity     time.Time      `json:"last_activity"`
+	Events           []GameEvent    `json:"events"`
+	EventSeq         int            `json:"event_seq"`
+	DecisionDeadline *time.Time     `json:"decision_deadline,omitempty"`
+	PendingDecision  string         `json:"pending_decision,omitempty"`
+	DecisionPlayerID string         `json:"decision_player_id,omitempty"`
+}
+
+// RecordEvent records an action in the room event stream.
+func (r *Room) RecordEvent(evt GameEvent) {
+	r.EventSeq++
+	now := time.Now()
+	evt.Seq = r.EventSeq
+	evt.ID = fmt.Sprintf("evt_%d_%d", r.EventSeq, now.UnixMilli())
+	evt.Timestamp = now
+	evt.TS = now.UnixMilli()
+	if evt.Value == 0 && evt.Amount != 0 {
+		evt.Value = evt.Amount
+	} else if evt.Amount == 0 && evt.Value != 0 {
+		evt.Amount = evt.Value
+	}
+	if evt.TileIndex == 0 && evt.Tile != 0 {
+		evt.TileIndex = evt.Tile
+	} else if evt.Tile == 0 && evt.TileIndex != 0 {
+		evt.Tile = evt.TileIndex
+	}
+	if evt.Message == "" {
+		evt.Message = evt.Text
+	}
+	if evt.Dice != nil {
+		evt.Die1 = evt.Dice[0]
+		evt.Die2 = evt.Dice[1]
+	}
+	if r.Game != nil {
+		evt.Turn = r.Game.TurnIndex
+	}
+	r.Events = append(r.Events, evt)
+	if len(r.Events) > 30 {
+		r.Events = r.Events[len(r.Events)-30:]
+	}
 }
 
 // NewRoom constructs a room with city board generation and game instance.
@@ -237,7 +302,121 @@ func (r *Room) StartGame() error {
 	return nil
 }
 
-// CheckTurnTimeout verifies if the 30-second inactive turn timeout has passed.
+// executeBotTurnLocked executes a bot player's turn (caller must hold r.mu).
+func (r *Room) executeBotTurnLocked(bot *Player) error {
+	if !r.Game.IsStarted || r.Game.IsOver || r.Game.CurrentTurnPlayerID != bot.ID {
+		return errors.New("não é a vez deste bot")
+	}
+
+	diff := r.Config.Bots.Difficulty
+	if diff == "" {
+		diff = "normal"
+	}
+
+	d1 := 1 + rand.Intn(6)
+	d2 := 1 + rand.Intn(6)
+	diceRes, err := r.Game.RollDice(bot.ID, d1, d2)
+	if err != nil {
+		_ = r.Game.AutoPassTurn()
+		return err
+	}
+
+	diceArr := [2]int{d1, d2}
+	r.RecordEvent(GameEvent{
+		Type:       "roll",
+		PlayerID:   bot.ID,
+		PlayerName: bot.Name,
+		Dice:       &diceArr,
+		From:       diceRes.OldPosition,
+		To:         diceRes.NewPosition,
+		Text:       fmt.Sprintf("%s tirou %d (%d+%d)", bot.Name, d1+d2, d1, d2),
+	})
+
+	tile := &r.Board.Tiles[diceRes.NewPosition]
+
+	// Rent event
+	if diceRes.RentPaid > 0 {
+		r.RecordEvent(GameEvent{
+			Type:       "rent",
+			PlayerID:   bot.ID,
+			PlayerName: bot.Name,
+			Amount:     diceRes.RentPaid,
+			ToPlayerID: diceRes.RentTo,
+			Tile:       tile.Index,
+			Text:       fmt.Sprintf("%s pagou $ %d de aluguel", bot.Name, diceRes.RentPaid),
+		})
+	}
+
+	// Card event
+	if diceRes.CardDrawn != nil {
+		r.RecordEvent(GameEvent{
+			Type:       "card",
+			PlayerID:   bot.ID,
+			PlayerName: bot.Name,
+			Amount:     diceRes.CardDrawn.MoneyDelta,
+			Tile:       tile.Index,
+			Text:       fmt.Sprintf("%s tirou carta: %s", bot.Name, diceRes.CardDrawn.Card.Title),
+		})
+	}
+
+	// Buy decision
+	if tile.Type == TileProperty || tile.Type == TileStation || tile.Type == TileUtility {
+		if tile.OwnerID == "" && BotAI.ShouldBuy(r.Game, bot, tile, diff) {
+			if buyErr := r.Game.BuyProperty(bot.ID); buyErr == nil {
+				r.RecordEvent(GameEvent{
+					Type:       "buy",
+					PlayerID:   bot.ID,
+					PlayerName: bot.Name,
+					Tile:       tile.Index,
+					Amount:     tile.Price,
+					Text:       fmt.Sprintf("%s comprou %s por $ %d", bot.Name, tile.Name, tile.Price),
+				})
+			}
+		}
+	}
+
+	// Build decision
+	for {
+		tileIdx, canBuild := BotAI.DecideBuild(r.Game, bot, diff)
+		if !canBuild {
+			break
+		}
+		if bldErr := r.Game.BuildHouse(bot.ID, tileIdx); bldErr == nil {
+			t := &r.Board.Tiles[tileIdx]
+			r.RecordEvent(GameEvent{
+				Type:       "build",
+				PlayerID:   bot.ID,
+				PlayerName: bot.Name,
+				Tile:       tileIdx,
+				Amount:     t.HouseCost,
+				Text:       fmt.Sprintf("%s construiu casa em %s ($ %d)", bot.Name, t.Name, t.HouseCost),
+			})
+		} else {
+			break
+		}
+	}
+
+	// Pass turn
+	_ = r.Game.AutoPassTurn()
+	r.RecordEvent(GameEvent{
+		Type:       "pass",
+		PlayerID:   bot.ID,
+		PlayerName: bot.Name,
+		Text:       fmt.Sprintf("%s passou a vez", bot.Name),
+	})
+
+	r.LastActivity = time.Now()
+	return nil
+}
+
+// ExecuteBotTurn runs an automated turn for a bot player.
+func (r *Room) ExecuteBotTurn(bot *Player) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.executeBotTurnLocked(bot)
+}
+
+// CheckTurnTimeout verifies if the decision deadline or inactive turn timeout has passed.
 func (r *Room) CheckTurnTimeout() bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -246,9 +425,39 @@ func (r *Room) CheckTurnTimeout() bool {
 		return false
 	}
 
-	if time.Since(r.Game.TurnStartTime) >= r.TurnTimeout {
+	// 1. Pending buy decision deadline expired -> auto-pass
+	if r.PendingDecision == "buy" && r.DecisionDeadline != nil && time.Now().After(*r.DecisionDeadline) {
+		r.PendingDecision = ""
+		r.DecisionDeadline = nil
+		r.DecisionPlayerID = ""
 		_ = r.Game.AutoPassTurn()
 		r.LastActivity = time.Now()
+		next := r.Game.getPlayer(r.Game.CurrentTurnPlayerID)
+		if next != nil && next.IsBot {
+			_ = r.executeBotTurnLocked(next)
+		}
+		return true
+	}
+
+	// 2. If current player is bot and no decision is pending, execute bot turn
+	cur := r.Game.getPlayer(r.Game.CurrentTurnPlayerID)
+	if cur != nil && cur.IsBot && r.PendingDecision == "" {
+		_ = r.executeBotTurnLocked(cur)
+		r.LastActivity = time.Now()
+		return true
+	}
+
+	// 3. Inactive turn timeout (30s)
+	if time.Since(r.Game.TurnStartTime) >= r.TurnTimeout {
+		r.PendingDecision = ""
+		r.DecisionDeadline = nil
+		r.DecisionPlayerID = ""
+		_ = r.Game.AutoPassTurn()
+		r.LastActivity = time.Now()
+		next := r.Game.getPlayer(r.Game.CurrentTurnPlayerID)
+		if next != nil && next.IsBot {
+			_ = r.executeBotTurnLocked(next)
+		}
 		return true
 	}
 	return false

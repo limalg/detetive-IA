@@ -2,6 +2,28 @@
 
 Todas as alterações notáveis do módulo Banco Imobiliário são documentadas neste arquivo.
 
+## [banco-v0.7.0] - 2026-10-22
+### Added
+- **Inteligência Artificial dos Bots (`internal/banco3d/bot.go`)**:
+  - Motor de tomada de decisão com parâmetros específicos por dificuldade (fácil, normal e difícil).
+  - Reserva mínima de caixa calibrada: R$ 100 (fácil), R$ 250 (normal) e R$ 400 (difícil).
+  - Regra de squeeze estratégico no nível difícil (compra agressiva para completar grupos de cor).
+  - Construção uniforme de casas em grupos completos e avaliação proporcional de propostas de troca.
+  - Execução automatizada de turnos de bots via `ExecuteBotTurn` com rolagem, compra, construção e passagem automática de vez.
+- **Transição de Turno Automática & Janela de Decisão**:
+  - Eliminação da dependência de botão manual "Passar" para fluxo contínuo.
+  - Abertura de janela de decisão de 8 segundos (`decision_deadline` e `pending_decision: "buy"`) ao aterrissar em propriedade comprável.
+  - Expiração automática ou compra concluída passam a vez instantaneamente para o próximo participante.
+- **Fluxo de Eventos para Animação (`events[]`)**:
+  - Histórico ordenado e sincronizado de até 30 eventos no `room/state` (`roll`, `buy`, `rent`, `card`, `pass`, `build`, `trade`).
+  - Metadados completos: `seq`, `player_id`, `dice: [d1, d2]`, posições `from`/`to`, `amount`, `tile` e texto descritivo.
+- **Geocodificação e Busca de Locais Reais (`places.go`)**:
+  - Endpoint `GET /api/banco3d/places/suggest?q=...` integrado ao OpenStreetMap / Nominatim com cache em memória, rate limiting (1 req/s) e fallback para catálogo offline.
+  - Endpoint `GET /api/banco3d/places/landmarks?city=...` com extração e classificação de ruas, avenidas, praças, parques, estações e concessionárias.
+  - Enriquecimento de tiles do tabuleiro com `image_kind`, `mortgage_value` e `description`.
+- **Resiliência e Reconexão (F5)**:
+  - Preservação da sala e reconexão idempotente em `room/join` via `player_id` persistido no cliente.
+
 ## [banco-v0.6.1] - 2026-10-22
 ### Added
 - Arte visual do centro do tabuleiro (`web/banco3d/assets/centro-cidade.webp`, 219KB, 1152px):

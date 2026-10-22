@@ -53,24 +53,36 @@ func buildBoardFromPreset(cityName string, p cityPreset) *Board {
 	for i, idx := range propIndices {
 		if i < len(p.props) {
 			b.Tiles[idx].Name = p.props[i]
+			b.Tiles[idx].ImageKind = ClassifyImageKind(p.props[i], TileProperty)
+			b.Tiles[idx].MortgageValue = b.Tiles[idx].Price / 2
+			b.Tiles[idx].Description = fmt.Sprintf("Local icônico em %s (%s)", cityName, p.props[i])
 		}
 	}
 
 	// Casa rainha (índice 39) recebe inicialmente o primeiro candidato (será sobrescrito na votação)
 	b.Tiles[39].Name = p.candidates[0]
+	b.Tiles[39].ImageKind = "landmark"
+	b.Tiles[39].MortgageValue = 400
+	b.Tiles[39].Description = fmt.Sprintf("Propriedade Real mais prestigiada de %s", cityName)
 
 	// Estações
 	stIndices := []int{3, 13, 25, 33}
 	for i, idx := range stIndices {
 		if i < len(p.stations) {
 			b.Tiles[idx].Name = p.stations[i]
+			b.Tiles[idx].ImageKind = "station"
+			b.Tiles[idx].MortgageValue = 100
 		}
 	}
 
 	// Utilitários
 	if len(p.utilities) >= 2 {
 		b.Tiles[8].Name = p.utilities[0]
+		b.Tiles[8].ImageKind = "utility"
+		b.Tiles[8].MortgageValue = 75
 		b.Tiles[28].Name = p.utilities[1]
+		b.Tiles[28].ImageKind = "utility"
+		b.Tiles[28].MortgageValue = 75
 	}
 
 	return b

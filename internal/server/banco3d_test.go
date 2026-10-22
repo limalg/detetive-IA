@@ -178,8 +178,16 @@ func TestBanco3DEndpoints(t *testing.T) {
 		t.Fatalf("expected 200 buying property, got %d: %s", rrBuy.Code, rrBuy.Body.String())
 	}
 
-	// 9. POST /api/banco3d/room/pass
-	passPayload := []byte(`{"room_id":"sala-curitiba","player_id":"` + p1ID + `"}`)
+	// Com o turno automático, a compra passa a vez automaticamente para p2!
+	// 9. p2 rola os dados e depois passa sem comprar
+	rollPayload2 := []byte(`{"room_id":"sala-curitiba","player_id":"` + p2ID + `","d1":1,"d2":2}`)
+	rrRoll2 := httptest.NewRecorder()
+	router.ServeHTTP(rrRoll2, httptest.NewRequest("POST", "/api/banco3d/room/roll", bytes.NewReader(rollPayload2)))
+	if rrRoll2.Code != http.StatusOK {
+		t.Fatalf("expected 200 rolling for p2, got %d: %s", rrRoll2.Code, rrRoll2.Body.String())
+	}
+
+	passPayload := []byte(`{"room_id":"sala-curitiba","player_id":"` + p2ID + `"}`)
 	reqPass := httptest.NewRequest("POST", "/api/banco3d/room/pass", bytes.NewReader(passPayload))
 	rrPass := httptest.NewRecorder()
 	router.ServeHTTP(rrPass, reqPass)
@@ -499,5 +507,142 @@ func TestTradeHTTPRejectionUnauthorizedAndHumanConsent(t *testing.T) {
 	_ = json.Unmarshal(rrPropBot.Body.Bytes(), &stateAfterBotProp)
 	if stateAfterBotProp.PendingTrade != nil {
 		t.Fatalf("troca para bot legítimo deveria ter sido auto-aceita e pending_trade limpo, mas está: %+v", stateAfterBotProp.PendingTrade)
+	}
+}
+
+func TestBanco3DPlacesAndEventsAPI(t *testing.T) {
+	router := server.NewRouter(server.Config{})
+
+	// 1. Test GET /api/banco3d/places/suggest?q=cur
+	reqSuggest := httptest.NewRequest("GET", "/api/banco3d/places/suggest?q=cur", nil)
+	rrSuggest := httptest.NewRecorder()
+	router.ServeHTTP(rrSuggest, reqSuggest)
+	if rrSuggest.Code != http.StatusOK {
+		t.Fatalf("expected 200 from places/suggest, got %d: %s", rrSuggest.Code, rrSuggest.Body.String())
+	}
+	var suggestRes struct {
+		Suggestions []struct {
+			ID          string `json:"id"`
+			Name        string `json:"name"`
+			Description string `json:"description"`
+		} `json:"suggestions"`
+	}
+	if err := json.Unmarshal(rrSuggest.Body.Bytes(), &suggestRes); err != nil {
+		t.Fatalf("failed to decode suggestions response: %v", err)
+	}
+	if len(suggestRes.Suggestions) == 0 {
+		t.Fatalf("expected suggestions for 'cur', got 0")
+	}
+
+	// 2. Test GET /api/banco3d/places/landmarks?city=Curitiba
+	reqLandmarks := httptest.NewRequest("GET", "/api/banco3d/places/landmarks?city=Curitiba", nil)
+	rrLandmarks := httptest.NewRecorder()
+	router.ServeHTTP(rrLandmarks, reqLandmarks)
+	if rrLandmarks.Code != http.StatusOK {
+		t.Fatalf("expected 200 from places/landmarks, got %d: %s", rrLandmarks.Code, rrLandmarks.Body.String())
+	}
+	var landmarksRes struct {
+		City       string   `json:"city"`
+		Candidates []string `json:"candidates"`
+		Landmarks  []struct {
+			Name      string `json:"name"`
+			Type      string `json:"type"`
+			ImageKind string `json:"image_kind"`
+		} `json:"landmarks"`
+	}
+	if err := json.Unmarshal(rrLandmarks.Body.Bytes(), &landmarksRes); err != nil {
+		t.Fatalf("failed to decode landmarks response: %v", err)
+	}
+	if len(landmarksRes.Candidates) != 4 {
+		t.Errorf("expected 4 candidates, got %d", len(landmarksRes.Candidates))
+	}
+	if len(landmarksRes.Landmarks) == 0 {
+		t.Errorf("expected landmarks list to be populated")
+	}
+
+	// 3. Test Room Events & Automatic Turn Flow
+	createBody, _ := json.Marshal(map[string]interface{}{
+		"room_id": "sala-events-test",
+		"city":    "Curitiba",
+	})
+	rrCreate := httptest.NewRecorder()
+	router.ServeHTTP(rrCreate, httptest.NewRequest("POST", "/api/banco3d/room/create", bytes.NewReader(createBody)))
+
+	joinBody, _ := json.Marshal(map[string]interface{}{
+		"room_id": "sala-events-test",
+		"name":    "Jogador1",
+		"color":   "#2563eb",
+	})
+	rrJoin := httptest.NewRecorder()
+	router.ServeHTTP(rrJoin, httptest.NewRequest("POST", "/api/banco3d/room/join", bytes.NewReader(joinBody)))
+	var joinRes struct {
+		Player struct {
+			ID string `json:"id"`
+		} `json:"player"`
+	}
+	_ = json.Unmarshal(rrJoin.Body.Bytes(), &joinRes)
+	p1ID := joinRes.Player.ID
+
+	// Test F5 Reconnection with player_id
+	rejoinBody, _ := json.Marshal(map[string]interface{}{
+		"room_id":   "sala-events-test",
+		"player_id": p1ID,
+		"name":      "Jogador1",
+	})
+	rrRejoin := httptest.NewRecorder()
+	router.ServeHTTP(rrRejoin, httptest.NewRequest("POST", "/api/banco3d/room/join", bytes.NewReader(rejoinBody)))
+	if rrRejoin.Code != http.StatusOK {
+		t.Fatalf("falha ao reconectar via player_id: %d", rrRejoin.Code)
+	}
+	var rejoinRes struct {
+		Reconnected bool `json:"reconnected"`
+	}
+	_ = json.Unmarshal(rrRejoin.Body.Bytes(), &rejoinRes)
+	if !rejoinRes.Reconnected {
+		t.Errorf("esperava reconnected true para jogador existente")
+	}
+
+	// Iniciar jogo (auto-preenche bots)
+	startBody, _ := json.Marshal(map[string]interface{}{
+		"room_id":   "sala-events-test",
+		"player_id": p1ID,
+	})
+	rrStart := httptest.NewRecorder()
+	router.ServeHTTP(rrStart, httptest.NewRequest("POST", "/api/banco3d/room/start", bytes.NewReader(startBody)))
+	if rrStart.Code != http.StatusOK {
+		t.Fatalf("falha ao iniciar sala: %d", rrStart.Code)
+	}
+
+	// Jogador 1 rola os dados
+	rollBody, _ := json.Marshal(map[string]interface{}{
+		"room_id":   "sala-events-test",
+		"player_id": p1ID,
+		"d1":        1,
+		"d2":        1,
+	})
+	rrRoll := httptest.NewRecorder()
+	router.ServeHTTP(rrRoll, httptest.NewRequest("POST", "/api/banco3d/room/roll", bytes.NewReader(rollBody)))
+	if rrRoll.Code != http.StatusOK {
+		t.Fatalf("falha ao rolar: %d - %s", rrRoll.Code, rrRoll.Body.String())
+	}
+
+	var stateAfterRoll struct {
+		PendingDecision string `json:"pending_decision"`
+		Events          []struct {
+			Seq  int    `json:"seq"`
+			Type string `json:"type"`
+			Text string `json:"text"`
+		} `json:"events"`
+	}
+	_ = json.Unmarshal(rrRoll.Body.Bytes(), &stateAfterRoll)
+	if len(stateAfterRoll.Events) == 0 {
+		t.Fatalf("esperava eventos registrados após rolagem")
+	}
+	if stateAfterRoll.Events[0].Type != "roll" {
+		t.Errorf("primeiro evento deveria ser roll, obteve %s", stateAfterRoll.Events[0].Type)
+	}
+	// Tile 2 (1+1=2) é comprável, portanto pending_decision deve ser 'buy'
+	if stateAfterRoll.PendingDecision != "buy" {
+		t.Errorf("esperava pending_decision 'buy', obteve %s", stateAfterRoll.PendingDecision)
 	}
 }
