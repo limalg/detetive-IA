@@ -237,6 +237,44 @@
     sheet(CORNER[t.type] || t.name, `${t.queen ? '<p>★ Ícone da cidade (votado)</p>' : ''}<p>${t.price ? 'Preço ' + brl(t.price) : ''}</p>${t.rent_base ? `<p>Aluguel ${brl(t.rent_base)}</p>` : ''}<p>${o ? 'Dono: ' + esc(o.name) : t.price ? 'Livre' : ''}</p>`);
   }
 
+  // ---------- match config modal ----------
+  const CFG_KEY = 'banco3d:config';
+  const DEFAULT_CFG = { city: 'Curitiba, PR', players: 4, balance: 1500, bots: 0, difficulty: 'normal', turn: 30, bail: true, triple: true, freecard: true };
+  let cfg = { ...DEFAULT_CFG };
+  try { cfg = { ...cfg, ...JSON.parse(localStorage.getItem(CFG_KEY)) }; } catch { /* first run */ }
+  let cfgOpener = null;
+  const cf = () => $('cfgForm');
+  function fillCfg() {
+    const f = cf();
+    f.city.value = $('fHome').city.value || cfg.city;
+    f.balance.value = cfg.balance;
+    for (const k of ['players', 'bots', 'difficulty', 'turn']) f.querySelectorAll(`[name=${k}]`).forEach((r) => (r.checked = String(r.value) === String(cfg[k])));
+    for (const k of ['bail', 'triple', 'freecard']) f[k].checked = cfg[k];
+    syncBots();
+  }
+  // bots never exceed free seats; difficulty is moot without bots
+  function syncBots() {
+    const f = cf(), max = +f.players.value - 1;
+    f.querySelectorAll('[name=bots]').forEach((r) => { r.disabled = +r.value > max; });
+    if (+f.bots.value > max) f.querySelector(`[name=bots][value="${max}"]`).checked = true;
+    $('diffSegs').classList.toggle('off', +f.bots.value === 0);
+  }
+  function openCfg() { cfgOpener = document.activeElement; fillCfg(); $('cfg').hidden = false; cf().city.focus(); }
+  function closeCfg() { $('cfg').hidden = true; if (cfgOpener && cfgOpener.focus) cfgOpener.focus(); }
+  cf().addEventListener('change', syncBots);
+  $('bCfg').onclick = openCfg;
+  $('cfgX').onclick = $('cfgCancel').onclick = closeCfg;
+  $('cfg').addEventListener('keydown', (e) => { if (e.key === 'Escape') closeCfg(); });
+  cf().onsubmit = (e) => {
+    e.preventDefault();
+    const f = cf();
+    cfg = { city: f.city.value.trim() || DEFAULT_CFG.city, players: +f.players.value, balance: Math.min(10000, Math.max(500, +f.balance.value || 1500)), bots: +f.bots.value, difficulty: f.difficulty.value, turn: +f.turn.value, bail: f.bail.checked, triple: f.triple.checked, freecard: f.freecard.checked };
+    try { localStorage.setItem(CFG_KEY, JSON.stringify(cfg)); } catch { /* private mode */ }
+    $('fHome').city.value = cfg.city;
+    closeCfg();
+  };
+  const cfgPayload = () => ({ max_players: cfg.players, bots: { count: cfg.bots, difficulty: cfg.difficulty }, starting_balance: cfg.balance, turn_seconds: cfg.turn, rules: { jail_bail: cfg.bail, jail_triple_doubles: cfg.triple, get_out_free_card: cfg.freecard } });
+
   // ---------- lobby / voting / room flow ----------
   const setView = (v) => { $('start').dataset.view = v; $('start').hidden = v === 'game'; };
   const err = (m) => ($('startErr').textContent = m || '');
@@ -260,7 +298,7 @@
     const f = e.target;
     try {
       const id = newCode();
-      const c = await api('/api/banco3d/room/create', { room_id: id, city: f.city.value.trim() });
+      const c = await api('/api/banco3d/room/create', { room_id: id, city: f.city.value.trim(), config: cfgPayload() });
       localVoting = { candidates: c.candidates };
       await join(id, f.name.value.trim());
     } catch (x) { err(x.message); }
@@ -348,7 +386,9 @@
 
   // ---------- boot: reconnect from ?sala= ----------
   (async () => {
+    $('fHome').city.value = cfg.city;
     const id = (qs.get('sala') || '').toUpperCase();
+    if (qs.get('config') === '1') openCfg();
     if (!id) return setView('home');
     $('joinCode').textContent = id; roomId = id;
     try {
