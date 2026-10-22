@@ -73,7 +73,6 @@ button { cursor: pointer; touch-action: manipulation; }
 
 .center { grid-area: 2 / 2 / span var(--span) / span var(--span); position: relative; border-radius: .9em; overflow: hidden; border: 1px solid rgba(90, 160, 255, .3); transform-style: preserve-3d;
   background: radial-gradient(70% 60% at 50% 40%, #12385c, #0a1d33 70%); display: grid; place-items: center; }
-.center svg.map { position: absolute; inset: 0; width: 100%; height: 100%; }
 .logo { position: relative; z-index: 2; margin-top: 4%; text-align: center; font-size: calc(var(--s) * .042); font-weight: 800; letter-spacing: .02em; color: #e0f2ff; text-shadow: 0 0 .4em #38bdf8, 0 0 1em #2f6bff; }
 .logo svg { width: 3.2em; height: 1.6em; display: block; margin: 0 auto -.1em; color: #7dd3fc; }
 .piles { position: absolute; inset: auto 0 12% 0; display: flex; justify-content: space-between; align-items: center; padding: 0 12%; z-index: 2; }
@@ -224,3 +223,7 @@ button { cursor: pointer; touch-action: manipulation; }
 .start::before { content: ""; position: absolute; inset: -12px; z-index: -1; background: linear-gradient(rgba(3, 8, 20, .72), rgba(3, 8, 20, .84)), url("../assets/capa-imperio-urbano.webp") center / cover no-repeat; filter: blur(4px); }
 .start > * { position: relative; }
 #trade::before { display: none; }
+
+/* city art in the board centre; vignette + a soft pool behind the logo keep the HTML on top legible */
+.center { background: url("../assets/centro-cidade.webp") center / cover no-repeat, #0a1d33; }
+.center::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(ellipse 38% 16% at 50% 52%, rgba(3, 10, 28, .55), transparent 100%), radial-gradient(ellipse at 50% 50%, transparent 45%, rgba(3, 8, 20, .78) 100%); }

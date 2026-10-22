@@ -103,18 +103,6 @@
     pawns.clear(); prevPos.clear(); boardBuilt = true;
   }
 
-  function mapSvg() {
-    let seed = 7;
-    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-    let g = '<rect width="100" height="100" fill="#0d2a2b"/><path d="M0 62 C25 50 40 70 60 58 S90 48 100 55 V72 C80 66 62 80 40 74 S10 70 0 76Z" fill="#0b4a7a" opacity=".9"/><path d="M45 60h50" stroke="#cbd5e1" stroke-width=".8"/>';
-    for (let k = 0; k < 70; k++) g += `<circle cx="${rnd() * 100}" cy="${rnd() * 100}" r="${1.2 + rnd() * 1.6}" fill="hsl(${120 + rnd() * 30} 55% ${18 + rnd() * 14}%)"/>`;
-    for (let k = 0; k < 14; k++) {
-      const x = 14 + rnd() * 52, h = 12 + rnd() * 24, w = 4 + rnd() * 4, y = 52 - rnd() * 6;
-      g += `<rect x="${x}" y="${y - h}" width="${w}" height="${h}" fill="hsl(215 35% ${24 + rnd() * 14}%)"/>`;
-      for (let wy = y - h + 2; wy < y - 1; wy += 2.6) g += `<rect x="${x + 1}" y="${wy}" width="${w - 2}" height=".9" fill="#fde68a" opacity=".8"/>`;
-    }
-    return `<svg class="map" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice" aria-hidden="true">${g}</svg>`;
-  }
   function dieHtml(id) {
     const P = { 1: [5], 2: [1, 9], 3: [1, 5, 9], 4: [1, 3, 7, 9], 5: [1, 3, 5, 7, 9], 6: [1, 3, 4, 6, 7, 9] };
     const face = (v) => `<b class="f${v}">${P[v].map((p) => `<i style="grid-area:${Math.ceil(p / 3)}/${((p - 1) % 3) + 1}"></i>`).join('')}</b>`;
@@ -123,7 +111,7 @@
   function centerEl() {
     const c = document.createElement('div');
     c.className = 'center';
-    c.innerHTML = mapSvg() +
+    c.innerHTML =
       `<div class="logo"><svg viewBox="0 0 64 32" aria-hidden="true"><path d="M4 30V16l8-6v20M16 30V8l9-6v28M29 30V12l9-4v22M42 30V4l10 6v20M56 30V14l4 2v14" fill="none" stroke="currentColor" stroke-width="2.500"/></svg>BANCO IMOBILIÁRIO</div>` +
       `<div class="piles"><div class="pile" title="Sorte">${use('q')}</div><div class="dice">${dieHtml('d1')}${dieHtml('d2')}</div><div class="pile" title="Revés">${use('house')}</div></div>`;
     return c;
