@@ -352,11 +352,10 @@
     try { await fn(); } catch (e) { toast(e.message); }
     busy = false; if (state) render();
   }
-  const die = () => 1 + Math.floor(Math.random() * 6); // backend takes the dice values from the client
   const act = (name, extra) => api('/api/banco3d/room/' + name, { room_id: roomId, player_id: meId, ...extra });
 
   $('btnRoll').onclick = () => run(async () => {
-    const r = await act('roll', { d1: die(), d2: die() });
+    const r = await act('roll'); // the server rolls the dice
     const d = r.dice || r.result || {};
     const dice = [d.die1 || (d.dice && d.dice[0]) || 1, d.die2 || (d.dice && d.dice[1]) || 1];
     await rollDice(dice);
