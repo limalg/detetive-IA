@@ -171,6 +171,8 @@ func (s *PlacesService) fetchNominatimSuggest(query string) ([]PlaceSuggestion, 
 
 	var results []struct {
 		PlaceID     int64  `json:"place_id"`
+		Class       string `json:"class"`
+		PlaceRank   int    `json:"place_rank"`
 		Lat         string `json:"lat"`
 		Lon         string `json:"lon"`
 		DisplayName string `json:"display_name"`
@@ -193,6 +195,9 @@ func (s *PlacesService) fetchNominatimSuggest(query string) ([]PlaceSuggestion, 
 	defer s.mu.Unlock()
 
 	for _, r := range results {
+		if r.PlaceRank >= 20 || r.Class == "highway" || r.Class == "building" { // streets and buildings are not cities
+			continue
+		}
 		cityName := r.Address.City
 		if cityName == "" {
 			cityName = r.Address.Town
@@ -206,6 +211,9 @@ func (s *PlacesService) fetchNominatimSuggest(query string) ([]PlaceSuggestion, 
 		if cityName == "" {
 			parts := strings.Split(r.DisplayName, ",")
 			cityName = strings.TrimSpace(parts[0])
+		}
+		if streetLike(cityName) {
+			continue
 		}
 
 		desc := r.Address.State
@@ -403,9 +411,11 @@ func (s *PlacesService) resolvePlaceID(ctx context.Context, placeID string) (str
 // fetchNominatimDetails resolves a Nominatim place_id to its name and centroid.
 func (s *PlacesService) fetchNominatimDetails(ctx context.Context, numID string) (string, float64, float64, error) {
 	var details struct {
-		LocalName string            `json:"localname"`
-		Names     map[string]string `json:"names"`
-		Centroid  struct {
+		Category    string            `json:"category"`
+		RankAddress int               `json:"rank_address"`
+		LocalName   string            `json:"localname"`
+		Names       map[string]string `json:"names"`
+		Centroid    struct {
 			Coordinates [2]float64 `json:"coordinates"` // [lon, lat]
 		} `json:"centroid"`
 	}
@@ -413,9 +423,16 @@ func (s *PlacesService) fetchNominatimDetails(ctx context.Context, numID string)
 	if err := s.getJSON(ctx, endpoint, nominatimTimeout, true, &details); err != nil {
 		return "", 0, 0, err
 	}
+	// Nominatim place_ids are not stable: an id that used to be a city may now be a street.
+	if details.RankAddress >= 20 || details.Category == "highway" || details.Category == "building" {
+		return "", 0, 0, fmt.Errorf("nominatim place %s is not a city (%s, rank %d)", numID, details.Category, details.RankAddress)
+	}
 	name := details.LocalName
 	if name == "" {
 		name = details.Names["name"]
+	}
+	if streetLike(name) {
+		return "", 0, 0, fmt.Errorf("nominatim place %s resolved to a street name %q", numID, name)
 	}
 	lat, lon := details.Centroid.Coordinates[1], details.Centroid.Coordinates[0]
 	if name == "" || (lat == 0 && lon == 0) {
@@ -480,7 +497,7 @@ func (s *PlacesService) getLandmarks(cityName string, placeID string) (*CityLand
 	}
 	if cityName == "" {
 		if placeID != "" { // never guess another city when a chosen place could not be resolved
-			return nil, fmt.Errorf("place_id %s could not be resolved", placeID)
+			return nil, s.unavailable(fmt.Sprintf("place_id %s could not be resolved", placeID))
 		}
 		cityName = "Curitiba"
 	}
@@ -513,6 +530,9 @@ func (s *PlacesService) getLandmarks(cityName string, placeID string) (*CityLand
 	res := buildLandmarks(cityName, real)
 	if res.Partial && (lat != 0 || lon != 0) {
 		s.warm(cacheKey, cityName, lat, lon) // a second GET returns the completed answer
+	}
+	if len(res.Landmarks) == 0 { // no source answered and nothing cached: say so instead of an empty 200
+		return nil, s.unavailable("no landmark source available for " + cityName)
 	}
 	if len(real) >= minRealPlaces { // never cache a degraded (sources-failed) answer
 		s.mu.Lock()
@@ -1084,6 +1104,12 @@ func buildLandmarks(cityName string, real []realPlace) *CityLandmarksResult {
 	for _, n := range utils {
 		landmarks = append(landmarks, LandmarkItem{Name: n, Type: "utility", ImageKind: "utility"})
 	}
+	if candidates == nil {
+		candidates = []string{}
+	}
+	if landmarks == nil {
+		landmarks = []LandmarkItem{}
+	}
 	return &CityLandmarksResult{
 		City:       cityName,
 		Candidates: candidates,
@@ -1156,8 +1182,12 @@ func (s *PlacesService) backoff(resp *http.Response) {
 	s.rateMu.Unlock()
 }
 
+// diskSchemaVersion invalidates caches written by older builds (v<2 could hold street names as cities).
+const diskSchemaVersion = 2
+
 // diskCache is the on-disk snapshot of resolved places and landmark results.
 type diskCache struct {
+	Version   int                             `json:"version"`
 	Details   map[string]PlaceDetails         `json:"details"`
 	Landmarks map[string]*CityLandmarksResult `json:"landmarks"`
 }
@@ -1168,7 +1198,7 @@ func (s *PlacesService) WithDiskCache(path string) *PlacesService {
 	defer s.mu.Unlock()
 	s.diskPath = path
 	var dc diskCache
-	if b, err := os.ReadFile(path); err == nil && json.Unmarshal(b, &dc) == nil {
+	if b, err := os.ReadFile(path); err == nil && json.Unmarshal(b, &dc) == nil && dc.Version == diskSchemaVersion {
 		maps.Copy(s.detailsCache, dc.Details)
 		maps.Copy(s.landmarkCache, dc.Landmarks)
 	}
@@ -1180,7 +1210,7 @@ func (s *PlacesService) saveDiskLocked() {
 	if s.diskPath == "" {
 		return
 	}
-	b, err := json.Marshal(diskCache{Details: s.detailsCache, Landmarks: s.landmarkCache})
+	b, err := json.Marshal(diskCache{Version: diskSchemaVersion, Details: s.detailsCache, Landmarks: s.landmarkCache})
 	if err != nil {
 		return
 	}
@@ -1228,4 +1258,33 @@ func wikiInfraKind(title string) string {
 		}
 	}
 	return ""
+}
+
+// streetLike reports whether a name is a road ("Avenida X", "Rua Y"), never a valid city name.
+func streetLike(name string) bool {
+	l := strings.ToLower(strings.TrimSpace(name))
+	for _, w := range []string{"rua ", "avenida ", "av. ", "rodovia ", "travessa ", "alameda ", "estrada ", "praça ", "largo "} {
+		if strings.HasPrefix(l, w) {
+			return true
+		}
+	}
+	return false
+}
+
+// UnavailableError means no data source could answer now; the HTTP layer maps it to 503 + Retry-After.
+type UnavailableError struct {
+	Msg        string
+	RetryAfter time.Duration
+}
+
+func (e *UnavailableError) Error() string { return e.Msg }
+
+func (s *PlacesService) unavailable(msg string) *UnavailableError {
+	s.rateMu.Lock()
+	defer s.rateMu.Unlock()
+	wait := 30 * time.Second
+	if d := time.Until(s.blockedUntil); d > wait {
+		wait = d
+	}
+	return &UnavailableError{Msg: msg, RetryAfter: wait.Round(time.Second)}
 }

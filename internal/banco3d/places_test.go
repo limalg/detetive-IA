@@ -2,6 +2,8 @@ package banco3d
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -247,13 +249,13 @@ func TestGetLandmarksRealPlacesByPlaceID(t *testing.T) {
 func TestGetLandmarksAPIFailure(t *testing.T) {
 	svc := mockService(func(r *http.Request) (int, string) { return 503, "" })
 
-	// Not in catalog: nothing is invented, the answer is empty and flagged partial.
-	res, _ := svc.GetLandmarks("Sorocaba", "")
-	if res.City != "Sorocaba" || len(res.Landmarks) != 0 || len(res.Candidates) != 0 || !res.Partial {
-		t.Fatalf("bad result %+v", res)
+	// Not in catalog: nothing is invented and an empty answer is an error (503), never an empty 200.
+	var ue *UnavailableError
+	if res, err := svc.GetLandmarks("Sorocaba", ""); !errors.As(err, &ue) || res != nil {
+		t.Fatalf("want UnavailableError, got %+v %v", res, err)
 	}
 	// In catalog: preset names.
-	res, _ = svc.GetLandmarks("Londrina", "")
+	res, _ := svc.GetLandmarks("Londrina", "")
 	if res.City != "Londrina" || len(res.Landmarks) != 28 || res.Partial {
 		t.Fatalf("bad catalog result %+v", res)
 	}
@@ -382,6 +384,9 @@ func TestBackgroundPassCompletesCachedAnswer(t *testing.T) {
 	if len(second.Landmarks) <= len(first.Landmarks) {
 		t.Fatalf("background pass did not improve: %d -> %d", len(first.Landmarks), len(second.Landmarks))
 	}
+	if second.City != "Maringá" {
+		t.Errorf("city must stay the resolved one, got %q", second.City)
+	}
 	var stations int
 	for _, l := range second.Landmarks {
 		if strings.Contains(l.Name, "Vizinha") {
@@ -445,5 +450,49 @@ func TestEmptyUtilitySlotsTakeRealPlaces(t *testing.T) {
 	}
 	if len(res.Landmarks) != 28 || res.Partial {
 		t.Errorf("want 28 real names and partial=false, got %d partial=%v", len(res.Landmarks), res.Partial)
+	}
+}
+
+func TestStreetPlaceIDNeverBecomesCity(t *testing.T) {
+	svc := mockService(func(r *http.Request) (int, string) {
+		if r.URL.Host == "nominatim.openstreetmap.org" {
+			return 200, `{"category":"highway","rank_address":26,"localname":"Avenida Doutor Júlio Lucant","centroid":{"coordinates":[-51.9,-23.4]}}`
+		}
+		return 503, ""
+	})
+	res, err := svc.GetLandmarks("", "osm_12066357")
+	var ue *UnavailableError
+	if !errors.As(err, &ue) || res != nil {
+		t.Fatalf("a street place_id must be refused (503), got res=%+v err=%v", res, err)
+	}
+}
+
+func TestNoSourceNeverReturnsEmpty200(t *testing.T) {
+	svc := mockService(func(r *http.Request) (int, string) {
+		if r.URL.Host == "nominatim.openstreetmap.org" {
+			return 429, ""
+		}
+		return 503, ""
+	})
+	_, err := svc.GetLandmarks("Maringá", "")
+	var ue *UnavailableError
+	if !errors.As(err, &ue) || ue.RetryAfter < 30*time.Second {
+		t.Fatalf("empty cache + 429 must be an UnavailableError with retry_after, got %v", err)
+	}
+	b, _ := json.Marshal(buildLandmarks("Maringá", nil))
+	if strings.Contains(string(b), "null") {
+		t.Errorf("lists must never serialize as null: %s", b)
+	}
+}
+
+func TestOldDiskCacheIsIgnored(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "old.json")
+	old := `{"details":{"osm_1":{"City":"Avenida Suja","Lat":1,"Lon":1}},"landmarks":{}}`
+	if err := os.WriteFile(path, []byte(old), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	svc := NewPlacesService().WithDiskCache(path)
+	if _, ok := svc.detailsCache["osm_1"]; ok {
+		t.Error("cache without the current schema version must not be reused")
 	}
 }

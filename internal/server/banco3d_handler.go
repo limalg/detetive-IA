@@ -2,9 +2,11 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/rand"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -72,6 +74,13 @@ func (h *Handler) HandleBanco3DPlacesLandmarks(w http.ResponseWriter, r *http.Re
 	}
 
 	res, err := banco3d.GlobalPlacesService.GetLandmarks(city, placeID, r.URL.Query()["extra"]...)
+	var unavailable *banco3d.UnavailableError
+	if errors.As(err, &unavailable) {
+		secs := int(unavailable.RetryAfter.Seconds())
+		w.Header().Set("Retry-After", strconv.Itoa(secs))
+		h.json(w, http.StatusServiceUnavailable, map[string]interface{}{"error": unavailable.Msg, "retry_after": secs})
+		return
+	}
 	if err != nil {
 		h.error(w, http.StatusInternalServerError, err.Error())
 		return
