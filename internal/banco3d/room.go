@@ -221,8 +221,11 @@ func (r *Room) StartGame() error {
 	for i := 0; i < neededBots && len(r.Game.Players) < r.Config.MaxPlayers; i++ {
 		b := botNames[i%len(botNames)]
 		bp, err := r.Game.AddPlayer(b.name, b.color, b.piece)
-		if err == nil && r.Config.StartingBalance > 0 {
-			bp.Money = r.Config.StartingBalance
+		if err == nil {
+			bp.IsBot = true
+			if r.Config.StartingBalance > 0 {
+				bp.Money = r.Config.StartingBalance
+			}
 		}
 	}
 
@@ -263,13 +266,17 @@ func (r *Room) ProposeTrade(proposal TradeProposal) error {
 	return nil
 }
 
-// AcceptTrade executes the pending trade atomically.
-func (r *Room) AcceptTrade() error {
+// AcceptTrade executes the pending trade atomically, ensuring caller is the recipient.
+func (r *Room) AcceptTrade(callerPlayerID string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	if r.PendingTrade == nil || r.PendingTrade.Status != "pending" {
 		return errors.New("nenhuma proposta de troca pendente")
+	}
+
+	if callerPlayerID != "" && r.PendingTrade.ReceiverID != callerPlayerID {
+		return errors.New("apenas o destinatário pode aceitar a proposta")
 	}
 
 	err := r.Game.TradeExchange(TradeExchangeRequest{
@@ -290,15 +297,21 @@ func (r *Room) AcceptTrade() error {
 	return nil
 }
 
-// DeclineTrade rejects the current trade offer.
-func (r *Room) DeclineTrade() error {
+// DeclineTrade rejects the current trade offer, ensuring caller is the recipient.
+func (r *Room) DeclineTrade(callerPlayerID string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if r.PendingTrade != nil {
-		r.PendingTrade.Status = "rejected"
-		r.PendingTrade = nil
+	if r.PendingTrade == nil || r.PendingTrade.Status != "pending" {
+		return errors.New("nenhuma proposta de troca pendente")
 	}
+
+	if callerPlayerID != "" && r.PendingTrade.ReceiverID != callerPlayerID {
+		return errors.New("apenas o destinatário pode recusar a proposta")
+	}
+
+	r.PendingTrade.Status = "rejected"
+	r.PendingTrade = nil
 	r.LastActivity = time.Now()
 	return nil
 }

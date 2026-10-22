@@ -442,12 +442,25 @@ func (h *Handler) HandleBanco3DRoomTrade(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	callerID := req.PlayerID
+	if callerID == "" {
+		callerID = req.SenderID
+	}
+
 	var tradeErr error
 	switch req.Action {
 	case "accept":
-		tradeErr = room.AcceptTrade()
+		if room.PendingTrade != nil && room.PendingTrade.ReceiverID != callerID {
+			h.error(w, http.StatusForbidden, "apenas o destinatário pode aceitar ou recusar a proposta")
+			return
+		}
+		tradeErr = room.AcceptTrade(callerID)
 	case "decline":
-		tradeErr = room.DeclineTrade()
+		if room.PendingTrade != nil && room.PendingTrade.ReceiverID != callerID {
+			h.error(w, http.StatusForbidden, "apenas o destinatário pode aceitar ou recusar a proposta")
+			return
+		}
+		tradeErr = room.DeclineTrade(callerID)
 	case "propose":
 		proposal := banco3d.TradeProposal{
 			ID:             "trade-1",
@@ -459,9 +472,18 @@ func (h *Handler) HandleBanco3DRoomTrade(w http.ResponseWriter, r *http.Request)
 			RequestedCash:  req.RequestedCash,
 		}
 		tradeErr = room.ProposeTrade(proposal)
-		// Se o destinatário for bot, auto-aceita
-		if tradeErr == nil && (strings.HasPrefix(req.ReceiverID, "b") || req.ReceiverID == "p2" || req.ReceiverID == "p3") {
-			_ = room.AcceptTrade()
+		// Se o destinatário for bot legítimo (IsBot == true), auto-aceita
+		if tradeErr == nil {
+			var isBot bool
+			for _, p := range room.Game.Players {
+				if p.ID == req.ReceiverID {
+					isBot = p.IsBot
+					break
+				}
+			}
+			if isBot {
+				_ = room.AcceptTrade(req.ReceiverID)
+			}
 		}
 	default:
 		// Execução direta imediata

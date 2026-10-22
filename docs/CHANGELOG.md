@@ -2,6 +2,13 @@
 
 Todas as alterações notáveis do módulo Banco Imobiliário são documentadas neste arquivo.
 
+## [banco-v0.5.2] - 2026-10-22
+### Fixed
+- Correção de vulnerabilidades de autorização e consentimento na negociação de trocas (`Trade`):
+  - **Autorização estrita de resposta**: apenas o destinatário (`receiver_id == player_id`) tem permissão para aceitar (`action: accept`) ou recusar (`action: decline`) uma proposta; tentativas de terceiros ou do próprio remetente retornam estritamente `HTTP 403 Forbidden`.
+  - **Consentimento de jogadores humanos**: campo explícito `Player.IsBot` (`internal/banco3d/game.go`) garantindo que apenas bots legítimos realizem auto-aceite; jogadores humanos com IDs como `p2`/`p3` recebem status `pending` e exigem consentimento explícito.
+  - Testes automatizados TDD adicionados e validados cobrindo domínio (`room_test.go`) e camada HTTP (`banco3d_test.go`).
+
 ## [banco-v0.5.1] - 2026-10-22
 ### Added
 - Protocolo assíncrono de negociação (`TradeProposal`):

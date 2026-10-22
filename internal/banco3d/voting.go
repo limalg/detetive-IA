@@ -9,12 +9,12 @@ import (
 // VotingSession manages the 15-second lightning vote for the city's iconic landmark.
 type VotingSession struct {
 	mu         sync.Mutex
-	Candidates []string          `json:"candidates"`
-	Duration   time.Duration     `json:"duration"`
-	Deadline   time.Time         `json:"deadline"`
-	Votes      map[string]int    `json:"votes"` // playerID -> candidateIndex (0..3)
-	IsClosed   bool              `json:"is_closed"`
-	Winner     string            `json:"winner,omitempty"`
+	Candidates []string       `json:"candidates"`
+	Duration   time.Duration  `json:"duration"`
+	Deadline   time.Time      `json:"deadline"`
+	Votes      map[string]int `json:"votes"` // playerID -> candidateIndex (0..3)
+	IsClosed   bool           `json:"is_closed"`
+	Winner     string         `json:"winner,omitempty"`
 }
 
 // NewVotingSession initializes a voting session for the candidates list.

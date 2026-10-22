@@ -21,6 +21,7 @@ type Player struct {
 	JailTurns         int    `json:"jail_turns"`
 	GetOutOfJailCards int    `json:"get_out_of_jail_cards"`
 	IsBankrupt        bool   `json:"is_bankrupt"`
+	IsBot             bool   `json:"is_bot"`
 	Properties        []int  `json:"properties"` // Índices das casas possuídas
 }
 

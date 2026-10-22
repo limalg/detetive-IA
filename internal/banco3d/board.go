@@ -39,12 +39,12 @@ type Tile struct {
 	Name      string     `json:"name"`
 	Type      TileType   `json:"type"`
 	Group     ColorGroup `json:"group"`
-	Price     int        `json:"price"`      // 0 = não comprável
-	Rent      [6]int     `json:"rent"`       // [base, 1c, 2c, 3c, 4c, hotel]
+	Price     int        `json:"price"` // 0 = não comprável
+	Rent      [6]int     `json:"rent"`  // [base, 1c, 2c, 3c, 4c, hotel]
 	HouseCost int        `json:"house_cost"`
-	OwnerID   string     `json:"owner_id"`   // "" = banco
-	Houses    int        `json:"houses"`     // 0..4, 5 = hotel
-	IsQueen   bool       `json:"is_queen"`   // true somente no índice 39
+	OwnerID   string     `json:"owner_id"` // "" = banco
+	Houses    int        `json:"houses"`   // 0..4, 5 = hotel
+	IsQueen   bool       `json:"is_queen"` // true somente no índice 39
 	TaxAmount int        `json:"tax_amount,omitempty"`
 }
 

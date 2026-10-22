@@ -73,3 +73,79 @@ func TestRoomLifecycleAndEvents(t *testing.T) {
 		t.Errorf("auto-pass deveria ter passado a vez para p2 por timeout, atual: %s", room.Game.CurrentTurnPlayerID)
 	}
 }
+
+func TestTradeAuthorizationAndBotAutoAccept(t *testing.T) {
+	hub := NewRoomHub()
+	room, _ := hub.CreateRoom("TRADE-TEST", "Curitiba")
+	p1, _ := room.JoinPlayer("Lucas", "#3b82f6", "car") // p1 (humano)
+	p2, _ := room.JoinPlayer("Ana", "#ef4444", "hat")   // p2 (humano)
+	_ = room.StartGame()
+
+	// 1. Validar que p1 e p2 são humanos (IsBot == false)
+	if p1.IsBot {
+		t.Errorf("p1 não deveria ser bot")
+	}
+	if p2.IsBot {
+		t.Errorf("p2 não deveria ser bot")
+	}
+
+	// 2. Proposta de troca de p1 para p2
+	proposal := TradeProposal{
+		ID:             "trade-1",
+		SenderID:       p1.ID,
+		ReceiverID:     p2.ID,
+		OfferedTiles:   []int{},
+		OfferedCash:    100,
+		RequestedTiles: []int{},
+		RequestedCash:  50,
+	}
+	_ = room.ProposeTrade(proposal)
+
+	// 3. Tentativa de aceitação pelo próprio remetente (p1) -> DEVE FALHAR
+	if err := room.AcceptTrade(p1.ID); err == nil {
+		t.Errorf("remetente (p1) não pode aceitar a própria proposta")
+	}
+
+	// 4. Tentativa de recusa por terceiro desconhecido -> DEVE FALHAR
+	if err := room.DeclineTrade("hacker_p99"); err == nil {
+		t.Errorf("jogador não participante não pode recusar a proposta alheia")
+	}
+
+	// 5. Destinatário legítimo (p2) aceita -> DEVE PASSAR
+	if err := room.AcceptTrade(p2.ID); err != nil {
+		t.Fatalf("destinatário legítimo (p2) deveria conseguir aceitar a troca: %v", err)
+	}
+
+	// 6. Teste de proposta para BOT com auto-aceite
+	roomSolo, _ := hub.CreateRoom("SOLO-BOT-TEST", "Curitiba")
+	soloHuman, _ := roomSolo.JoinPlayer("Marlowe", "#3b82f6", "car")
+	_ = roomSolo.StartGame() // auto-adiciona bots
+
+	var botPlayer *Player
+	for _, p := range roomSolo.Game.Players {
+		if p.ID != soloHuman.ID {
+			botPlayer = p
+			break
+		}
+	}
+	if botPlayer == nil || !botPlayer.IsBot {
+		t.Fatalf("bot não encontrado ou IsBot false")
+	}
+
+	// Proposta para o bot
+	botProposal := TradeProposal{
+		ID:             "trade-bot-1",
+		SenderID:       soloHuman.ID,
+		ReceiverID:     botPlayer.ID,
+		OfferedTiles:   []int{},
+		OfferedCash:    50,
+		RequestedTiles: []int{},
+		RequestedCash:  0,
+	}
+	_ = roomSolo.ProposeTrade(botProposal)
+
+	// Bot legítimo aceita
+	if err := roomSolo.AcceptTrade(botPlayer.ID); err != nil {
+		t.Fatalf("bot deveria conseguir aceitar troca: %v", err)
+	}
+}

@@ -283,3 +283,221 @@ func TestBanco3DCustomConfigAndFullTrade(t *testing.T) {
 		t.Fatalf("falha no trade exchange completo: %d - %s", rrTrade.Code, rrTrade.Body.String())
 	}
 }
+
+func TestTradeHTTPRejectionUnauthorizedAndHumanConsent(t *testing.T) {
+	router := server.NewRouter(server.Config{})
+
+	// 1. Criar sala com 2 humanos
+	createBody, _ := json.Marshal(map[string]interface{}{
+		"room_id": "sala-trade-auth",
+		"city":    "Rio de Janeiro",
+	})
+	rrCreate := httptest.NewRecorder()
+	router.ServeHTTP(rrCreate, httptest.NewRequest("POST", "/api/banco3d/room/create", bytes.NewReader(createBody)))
+	if rrCreate.Code != http.StatusOK {
+		t.Fatalf("falha ao criar sala: %d", rrCreate.Code)
+	}
+
+	join1, _ := json.Marshal(map[string]interface{}{
+		"room_id": "sala-trade-auth",
+		"name":    "Alice",
+		"color":   "#3b82f6",
+	})
+	rr1 := httptest.NewRecorder()
+	router.ServeHTTP(rr1, httptest.NewRequest("POST", "/api/banco3d/room/join", bytes.NewReader(join1)))
+	var p1Res struct {
+		Player struct {
+			ID string `json:"id"`
+		} `json:"player"`
+	}
+	_ = json.Unmarshal(rr1.Body.Bytes(), &p1Res)
+	p1ID := p1Res.Player.ID
+
+	join2, _ := json.Marshal(map[string]interface{}{
+		"room_id": "sala-trade-auth",
+		"name":    "Bob",
+		"color":   "#ef4444",
+	})
+	rr2 := httptest.NewRecorder()
+	router.ServeHTTP(rr2, httptest.NewRequest("POST", "/api/banco3d/room/join", bytes.NewReader(join2)))
+	var p2Res struct {
+		Player struct {
+			ID string `json:"id"`
+		} `json:"player"`
+	}
+	_ = json.Unmarshal(rr2.Body.Bytes(), &p2Res)
+	p2ID := p2Res.Player.ID
+
+	// Iniciar jogo
+	startBody, _ := json.Marshal(map[string]interface{}{
+		"room_id":   "sala-trade-auth",
+		"player_id": p1ID,
+	})
+	rrStart := httptest.NewRecorder()
+	router.ServeHTTP(rrStart, httptest.NewRequest("POST", "/api/banco3d/room/start", bytes.NewReader(startBody)))
+	if rrStart.Code != http.StatusOK {
+		t.Fatalf("falha ao iniciar jogo: %d", rrStart.Code)
+	}
+
+	// 2. Proposta de p1 (Alice) para p2 (Bob)
+	proposeBody, _ := json.Marshal(map[string]interface{}{
+		"room_id":      "sala-trade-auth",
+		"action":       "propose",
+		"player_id":    p1ID,
+		"to_player_id": p2ID,
+		"give": map[string]interface{}{
+			"props": []int{},
+			"cash":  100,
+		},
+		"want": map[string]interface{}{
+			"props": []int{},
+			"cash":  0,
+		},
+	})
+	rrProp := httptest.NewRecorder()
+	router.ServeHTTP(rrProp, httptest.NewRequest("POST", "/api/banco3d/room/trade", bytes.NewReader(proposeBody)))
+	if rrProp.Code != http.StatusOK {
+		t.Fatalf("falha ao propor troca: %d - %s", rrProp.Code, rrProp.Body.String())
+	}
+
+	// Como Bob é humano, a troca NÃO pode ter sido auto-aceita!
+	var stateAfterProp struct {
+		PendingTrade *struct {
+			Status     string `json:"status"`
+			ReceiverID string `json:"receiver_id"`
+		} `json:"pending_trade"`
+	}
+	_ = json.Unmarshal(rrProp.Body.Bytes(), &stateAfterProp)
+	if stateAfterProp.PendingTrade == nil || stateAfterProp.PendingTrade.Status != "pending" {
+		t.Fatalf("troca para humano não deveria ter sido auto-aceita, pending_trade: %+v", stateAfterProp.PendingTrade)
+	}
+
+	// 3. Terceiro estranho tenta aceitar -> DEVE RETORNAR 403 Forbidden
+	unauthorizedAccept, _ := json.Marshal(map[string]interface{}{
+		"room_id":   "sala-trade-auth",
+		"action":    "accept",
+		"player_id": "hacker-999",
+	})
+	rrUnauthAcc := httptest.NewRecorder()
+	router.ServeHTTP(rrUnauthAcc, httptest.NewRequest("POST", "/api/banco3d/room/trade", bytes.NewReader(unauthorizedAccept)))
+	if rrUnauthAcc.Code != http.StatusForbidden {
+		t.Fatalf("esperado 403 Forbidden para terceiro estranho aceitando troca, obteve %d", rrUnauthAcc.Code)
+	}
+
+	// 4. Próprio remetente tenta aceitar sua própria proposta -> DEVE RETORNAR 403 Forbidden
+	senderSelfAccept, _ := json.Marshal(map[string]interface{}{
+		"room_id":   "sala-trade-auth",
+		"action":    "accept",
+		"player_id": p1ID,
+	})
+	rrSelfAcc := httptest.NewRecorder()
+	router.ServeHTTP(rrSelfAcc, httptest.NewRequest("POST", "/api/banco3d/room/trade", bytes.NewReader(senderSelfAccept)))
+	if rrSelfAcc.Code != http.StatusForbidden {
+		t.Fatalf("esperado 403 Forbidden para remetente aceitando própria proposta, obteve %d", rrSelfAcc.Code)
+	}
+
+	// 5. Terceiro estranho tenta recusar -> DEVE RETORNAR 403 Forbidden
+	unauthorizedDecline, _ := json.Marshal(map[string]interface{}{
+		"room_id":   "sala-trade-auth",
+		"action":    "decline",
+		"player_id": "hacker-999",
+	})
+	rrUnauthDec := httptest.NewRecorder()
+	router.ServeHTTP(rrUnauthDec, httptest.NewRequest("POST", "/api/banco3d/room/trade", bytes.NewReader(unauthorizedDecline)))
+	if rrUnauthDec.Code != http.StatusForbidden {
+		t.Fatalf("esperado 403 Forbidden para terceiro estranho recusando troca, obteve %d", rrUnauthDec.Code)
+	}
+
+	// 6. Destinatário legítimo (Bob / p2ID) aceita -> DEVE RETORNAR 200 OK
+	legitAccept, _ := json.Marshal(map[string]interface{}{
+		"room_id":   "sala-trade-auth",
+		"action":    "accept",
+		"player_id": p2ID,
+	})
+	rrLegitAcc := httptest.NewRecorder()
+	router.ServeHTTP(rrLegitAcc, httptest.NewRequest("POST", "/api/banco3d/room/trade", bytes.NewReader(legitAccept)))
+	if rrLegitAcc.Code != http.StatusOK {
+		t.Fatalf("destinatário legítimo deveria conseguir aceitar a troca: %d - %s", rrLegitAcc.Code, rrLegitAcc.Body.String())
+	}
+
+	// 7. Teste de Bot legítimo sendo auto-aceito
+	createBotRoom, _ := json.Marshal(map[string]interface{}{
+		"room_id": "sala-trade-bot-auto",
+		"city":    "Curitiba",
+	})
+	rrCreateBot := httptest.NewRecorder()
+	router.ServeHTTP(rrCreateBot, httptest.NewRequest("POST", "/api/banco3d/room/create", bytes.NewReader(createBotRoom)))
+
+	joinSolo, _ := json.Marshal(map[string]interface{}{
+		"room_id": "sala-trade-bot-auto",
+		"name":    "SoloPlayer",
+		"color":   "#3b82f6",
+	})
+	rrSolo := httptest.NewRecorder()
+	router.ServeHTTP(rrSolo, httptest.NewRequest("POST", "/api/banco3d/room/join", bytes.NewReader(joinSolo)))
+	var soloRes struct {
+		Player struct {
+			ID string `json:"id"`
+		} `json:"player"`
+	}
+	_ = json.Unmarshal(rrSolo.Body.Bytes(), &soloRes)
+
+	startSolo, _ := json.Marshal(map[string]interface{}{
+		"room_id":   "sala-trade-bot-auto",
+		"player_id": soloRes.Player.ID,
+	})
+	rrStartSolo := httptest.NewRecorder()
+	router.ServeHTTP(rrStartSolo, httptest.NewRequest("POST", "/api/banco3d/room/start", bytes.NewReader(startSolo)))
+
+	var stateSolo struct {
+		Game struct {
+			Players []struct {
+				ID    string `json:"id"`
+				IsBot bool   `json:"is_bot"`
+			} `json:"players"`
+		} `json:"game"`
+	}
+	_ = json.Unmarshal(rrStartSolo.Body.Bytes(), &stateSolo)
+
+	var botID string
+	for _, p := range stateSolo.Game.Players {
+		if p.ID != soloRes.Player.ID && p.IsBot {
+			botID = p.ID
+			break
+		}
+	}
+	if botID == "" {
+		t.Fatalf("esperava encontrar um bot na sala solo")
+	}
+
+	// Propor troca ao bot -> deve ser auto-aceita
+	propBot, _ := json.Marshal(map[string]interface{}{
+		"room_id":      "sala-trade-bot-auto",
+		"action":       "propose",
+		"player_id":    soloRes.Player.ID,
+		"to_player_id": botID,
+		"give": map[string]interface{}{
+			"props": []int{},
+			"cash":  50,
+		},
+		"want": map[string]interface{}{
+			"props": []int{},
+			"cash":  0,
+		},
+	})
+	rrPropBot := httptest.NewRecorder()
+	router.ServeHTTP(rrPropBot, httptest.NewRequest("POST", "/api/banco3d/room/trade", bytes.NewReader(propBot)))
+	if rrPropBot.Code != http.StatusOK {
+		t.Fatalf("falha ao propor troca para bot: %d - %s", rrPropBot.Code, rrPropBot.Body.String())
+	}
+
+	var stateAfterBotProp struct {
+		PendingTrade *struct {
+			Status string `json:"status"`
+		} `json:"pending_trade"`
+	}
+	_ = json.Unmarshal(rrPropBot.Body.Bytes(), &stateAfterBotProp)
+	if stateAfterBotProp.PendingTrade != nil {
+		t.Fatalf("troca para bot legítimo deveria ter sido auto-aceita e pending_trade limpo, mas está: %+v", stateAfterBotProp.PendingTrade)
+	}
+}
