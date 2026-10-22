@@ -4,7 +4,7 @@
   const API = qs.get('api') || '';
   const DEMO = qs.has('demo');
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-  const brl = (n) => '$ ' + Number(n).toLocaleString('pt-BR');
+  const brl = (n) => 'R$ ' + Number(n).toLocaleString('pt-BR');
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const COLORS = ['#2f6bff', '#22c55e', '#facc15', '#ef4444', '#a855f7', '#f97316'];
   const VOTE_SECS = 15;
@@ -97,14 +97,30 @@
       const nm = CORNER[t.type] || (t.type === 'LUCK' ? 'Sorte ou Revés' : t.name);
       const icon = tileIcon(t, t.type === 'STATION' || t.type === 'UTILITY' ? sn++ : i);
       const th = ['PROPERTY', 'STATION', 'UTILITY'].includes(t.type) ? thumbFor(t) : null;
-      el.innerHTML = `${th ? `<img class="th" src="${th}" alt="" onerror="this.remove()">` : ''}${use(icon)}<span class="nm">${esc(nm)}</span>${t.price && !corner ? `<span class="pr">${brl(t.price)}</span>` : ''}<span class="hs"></span>`;
+      el.innerHTML = corner ? `${use(icon)}<span class="nm">${esc(nm)}</span><span class="hs"></span>`
+        : `${th ? `<img class="th" src="${th}" alt="" onerror="this.remove()">` : ''}${use(icon)}<span class="tx"><span class="nm">${esc(nm)}</span>${t.price ? `<span class="pr">${brl(t.price)}</span>` : ''}</span><span class="hs"></span>`;
       el.setAttribute('aria-label', `${nm}${t.price ? ', ' + brl(t.price) : ''}`);
       el.onclick = () => showTile(i);
       board.appendChild(el);
     });
     board.appendChild(centerEl());
-    pawns.clear(); prevPos.clear(); boardBuilt = true;
+    pawns.clear(); prevPos.clear(); pawnPos.clear(); boardBuilt = true;
+    fitTiles();
   }
+
+  // shrink each name until name + price fit inside the tile (no clipped text, price always visible)
+  function fitTiles() {
+    $('board').querySelectorAll('.tile').forEach((t) => {
+      const nm = t.querySelector('.nm');
+      if (!nm) return;
+      nm.style.fontSize = '';
+      let fs = parseFloat(getComputedStyle(nm).fontSize);
+      const over = () => t.scrollHeight > t.clientHeight + 1 || t.scrollWidth > t.clientWidth + 1 || nm.scrollWidth > nm.clientWidth + 1;
+      while (over() && fs > 4.5) { fs -= .5; nm.style.fontSize = fs + 'px'; }
+    });
+  }
+  let fitT;
+  addEventListener('resize', () => { clearTimeout(fitT); fitT = setTimeout(() => boardBuilt && fitTiles(), 150); });
 
   function dieHtml(id) {
     const P = { 1: [5], 2: [1, 9], 3: [1, 5, 9], 4: [1, 3, 7, 9], 5: [1, 3, 5, 7, 9], 6: [1, 3, 4, 6, 7, 9] };
@@ -121,23 +137,39 @@
   }
 
   // ---------- pawns ----------
-  function placePawn(p, pos, idx = 0) {
+  const PAWN = '<svg viewBox="0 0 24 40" aria-hidden="true"><defs><linearGradient id="pwS"><stop offset="0" stop-color="#fff" stop-opacity=".45"/><stop offset=".45" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".4"/></linearGradient><radialGradient id="pwH" cx=".35" cy=".3" r=".75"><stop offset="0" stop-color="#fff" stop-opacity=".85"/><stop offset=".35" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".45"/></radialGradient></defs>'
+    + '<ellipse class="c" cx="12" cy="35" rx="10" ry="3.6"/><path class="c" d="M6.500 34C8.500 27 10 22 10.200 17h3.600c.2 5 1.700 10 3.700 17z"/><ellipse class="c" cx="12" cy="17" rx="4.800" ry="1.800"/><circle class="c" cx="12" cy="10" r="6.500"/>'
+    + '<ellipse fill="url(#pwS)" cx="12" cy="35" rx="10" ry="3.600"/><path fill="url(#pwS)" d="M6.500 34C8.500 27 10 22 10.200 17h3.600c.2 5 1.700 10 3.700 17z"/><circle fill="url(#pwH)" cx="12" cy="10" r="6.500"/></svg>';
+  const pawnPos = new Map();
+  function placePawn(p, pos) {
     let el = pawns.get(p.id);
     if (!el) {
       el = document.createElement('div');
       el.className = 'pawn';
-      el.innerHTML = '<i></i>';
+      el.innerHTML = `<i>${PAWN}</i>`;
       el.style.setProperty('--c', p.color);
       $('board').appendChild(el);
       pawns.set(p.id, el);
     }
-    const t = $('board').children[pos];
-    const off = [[-.18, -.18], [.18, -.18], [-.18, .18], [.18, .18]][idx % 4];
-    el.style.transform = `translate(${t.offsetLeft + t.offsetWidth * (.5 + off[0])}px,${t.offsetTop + t.offsetHeight * (.5 + off[1])}px)`;
+    pawnPos.set(p.id, pos);
+    layoutPawns();
+  }
+  // pawn centre = tile centre; pawns sharing a tile spread on a small circle that stays inside it
+  function layoutPawns() {
+    const at = new Map();
+    pawns.forEach((el, id) => { const pos = pawnPos.get(id); if (pos !== undefined) (at.get(pos) || at.set(pos, []).get(pos)).push(el); });
+    at.forEach((els, pos) => {
+      const t = $('board').children[pos], n = els.length, r = n > 1 ? Math.min(t.offsetWidth, t.offsetHeight) * .2 : 0, a0 = -Math.PI / 2 + 'LTRB'.indexOf(t.dataset.side) * Math.PI / 2;
+      els.forEach((el, k) => {
+        const a = a0 + k * 2 * Math.PI / n;
+        el.style.transform = `translate(${t.offsetLeft + t.offsetWidth / 2 + r * Math.cos(a)}px,${t.offsetTop + t.offsetHeight / 2 + r * Math.sin(a)}px)`;
+        el.style.setProperty('--k', n > 1 ? .78 : 1);
+      });
+    });
   }
   function placeAll() {
     if (!boardBuilt) return;
-    state.players.forEach((p, i) => { if (!p.bankrupt) placePawn(p, p.position, i); prevPos.set(p.id, p.position); });
+    state.players.forEach((p) => { if (!p.bankrupt) placePawn(p, p.position); prevPos.set(p.id, p.position); });
   }
   // hop tile to tile, squashing on landing (own `translate`/`scale` props, so they compose with the pawn's transform)
   function hop(p) {
@@ -153,8 +185,8 @@
     setTimeout(() => t.classList.remove('land'), 1100);
   }
   async function walk(p, from, to) {
-    const N = state.board.length, i = state.players.findIndex((x) => x.id === p.id);
-    for (let pos = from; pos !== to;) { pos = (pos + 1) % N; placePawn(p, pos, i); hop(p); camera(pos); await sleep(200); }
+    const N = state.board.length;
+    for (let pos = from; pos !== to;) { pos = (pos + 1) % N; placePawn(p, pos); hop(p); camera(pos); await sleep(200); }
     land(to);
   }
 
@@ -226,40 +258,74 @@
 
   // ---------- players panel: persistent rows, balance tween, floating deltas ----------
   const rows = new Map(), bal = new Map();
+  let fxSrc = new Map(); // player id -> element the coins should leave from (e.g. the Saída tile)
   function tweenTo(id, el, to) {
-    const b = bal.get(id), from = b.shown, t0 = performance.now();
+    const b = bal.get(id), from = b.shown, t0 = performance.now(), dur = maxMotion() ? 1000 : 1;
     b.target = to; cancelAnimationFrame(b.raf);
+    el.classList.remove('up', 'down'); el.classList.add(to > from ? 'up' : 'down');
+    clearTimeout(b.fx); b.fx = setTimeout(() => el.classList.remove('up', 'down'), dur + 700);
     const step = (now) => {
-      const k = Math.min(1, (now - t0) / 700);
+      const k = Math.min(1, (now - t0) / dur);
       b.shown = Math.round(from + (to - from) * (1 - Math.pow(1 - k, 3)));
       el.textContent = brl(b.shown);
       if (k < 1) b.raf = requestAnimationFrame(step);
     };
     b.raf = requestAnimationFrame(step);
   }
+  // coins and bills arcing from `from` to `to` (viewport elements)
+  function coins(from, to, n) {
+    if (!maxMotion() || !from || !to) return;
+    const a = from.getBoundingClientRect(), b = to.getBoundingClientRect();
+    const x0 = a.left + a.width / 2, y0 = a.top + a.height / 2, x1 = b.left + 40, y1 = b.top + b.height / 2;
+    for (let k = 0; k < n; k++) {
+      const c = document.createElement('i'), bill = k % 3 === 2, jx = (Math.random() - .5) * 60, arc = -70 - Math.random() * 60;
+      c.className = 'coin' + (bill ? ' bill' : ''); c.textContent = bill ? '' : 'R$';
+      document.body.appendChild(c);
+      c.animate([
+        { transform: `translate(${x0}px,${y0}px) scale(.4) rotateY(0deg)`, opacity: 0 },
+        { transform: `translate(${(x0 + x1) / 2 + jx}px,${(y0 + y1) / 2 + arc}px) scale(1.1) rotateY(540deg)`, opacity: 1, offset: .45 },
+        { transform: `translate(${x1}px,${y1}px) scale(.6) rotateY(1080deg)`, opacity: .9 },
+      ], { duration: 900, delay: k * 70, easing: 'cubic-bezier(.4,0,.2,1)', fill: 'both' }).onfinish = () => c.remove();
+    }
+  }
+  const wealthOf = (p) => p.balance + state.board.reduce((n, t) => n + (t.owner_id === p.id ? t.price || 0 : 0), 0);
   function renderPlayers() {
-    const box = $('players');
+    const box = $('players'), W = new Map(state.players.map((p) => [p.id, wealthOf(p)])), top = Math.max(1, ...W.values());
+    const gains = [], losses = [], src = fxSrc; fxSrc = new Map();
     state.players.forEach((p) => {
       let r = rows.get(p.id);
       if (!r) {
         r = document.createElement('div');
-        r.innerHTML = `<div class="av">${use('user')}</div><div class="who"><b></b><span class="bal"></span></div><span class="crown" aria-label="Vez de jogar">●</span>`;
+        r.innerHTML = `<div class="av">${use('user')}</div><div class="who"><b></b><span class="bal"></span></div><span class="crown" aria-label="Vez de jogar">●</span><div class="wealth"><div class="bar"><i></i></div><small></small></div><div class="pp"></div>`;
         rows.set(p.id, r); box.appendChild(r);
         bal.set(p.id, { shown: p.balance, target: p.balance, raf: 0 });
         r.querySelector('.bal').textContent = brl(p.balance);
       }
-      r.className = 'pl' + (p.id === state.current_turn ? ' turn' : '') + (p.bankrupt ? ' out' : '');
+      r.className = 'pl' + (p.id === state.current_turn ? ' turn' : '') + (p.bankrupt ? ' out' : '') + (r.classList.contains('gain') ? ' gain' : '') + (r.classList.contains('loss') ? ' loss' : '');
       r.style.setProperty('--c', p.color);
       r.querySelector('b').textContent = p.name + (p.id === meId ? ' (você)' : '');
       r.querySelector('.crown').hidden = p.id !== state.current_turn;
-      const b = bal.get(p.id);
-      if (b.target !== p.balance) {
-        const d = p.balance - b.target, f = document.createElement('span');
-        f.className = 'fly ' + (d > 0 ? 'up' : 'down'); f.textContent = (d > 0 ? '+' : '−') + Math.abs(d).toLocaleString('pt-BR');
-        r.appendChild(f); setTimeout(() => f.remove(), 1600);
-        tweenTo(p.id, r.querySelector('.bal'), p.balance);
-      }
+      r.querySelector('.wealth i').style.width = (W.get(p.id) / top * 100) + '%';
+      r.querySelector('.wealth small').textContent = 'Patrimônio ' + brl(W.get(p.id));
+      r.querySelector('.pp').innerHTML = state.board.filter((t) => t.owner_id === p.id).sort((x, y) => String(x.group || '~').localeCompare(String(y.group || '~')))
+        .map((t) => `<i title="${esc(t.name)}" style="background:${t.type === 'PROPERTY' ? `var(--g-${t.group})` : '#7dd3fc'}"></i>`).join('');
+      const b = bal.get(p.id), d = p.balance - b.target;
+      if (d) (d > 0 ? gains : losses).push({ p, r, d });
     });
+    [...gains, ...losses].forEach(({ p, r, d }) => {
+      const f = document.createElement('span');
+      f.className = 'fly ' + (d > 0 ? 'up' : 'down'); f.textContent = (d > 0 ? '+' : '−') + brl(Math.abs(d));
+      r.appendChild(f); setTimeout(() => f.remove(), 1800);
+      const cls = d > 0 ? 'gain' : 'loss';
+      r.classList.remove('gain', 'loss'); void r.offsetWidth; r.classList.add(cls); setTimeout(() => r.classList.remove(cls), 1500);
+      tweenTo(p.id, r.querySelector('.bal'), p.balance);
+    });
+    const center = $('board').querySelector('.center'), n = (d) => Math.min(9, 3 + Math.floor(Math.abs(d) / 100));
+    gains.forEach(({ p, r, d }, k) => {
+      const payer = src.get(p.id) || (losses[k] || losses[0] || {}).r || center;
+      coins(payer, r, n(d));
+    });
+    if (!gains.length) losses.forEach(({ r, d }) => coins(r, center, n(d)));
   }
 
   // ---------- render ----------
@@ -306,7 +372,29 @@
 
   // apply a fresh room payload: roll dice + walk pawns for every mover, then redraw
   let seenCard; // undefined until the first state, so a reload doesn't replay an old card
-  const cardMsg = (c) => { const p = state.players.find((x) => x.id === c.who); return `${c.deck === 'CHEST' ? 'Revés' : 'Sorte'}${p && p.id !== meId ? ' de ' + p.name : ''}: ${c.title}${c.delta ? ` (${c.delta > 0 ? '+' : '−'}${brl(Math.abs(c.delta))})` : ''}${c.jail ? ' · Cadeia!' : ''}`; };
+  // Sorte/Revés reveal: queued so back-to-back cards (bots) play one after another; closes by itself or on click
+  const cardQ = []; let cardBusy = false, cardClose = null;
+  async function pumpCards() {
+    if (cardBusy) return;
+    cardBusy = true;
+    const box = $('cardFx'), card = $('cfxCard');
+    while (cardQ.length) {
+      const c = cardQ.shift(), chest = /chest|rev/i.test(c.deck || ''), p = state.players.find((x) => x.id === c.who), amt = Number(c.amount) || 0;
+      $('cfxDeck').textContent = chest ? 'Revés' : 'Sorte';
+      $('cfxWho').textContent = `${chest ? 'Revés' : 'Sorte'}${p ? ' de ' + (p.id === meId ? 'você' : p.name) : ''}`;
+      $('cfxTitle').textContent = c.title || ''; $('cfxText').textContent = c.text || '';
+      const fx = $('cfxFx'); fx.className = amt > 0 ? 'up' : amt < 0 ? 'down' : '';
+      fx.textContent = c.jail ? 'Vá para a Cadeia' : amt ? `${amt > 0 ? '+' : '−'}${brl(Math.abs(amt))}` : '';
+      card.className = 'cfx-card ' + (chest ? 'chest' : 'chance');
+      box.hidden = false; void card.offsetWidth;
+      card.classList.add('in'); await sleep(maxMotion() ? 450 : 1); card.classList.add('flip');
+      await new Promise((ok) => { cardClose = ok; setTimeout(ok, 3300); });
+      cardClose = null; card.classList.add('out'); await sleep(maxMotion() ? 320 : 1); box.hidden = true;
+    }
+    cardBusy = false;
+  }
+  $('cfxCard').onclick = () => cardClose && cardClose();
+  if (DEMO) window.__demo = { card: (c) => { cardQ.push(c); pumpCards(); } };
   // events[]: only entries not seen before are new; the first payload just primes the set
   const seenEv = new Set();
   const evKey = (e) => e.seq ?? e.id ?? `${e.timestamp}|${e.type}|${e.player_id}`;
@@ -342,23 +430,26 @@
           const dice = diceBy.get(p.id) || guessDice(from, p.position, N);
           if (dice) { if (p.id !== meId) toast(`${p.name} tirou ${dice[0] + dice[1]}`); await rollDice(dice); }
         }
-        if ((p.position - from + N) % N > 14) { placePawn(p, p.position, state.players.indexOf(p)); camera(p.position); land(p.position); } // card/jail teleport
+        if ((p.position - from + N) % N > 14) { placePawn(p, p.position); camera(p.position); land(p.position); } // card/jail teleport
         else await walk(p, from, p.position);
-      } else if (!pawns.has(p.id)) placePawn(p, p.position, state.players.indexOf(p));
+      } else if (!pawns.has(p.id)) placePawn(p, p.position);
       prevPos.set(p.id, p.position);
     }
+    const salary = (evs || []).filter((e) => e.type === 'salary'), cardEvs = (evs || []).filter((e) => e.type === 'card');
+    salary.forEach((e) => fxSrc.set(e.player_id, $('board').children[0]));
     render();
     checkOffer();
     autoTurn();
-    if (evs) {
-      const msgs = evs.filter((e) => e.message && e.type !== 'roll' && e.type !== 'pass').map((e) => e.message);
-      if (msgs.length && !quiet) toast(msgs[msgs.length - 1]);
-      return msgs.join(' · ');
-    }
-    const c = state.card;
-    if (seenCard === undefined) { seenCard = c ? c.key : ''; return ''; }
-    if (c && c.key !== seenCard) { seenCard = c.key; if (!quiet) toast(cardMsg(c)); return cardMsg(c); }
-    return '';
+    cardEvs.forEach((e) => cardQ.push({ deck: e.deck, title: e.title, text: e.text, amount: e.amount ?? e.value, jail: e.went_to_jail, who: e.player_id }));
+    const c = state.card, fresh = c && seenCard !== undefined && c.key !== seenCard;
+    seenCard = c ? c.key : (seenCard === undefined ? '' : seenCard);
+    if (fresh && !cardEvs.length) cardQ.push({ deck: c.deck, title: c.title, text: '', amount: c.delta, jail: c.jail, who: c.who });
+    if (cardQ.length) pumpCards();
+    if (!evs) return '';
+    const evMsg = (e) => e.message || (e.type === 'salary' ? `${(state.players.find((x) => x.id === e.player_id) || {}).name || 'Jogador'} recebeu ${brl(e.amount ?? e.value ?? 0)} ao passar pela Saída` : '');
+    const msgs = evs.filter((e) => e.type !== 'roll' && e.type !== 'pass' && e.type !== 'card').map(evMsg).filter(Boolean);
+    if (msgs.length && !quiet) toast(msgs[msgs.length - 1]);
+    return msgs.join(' · ');
   }
 
   // ---------- automatic turn: 8s window to buy, then the turn passes by itself ----------
@@ -425,7 +516,7 @@
       ? ['Aluguel base', '1 casa', '2 casas', '3 casas', '4 casas', 'Hotel'].map((l, n) => `<dt>${l}</dt><dd>${brl(t.rent[n])}</dd>`).join('')
       : (t.rent_base ? `<dt>Aluguel</dt><dd>${brl(t.rent_base)}</dd>` : '');
     const layers = idx < 0 ? '' : `<img class="on" src="${list[idx]}" alt="">${list.length > 1 ? '<img alt="">' : ''}`;
-    sheet(t.name, `<div class="pc"><div class="pc-img" style="--gc:${gc}">${layers}<span class="pc-ic">${use(tileIcon(t, i))}</span><span class="pc-cap">${KIND_LABEL[k] || ''}${t.queen ? ' · ★ ícone da cidade' : ''}</span></div>${t.description ? `<p>${esc(t.description)}</p>` : ''}<dl><dt>Preço</dt><dd>${brl(t.price)}</dd>${rent}${t.build_cost ? `<dt>Casa custa</dt><dd>${brl(t.build_cost)}</dd>` : ''}${t.mortgage ? `<dt>Hipoteca</dt><dd>${brl(t.mortgage)}</dd>` : ''}<dt>Dono</dt><dd>${o ? esc(o.name) : 'Livre'}</dd></dl></div>`);
+    sheet(t.name, `<div class="pc"><div class="pc-img" style="--gc:${gc}">${layers}${t.price ? `<span class="pc-pr">${brl(t.price)}</span>` : ''}<span class="pc-ic">${use(tileIcon(t, i))}</span><span class="pc-cap">${KIND_LABEL[k] || ''}${t.queen ? ' · ★ ícone da cidade' : ''}</span></div>${t.description ? `<p>${esc(t.description)}</p>` : ''}<dl><dt>Preço</dt><dd>${brl(t.price)}</dd>${rent}${t.build_cost ? `<dt>Casa custa</dt><dd>${brl(t.build_cost)}</dd>` : ''}${t.mortgage ? `<dt>Hipoteca</dt><dd>${brl(t.mortgage)}</dd>` : ''}<dt>Dono</dt><dd>${o ? esc(o.name) : 'Livre'}</dd></dl></div>`);
     // every ~6s fade to the next variant of this kind (skipped with reduced motion)
     const imgs = $('sheetBody').querySelectorAll('.pc-img img');
     if (imgs.length === 2 && maxMotion()) {
@@ -756,7 +847,9 @@
       const d1 = 1 + Math.floor(Math.random() * 6), d2 = 1 + Math.floor(Math.random() * 6);
       me.position = (me.position + d1 + d2) % 40; g.dice_rolled_this_turn = true;
       const tt = room.board.tiles[me.position].type;
-      if (tt === 'CHANCE' || tt === 'CHEST') { const dl = [200, -100, 50][Math.floor(Math.random() * 3)]; me.money += dl; g.turn_index = (g.turn_index || 0) + 1; g.last_card_result = { card: { id: 'c' + g.turn_index, deck: tt, title: tt === 'CHANCE' ? 'Feira de artesanato lotada' : 'Conserto do bonde', text: '' }, player_id: me.id, money_delta: dl }; }
+      room.events = room.events || [];
+      if (me.position < d1 + d2) { me.money += 200; room.events.push({ type: 'salary', player_id: me.id, player_name: me.name, amount: 200, message: `${me.name} recebeu R$ 200 ao passar pela Saída`, timestamp: 's' + Date.now() }); }
+      if (tt === 'CHANCE' || tt === 'CHEST') { const dl = [200, -100, 50][Math.floor(Math.random() * 3)]; me.money += dl; g.turn_index = (g.turn_index || 0) + 1; g.last_card_result = { card: { id: 'c' + g.turn_index, deck: tt, title: tt === 'CHANCE' ? 'Feira de artesanato lotada' : 'Conserto do bonde', text: 'Você ganhou destaque no bairro e a cidade reconhece o esforço.' }, player_id: me.id, money_delta: dl }; room.events.push({ type: 'card', player_id: me.id, deck: tt, title: g.last_card_result.card.title, text: g.last_card_result.card.text, amount: dl, timestamp: 'c' + Date.now() }); }
       return ok({ ...room, dice: { die1: d1, die2: d2 } });
     }
     if (P.endsWith('/room/buy')) { const t = room.board.tiles[me.position]; t.owner_id = me.id; me.money -= t.price; me.properties.push(t.index); return ok(room); }
@@ -774,7 +867,8 @@
         const d1 = 1 + Math.floor(Math.random() * 6), d2 = 1 + Math.floor(Math.random() * 6);
         p.position = (p.position + d1 + d2) % 40;
         room.events.push({ type: 'roll', player_id: p.id, player_name: p.name, dice: [d1, d2], timestamp: Date.now() + '' + p.id });
-        if (Math.random() < .5) { const a = 20 * (1 + Math.floor(Math.random() * 4)); p.money -= a; g.players[0].money += a; room.events.push({ type: 'rent', player_id: p.id, player_name: p.name, value: a, message: `${p.name} pagou $ ${a} de aluguel`, timestamp: Date.now() + 'r' + p.id }); }
+        if (room.board.tiles[p.position].type === 'CHANCE') room.events.push({ type: 'card', player_id: p.id, deck: 'CHANCE', title: 'Bônus de fim de ano', text: 'O banco paga um bônus a quem circula pela cidade.', amount: 50, timestamp: 'cb' + Date.now() + p.id });
+        if (Math.random() < .5) { const a = 20 * (1 + Math.floor(Math.random() * 4)); p.money -= a; g.players[0].money += a; room.events.push({ type: 'rent', player_id: p.id, player_name: p.name, value: a, message: `${p.name} pagou R$ ${a} de aluguel`, timestamp: Date.now() + 'r' + p.id }); }
       });
       room.events = room.events.slice(-30); g.dice_rolled_this_turn = false; g.turn_index = (g.turn_index || 0) + 1;
       return ok(room);
