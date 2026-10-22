@@ -6,27 +6,51 @@
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const brl = (n) => '$ ' + Number(n).toLocaleString('pt-BR');
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const COLORS = ['#2f6bff', '#22c55e', '#facc15', '#ef4444', '#a855f7', '#f97316'];
+  const VOTE_SECS = 15;
 
-  let gameId = null, state = null, meId = 1, busy = false;
-  const pawns = new Map();
-  const prevPos = new Map();
+  let roomId = null, meId = null, raw = null, state = null, busy = false, polling = false;
+  let localVoting = null, myVote = -1, closing = false, starting = false, lastTurn = null, boardBuilt = false;
+  const pawns = new Map(), prevPos = new Map();
 
-  // ---------- API (with offline demo engine for visual checks: ?demo) ----------
+  // ---------- API ----------
   async function api(path, body) {
     if (DEMO) return demoApi(path, body);
     const res = await fetch(API + path, {
       method: body ? 'POST' : 'GET',
       headers: body ? { 'Content-Type': 'application/json' } : undefined,
-      body: body ? JSON.stringify({ game_id: gameId, ...body }) : undefined,
+      body: body ? JSON.stringify(body) : undefined,
       credentials: 'include',
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || data.message || 'Erro ' + res.status);
     return data;
   }
+  const getRoom = (id) => api('/api/banco3d/room/state?room_id=' + encodeURIComponent(id));
+
+  // saved player id per room, so a reload reconnects instead of re-joining
+  const saveKey = (id) => 'banco3d:' + id;
+  const loadSaved = (id) => { try { return JSON.parse(localStorage.getItem(saveKey(id))); } catch { return null; } };
+  const save = (id, v) => { try { localStorage.setItem(saveKey(id), JSON.stringify(v)); } catch { /* private mode */ } };
+
+  // ---------- backend shape -> view shape ----------
+  const TT = { GO: 'START', CHANCE: 'LUCK', CHEST: 'LUCK', FREE_PARKING: 'PARKING' };
+  function norm(r) {
+    const g = r.game || {}, tiles = (r.board && r.board.tiles) || [];
+    const players = (g.players || []).map((p) => ({ id: p.id, name: p.name, color: p.color, balance: p.money, position: p.position, bankrupt: p.is_bankrupt, properties: p.properties || [] }));
+    const board = tiles.map((t) => ({ position: t.index, type: TT[t.type] || t.type, name: t.name, group: t.group, price: t.price, rent_base: (t.rent || [])[0] || 0, build_cost: t.house_cost, owner_id: t.owner_id, houses: t.houses >= 5 ? 0 : t.houses, hotel: t.houses >= 5, queen: t.is_queen }));
+    const cur = g.current_turn_player_id, me = players.find((p) => p.id === meId);
+    const mine = cur === meId && g.is_started && !g.is_over, rolled = !!g.dice_rolled_this_turn;
+    const t = me && board[me.position];
+    const buyable = t && t.price > 0 && !t.owner_id && ['PROPERTY', 'STATION', 'UTILITY'].includes(t.type);
+    const win = players.find((p) => p.id === g.winner_id);
+    return { city: r.city, board, players, current_turn: cur, status: g.is_over ? 'finished' : 'in_progress', winner: win && win.name, turn_start: g.turn_start_time,
+      can_roll: mine && !rolled, can_buy: mine && rolled && !!buyable, can_end_turn: mine && rolled };
+  }
 
   // ---------- board ----------
   const STATION_ICONS = ['bolt', 'drop', 'wifi', 'train'];
+  const CORNER = { START: 'Saída', JAIL: 'Prisão', PARKING: 'Visitante', GO_TO_JAIL: 'Vá para a Cadeia' };
   const side = (i, q) => (i < q ? 'L' : i < 2 * q ? 'T' : i < 3 * q ? 'R' : 'B');
   function cell(i, q) {
     const S = q + 1;
@@ -40,7 +64,6 @@
     return [S, S - (i - 3 * q)];
   }
   const use = (id) => `<svg aria-hidden="true"><use href="#i-${id}"/></svg>`;
-
   function tileIcon(t, n) {
     if (t.type === 'START') return 'arrow';
     if (t.type === 'JAIL') return 'bank';
@@ -52,10 +75,8 @@
     return 'house';
   }
 
-  const CORNER = { START: 'Saída', JAIL: 'Prisão', PARKING: 'Visitante', GO_TO_JAIL: 'Vá para a Cadeia' };
   function buildBoard() {
-    const board = $('board');
-    const tiles = state.board, N = tiles.length, q = N / 4, S = q + 1;
+    const board = $('board'), tiles = state.board, N = tiles.length, q = N / 4, S = q + 1;
     const tracks = `1.7fr repeat(${q - 1}, 1fr) 1.7fr`;
     board.style.gridTemplateColumns = tracks;
     board.style.gridTemplateRows = tracks;
@@ -63,12 +84,10 @@
     board.innerHTML = '';
     let sn = 0;
     tiles.forEach((t, i) => {
-      const [r, c] = cell(i, q);
-      const corner = i % q === 0;
+      const [r, c] = cell(i, q), corner = i % q === 0;
       const el = document.createElement('button');
       el.type = 'button';
-      el.className = 'tile ' + (corner ? 'corner ' : '') + t.type.toLowerCase().replace('_', '') + (t.type === 'PROPERTY' ? ' prop' : '');
-      el.dataset.i = i;
+      el.className = 'tile ' + (corner ? 'corner ' : '') + t.type.toLowerCase().replace(/_/g, '') + (t.type === 'PROPERTY' ? ' prop' : '') + (t.queen ? ' queen' : '');
       el.dataset.side = side(i, q);
       el.style.gridArea = `${r} / ${c}`;
       if (t.type === 'PROPERTY') el.style.setProperty('--gc', `var(--g-${t.group})`);
@@ -80,8 +99,7 @@
       board.appendChild(el);
     });
     board.appendChild(centerEl());
-    pawns.clear();
-    prevPos.clear();
+    pawns.clear(); prevPos.clear(); boardBuilt = true;
   }
 
   function mapSvg() {
@@ -96,13 +114,11 @@
     }
     return `<svg class="map" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice" aria-hidden="true">${g}</svg>`;
   }
-
   function dieHtml(id) {
     const P = { 1: [5], 2: [1, 9], 3: [1, 5, 9], 4: [1, 3, 7, 9], 5: [1, 3, 5, 7, 9], 6: [1, 3, 4, 6, 7, 9] };
     const face = (v) => `<b class="f${v}">${P[v].map((p) => `<i style="grid-area:${Math.ceil(p / 3)}/${((p - 1) % 3) + 1}"></i>`).join('')}</b>`;
     return `<div class="die" id="${id}">${[1, 2, 3, 4, 5, 6].map(face).join('')}</div>`;
   }
-
   function centerEl() {
     const c = document.createElement('div');
     c.className = 'center';
@@ -128,33 +144,33 @@
     el.style.transform = `translate(${t.offsetLeft + t.offsetWidth * (.5 + off[0])}px,${t.offsetTop + t.offsetHeight * (.5 + off[1])}px)`;
   }
   function placeAll() {
+    if (!boardBuilt) return;
     state.players.forEach((p, i) => { if (!p.bankrupt) placePawn(p, p.position, i); prevPos.set(p.id, p.position); });
   }
   async function walk(p, from, to) {
-    const N = state.board.length, i = state.players.indexOf(p);
+    const N = state.board.length, i = state.players.findIndex((x) => x.id === p.id);
     for (let pos = from; pos !== to;) { pos = (pos + 1) % N; placePawn(p, pos, i); await sleep(200); }
   }
 
   // ---------- render ----------
   function render() {
-    const pl = $('players');
-    pl.innerHTML = state.players.map((p) =>
-      `<div class="pl${p.id === state.current_turn ? ' turn' : ''}${p.bankrupt ? ' out' : ''}" style="--c:${esc(p.color)}"><div class="av">${use('user')}</div><div><b>${esc(p.name)}</b><span>${brl(p.balance)}</span></div>${p.id === state.current_turn ? '<span class="crown" aria-label="Sua vez">●</span>' : ''}</div>`).join('');
+    $('players').innerHTML = state.players.map((p) =>
+      `<div class="pl${p.id === state.current_turn ? ' turn' : ''}${p.bankrupt ? ' out' : ''}" style="--c:${esc(p.color)}"><div class="av">${use('user')}</div><div><b>${esc(p.name)}${p.id === meId ? ' (você)' : ''}</b><span>${brl(p.balance)}</span></div>${p.id === state.current_turn ? '<span class="crown" aria-label="Vez de jogar">●</span>' : ''}</div>`).join('');
     $('cityName').textContent = state.city || 'Sua cidade';
     const mine = state.current_turn === meId && state.status === 'in_progress';
     const cur = state.players.find((p) => p.id === state.current_turn);
     $('statusText').textContent = state.status === 'finished' ? `Fim! ${state.winner || ''} venceu` : mine ? 'Sua vez' : `Vez de ${cur ? cur.name : '…'}`;
-    $('btnRoll').disabled = busy || !(mine && state.can_roll);
-    $('btnBuy').disabled = busy || !(mine && state.can_buy);
-    $('btnEnd').disabled = busy || !(mine && state.can_end_turn);
-    $('btnBuild').disabled = busy || !mine;
-    $('btnTrade').disabled = busy;
+    $('btnRoll').disabled = busy || !state.can_roll;
+    $('btnBuy').disabled = busy || !state.can_buy;
+    $('btnEnd').disabled = busy || !state.can_end_turn;
+    [$('btnBuild'), $('btnTrade')].forEach((b) => { b.disabled = true; b.title = 'Em breve'; });
     state.board.forEach((t, i) => {
       const el = $('board').children[i];
       const o = state.players.find((p) => p.id === t.owner_id);
       el.classList.toggle('owned', !!o);
       if (o) el.style.setProperty('--oc', o.color);
       el.querySelector('.hs').innerHTML = t.hotel ? '<i class="h"></i>' : '<i></i>'.repeat(t.houses || 0);
+      el.querySelector('.nm').textContent = CORNER[t.type] || (t.type === 'LUCK' ? 'Sorte ou Revés' : t.name);
     });
   }
 
@@ -168,22 +184,18 @@
   const FACE = { 1: [0, 0], 2: [0, -90], 3: [-90, 0], 4: [90, 0], 5: [0, 90], 6: [0, 180] };
   async function rollDice(dice) {
     ['d1', 'd2'].forEach((id, k) => {
-      const d = $(id), [rx, ry] = FACE[dice[k]];
+      const d = $(id), [rx, ry] = FACE[dice[k]] || FACE[1];
       d.classList.remove('roll'); void d.offsetWidth; d.classList.add('roll');
       d.style.transform = `rotateX(${rx + 720 + k * 360}deg) rotateY(${ry + 720}deg)`;
     });
     await sleep(1000);
   }
 
-  // ---------- actions ----------
-  async function run(fn) {
-    if (busy) return;
-    busy = true; render();
-    try { await fn(); } catch (e) { toast(e.message); }
-    busy = false; if (state) render();
-  }
-  async function applyState(next, mover) {
-    const old = new Map(prevPos);
+  // apply a fresh room payload: animate pawn moves, then redraw
+  async function commit(r) {
+    raw = r;
+    const next = norm(r), old = new Map(prevPos);
+    if (!boardBuilt || $('board').children.length < next.board.length) { state = next; buildBoard(); }
     state = next;
     for (const p of state.players) {
       const from = old.get(p.id);
@@ -191,128 +203,205 @@
       else if (!pawns.has(p.id)) placePawn(p, p.position, state.players.indexOf(p));
       prevPos.set(p.id, p.position);
     }
+    render();
   }
 
+  // ---------- game actions ----------
+  async function run(fn) {
+    if (busy) return;
+    busy = true; render();
+    try { await fn(); } catch (e) { toast(e.message); }
+    busy = false; if (state) render();
+  }
+  const act = (name) => api('/api/banco3d/room/' + name, { room_id: roomId, player_id: meId });
+
   $('btnRoll').onclick = () => run(async () => {
-    const r = await api('/api/banco/roll', { player_id: meId });
-    const prev = state.players.find((p) => p.id === meId).position;
-    await rollDice(r.dice);
-    const me = r.state.players.find((p) => p.id === meId);
-    if (me.position !== prev || r.passed_start) { const keep = r.state; state = { ...state, board: keep.board }; await walk(state.players.find((p) => p.id === meId), prev, me.position); }
-    state = r.state; prevPos.set(meId, me.position); render();
-    toast(r.message || r.event_log);
+    const r = await act('roll');
+    const d = r.dice || r.result || {};
+    const dice = [d.die1 || (d.dice && d.dice[0]) || 1, d.die2 || (d.dice && d.dice[1]) || 1];
+    await rollDice(dice);
+    await commit(r.game ? r : await getRoom(roomId));
+    const me = state.players.find((p) => p.id === meId), t = state.board[me.position];
+    toast(`Tirou ${dice[0] + dice[1]}. ${t.name}.` + (state.can_buy ? ` Comprar por ${brl(t.price)}?` : ''));
   });
-  $('btnBuy').onclick = () => run(async () => {
-    const r = await api('/api/banco/buy', { player_id: meId });
-    state = r.state || r; render(); toast(r.message || 'Comprado!');
-  });
-  $('btnEnd').onclick = () => run(async () => {
-    const r = await api('/api/banco/end-turn', { player_id: meId });
-    for (const line of r.bot_actions || []) toast(line);
-    await applyState(r.state);
-    render();
-  });
+  $('btnBuy').onclick = () => run(async () => { const r = await act('buy'); await commit(r.game ? r : await getRoom(roomId)); toast('Comprado!'); });
+  $('btnEnd').onclick = () => run(async () => { const r = await act('pass'); await commit(r.game ? r : await getRoom(roomId)); });
   $('btnMap').onclick = () => { const f = $('table').classList.toggle('flat'); $('btnMap').setAttribute('aria-pressed', f); setTimeout(placeAll, 720); };
 
-  // ---------- sheets ----------
   function sheet(title, html) { $('sheetTitle').textContent = title; $('sheetBody').innerHTML = html; $('sheet').hidden = false; }
   $('sheetClose').onclick = () => ($('sheet').hidden = true);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') $('sheet').hidden = true; });
-
   function showTile(i) {
     const t = state.board[i], o = state.players.find((p) => p.id === t.owner_id);
-    sheet(t.name, `<p>${t.price ? 'Preço ' + brl(t.price) : t.type}</p>${t.rent_base ? `<p>Aluguel ${brl(t.rent_base)}</p>` : ''}<p>${o ? 'Dono: ' + esc(o.name) : t.price ? 'Livre' : ''}</p>`);
+    sheet(CORNER[t.type] || t.name, `${t.queen ? '<p>★ Ícone da cidade (votado)</p>' : ''}<p>${t.price ? 'Preço ' + brl(t.price) : ''}</p>${t.rent_base ? `<p>Aluguel ${brl(t.rent_base)}</p>` : ''}<p>${o ? 'Dono: ' + esc(o.name) : t.price ? 'Livre' : ''}</p>`);
   }
 
-  $('btnBuild').onclick = () => {
-    const mine = state.players.find((p) => p.id === meId);
-    const list = state.board.filter((t) => t.owner_id === meId && t.type === 'PROPERTY' && !t.hotel);
-    sheet('Construir', list.length ? list.map((t) => `<div class="row"><span>${esc(t.name)}<br><span class="dim">${t.houses} casa(s) · ${brl(t.build_cost)}</span></span><button class="mini" data-b="${t.position}">Construir</button></div>`).join('') : '<p>Você ainda não tem imóveis.</p>');
-    $('sheetBody').querySelectorAll('[data-b]').forEach((b) => (b.onclick = () => run(async () => {
-      try { const r = await api('/api/banco/build', { player_id: meId, tile_pos: +b.dataset.b }); state = r.state || r; render(); toast(r.message || 'Construído!'); }
-      finally { $('sheet').hidden = true; }
-    })));
-    void mine;
-  };
+  // ---------- lobby / voting / room flow ----------
+  const setView = (v) => { $('start').dataset.view = v; $('start').hidden = v === 'game'; };
+  const err = (m) => ($('startErr').textContent = m || '');
+  const newCode = () => Array.from({ length: 5 }, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.floor(Math.random() * 32)]).join('');
+  const parseCode = (v) => { v = v.trim(); try { return new URL(v).searchParams.get('sala') || v; } catch { return v.toUpperCase(); } };
+  const isHost = () => raw && raw.game.players[0] && raw.game.players[0].id === meId;
+  const roomLink = () => { const u = new URL(location.href); u.search = ''; u.searchParams.set('sala', roomId); if (API) u.searchParams.set('api', API); if (DEMO) u.searchParams.set('demo', ''); return u.toString(); };
 
-  $('btnTrade').onclick = () => {
-    const others = state.players.filter((p) => p.id !== meId && !p.bankrupt);
-    sheet('Trocar', `<label class="dim" for="tP">Com quem</label><select id="tP">${others.map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select>
-      <label class="dim" for="tT">Imóvel que você quer</label><select id="tT"></select>
-      <label class="dim" for="tC">Sua oferta (R$)</label><input id="tC" type="number" min="0" step="10" value="100" inputmode="numeric">
-      <button class="mini" id="tGo" type="button">Propor troca</button> <button class="mini" id="tLoan" type="button" style="background:#334155">Empréstimo 200</button>`);
-    const fill = () => {
-      const p = state.players.find((x) => x.id === +$('tP').value);
-      $('tT').innerHTML = (p ? p.properties : []).map((pos) => `<option value="${pos}">${esc(state.board[pos].name)}</option>`).join('') || '<option value="">Sem imóveis</option>';
-    };
-    $('tP').onchange = fill; fill();
-    $('tGo').onclick = () => run(async () => {
-      const r = await api('/api/banco/negotiate', { action: 'trade', from_player_id: meId, to_player_id: +$('tP').value, requested_props: $('tT').value ? [+$('tT').value] : [], offered_props: [], cash_offer: +$('tC').value || 0 });
-      if (r.state) state = r.state; render(); toast(r.message || (r.accepted ? 'Aceito!' : 'Recusado'));
-    });
-    $('tLoan').onclick = () => run(async () => {
-      const r = await api('/api/banco/negotiate', { action: 'loan', player_id: meId, loan_amount: 200 });
-      if (r.state) state = r.state; render(); toast(r.message || 'Empréstimo');
-    });
-  };
+  async function join(id, name) {
+    const st = await getRoom(id).catch(() => { throw new Error('Sala não encontrada'); });
+    const saved = loadSaved(id);
+    const j = await api('/api/banco3d/room/join', { room_id: id, player_id: saved ? saved.player_id : '', name, color: COLORS[st.game.players.length % COLORS.length], piece: 'car' });
+    roomId = id; meId = j.player.id;
+    save(id, { player_id: meId, name });
+    const u = new URL(location.href); u.searchParams.set('sala', id); history.replaceState(null, '', u);
+    startPolling();
+  }
 
-  // ---------- start ----------
-  $('startForm').onsubmit = async (e) => {
-    e.preventDefault();
-    const f = e.target; $('startErr').textContent = '';
+  $('fHome').onsubmit = async (e) => {
+    e.preventDefault(); err();
+    const f = e.target;
     try {
-      const r = await api('/api/banco/start', { city: f.city.value.trim(), human_name: f.name.value.trim(), bots_count: +f.bots.value, difficulty: 'normal', starting_balance: 1500 });
-      gameId = r.game_id; state = r.state;
-      meId = (state.players.find((p) => !p.is_bot) || state.players[0]).id;
-      $('start').hidden = true; buildBoard(); render(); requestAnimationFrame(placeAll);
-      toast('O jogo está pronto!');
-    } catch (err) { $('startErr').textContent = err.message; }
+      const id = newCode();
+      const c = await api('/api/banco3d/room/create', { room_id: id, city: f.city.value.trim() });
+      localVoting = { candidates: c.candidates };
+      await join(id, f.name.value.trim());
+    } catch (x) { err(x.message); }
   };
+  $('bCode').onclick = async () => {
+    err();
+    const f = $('fHome'), id = parseCode(f.code.value);
+    if (!id) return err('Digite o código da sala.');
+    try { await join(id, f.name.value.trim() || 'Jogador'); } catch (x) { err(x.message); }
+  };
+  $('fJoin').onsubmit = async (e) => {
+    e.preventDefault(); err();
+    try { await join(roomId, e.target.name.value.trim()); } catch (x) { err(x.message); }
+  };
+  $('bCopy').onclick = async () => { try { await navigator.clipboard.writeText(roomLink()); toast('Link copiado'); } catch { $('lbLink').select(); } };
+  $('bVote').onclick = async () => {
+    try { const r = await api('/api/banco3d/room/vote', { room_id: roomId, player_id: meId, action: 'start' }); localVoting = { candidates: r.candidates, deadline: r.deadline }; } catch (x) { err(x.message); }
+    tick();
+  };
+
+  const candidates = () => (raw.voting && raw.voting.candidates) || raw.candidates || (localVoting && localVoting.candidates) || [];
+  function votingInfo() {
+    const v = raw.voting || localVoting;
+    return v && v.deadline ? v : null;
+  }
+  const secsLeft = (v) => Math.max(0, Math.min(VOTE_SECS, Math.ceil((new Date(v.deadline).getTime() - Date.now()) / 1000)));
+
+  function drawLobby() {
+    $('lbCity').textContent = raw.city;
+    $('lbCands').innerHTML = candidates().map((c) => `<li>${esc(c)}</li>`).join('');
+    $('lbPlayers').innerHTML = raw.game.players.map((p) => `<li style="--c:${esc(p.color)}"><i></i>${esc(p.name)}${p.id === meId ? ' (você)' : ''}</li>`).join('');
+    $('lbLink').value = roomLink();
+    $('bVote').hidden = !isHost(); $('lbWait').hidden = isHost();
+  }
+
+  async function drawVote() {
+    const v = votingInfo(), left = secsLeft(v), c = candidates(), counts = c.map(() => 0);
+    Object.values((raw.voting && raw.voting.votes) || {}).forEach((i) => { if (counts[i] !== undefined) counts[i]++; });
+    const winner = (raw.voting && raw.voting.winner) || (localVoting && localVoting.winner);
+    $('vCount').textContent = left;
+    $('vBar').style.transform = `scaleX(${left / VOTE_SECS})`;
+    $('vOpts').innerHTML = c.map((n, i) => `<button type="button" data-i="${i}" class="${i === myVote ? 'sel' : ''}${winner === n ? ' win' : ''}" ${left === 0 ? 'disabled' : ''}>${esc(n)}<b>${counts[i] || ''}</b></button>`).join('');
+    $('vOpts').querySelectorAll('button').forEach((b) => (b.onclick = async () => {
+      myVote = +b.dataset.i;
+      try { await api('/api/banco3d/room/vote', { room_id: roomId, player_id: meId, candidate: myVote, action: 'vote' }); } catch (x) { err(x.message); }
+      drawVote();
+    }));
+    $('vMsg').textContent = left === 0 ? (winner ? `Vencedor: ${winner}` : 'Apurando…') : 'Toque para votar. Dá para mudar o voto.';
+    if (left === 0 && !closing && !winner) {
+      closing = true;
+      try { const r = await api('/api/banco3d/room/vote', { room_id: roomId, player_id: meId, action: 'close' }); localVoting = { ...(localVoting || {}), winner: r.winner }; } catch (x) { err(x.message); }
+      closing = false;
+    }
+    if (left === 0 && winner && isHost() && !starting) {
+      starting = true;
+      try { await act('start'); } catch (x) { err(x.message); starting = false; }
+    }
+  }
+
+  async function tick() {
+    if (!roomId || polling || busy) return;
+    polling = true;
+    try {
+      const r = await getRoom(roomId);
+      raw = r;
+      if (r.game.is_started) {
+        if (!$('start').hidden) { setView('game'); boardBuilt = false; }
+        await commit(r);
+        if (lastTurn !== null && lastTurn !== state.current_turn && state.status === 'in_progress') {
+          const cur = state.players.find((p) => p.id === state.current_turn);
+          toast(state.current_turn === meId ? 'Sua vez!' : `Vez de ${cur ? cur.name : '…'}`);
+        }
+        lastTurn = state.current_turn;
+      } else if (votingInfo()) {
+        setView('vote'); await drawVote();
+      } else { setView('lobby'); drawLobby(); }
+    } catch (x) {
+      if (/não encontrada|not found/i.test(x.message)) { err('Sala não existe mais.'); roomId = null; setView('home'); }
+    }
+    polling = false;
+  }
+  let timer;
+  function startPolling() { clearInterval(timer); tick(); timer = setInterval(tick, 1000); }
   addEventListener('resize', () => state && placeAll());
 
-  // ---------- demo engine ----------
-  const DEMO_NAMES = ['Rua das Flores', 'Rua do Sol', 'Rua Aurora', 'Rua dos Ipês', 'Estação de Energia', 'Avenida Central', 'Avenida Paulista', 'Avenida Brasil', 'Avenida Atlântica', 'Rua 6 de Novembro', 'Rua Sete de Setembro', 'Rua Marechal Deodoro', 'Rua Floriano Peixoto', 'Estação de Água', 'Praça da República', 'Praça XV', 'Praça Mauá', 'Praça Tiradentes', 'Rua da Liberdade', 'Rua Galvão Bueno', 'Rua 25 de Março', 'Rua Direita', 'Estação de Trem', 'Rua Augusta', 'Rua Oscar Freire', 'Rua Haddock Lobo', 'Rua da Consolação', 'Rua Carlos Gomes', 'Rua Uruguai', 'Rua Rio Branco', 'Rua da Bahia', 'Estação de Internet', 'Rua Prudente de Morais', 'Rua Barata Ribeiro', 'Rua Visconde de Pirajá', 'Rua XV de Novembro'];
-  let D;
-  function demoApi(path, body) {
-    const G = ['red', 'yellow', 'green', 'dark_blue', 'orange', 'pink'];
-    if (path.endsWith('/start')) {
-      const N = 40, names = DEMO_NAMES.slice();
-      const board = Array.from({ length: N }, (_, i) => {
-        const t = { position: i, type: 'PROPERTY', name: '', group: G[Math.floor(i / 7) % 6], price: 60 + i * 10, rent_base: 4 + i, build_cost: 50, owner_id: 0, houses: 0, hotel: false };
-        if (i === 0) Object.assign(t, { type: 'START', name: 'Saída', price: 0 });
-        else if (i === 10) Object.assign(t, { type: 'JAIL', name: 'Prisão', price: 0 });
-        else if (i === 20) Object.assign(t, { type: 'PARKING', name: 'Visitante', price: 0 });
-        else if (i === 30) Object.assign(t, { type: 'GO_TO_JAIL', name: 'Vá para a Cadeia', price: 0 });
-        else if (i % 5 === 0) Object.assign(t, { type: 'STATION', name: names.shift(), price: 200, group: 'station' });
-        else if (i === 4 || i === 38) Object.assign(t, { type: 'TAX', name: 'Imposto', price: 0 });
-        else if (i % 7 === 2) Object.assign(t, { type: 'LUCK', name: 'Sorte', price: 0 });
+  // ---------- boot: reconnect from ?sala= ----------
+  (async () => {
+    const id = (qs.get('sala') || '').toUpperCase();
+    if (!id) return setView('home');
+    $('joinCode').textContent = id; roomId = id;
+    try {
+      const st = await getRoom(id);
+      $('joinCity').textContent = st.city;
+      const saved = loadSaved(id);
+      if (saved) await join(id, saved.name || 'Jogador'); else setView('join');
+    } catch (x) { roomId = null; setView('home'); err(x.message); }
+  })();
+
+  // ---------- demo engine (?demo): in-memory banco3d backend for visual checks ----------
+  const R = {};
+  function demoApi(path, b) {
+    const ok = (v) => Promise.resolve(structuredClone(v)), no = (m) => Promise.reject(new Error(m));
+    const P = path.split('?')[0];
+    if (P.endsWith('/room/create')) {
+      const names = ['Rua das Flores', 'Rua do Sol', 'Rua Aurora', 'Rua dos Ipês', 'Estação de Energia', 'Avenida Central', 'Avenida Paulista', 'Avenida Brasil', 'Avenida Atlântica', 'Rua 6 de Novembro', 'Rua Sete de Setembro', 'Rua Marechal Deodoro', 'Rua Floriano Peixoto', 'Estação de Água', 'Praça da República', 'Praça XV', 'Praça Mauá', 'Praça Tiradentes', 'Rua da Liberdade', 'Rua Galvão Bueno', 'Rua 25 de Março', 'Rua Direita', 'Estação de Trem', 'Rua Augusta', 'Rua Oscar Freire', 'Rua Haddock Lobo', 'Rua da Consolação', 'Rua Carlos Gomes', 'Rua Uruguai', 'Rua Rio Branco', 'Rua da Bahia', 'Estação de Internet', 'Rua Prudente de Morais'];
+      const G = ['brown', 'light_blue', 'pink', 'orange', 'red', 'yellow', 'green', 'dark_blue'];
+      const tiles = Array.from({ length: 40 }, (_, i) => {
+        const t = { index: i, name: '', type: 'PROPERTY', group: G[Math.min(7, Math.floor(i / 5))], price: 60 + i * 9, rent: [2 + i], house_cost: 50, owner_id: '', houses: 0, is_queen: i === 39 };
+        const sp = { 0: ['GO', 'Saída'], 10: ['JAIL', 'Prisão'], 20: ['FREE_PARKING', 'Visitante'], 30: ['GO_TO_JAIL', 'Vá para a Cadeia'], 4: ['TAX', 'Imposto'], 38: ['TAX', 'Imposto'], 7: ['CHANCE', 'Sorte'], 22: ['CHANCE', 'Sorte'], 17: ['CHEST', 'Revés'], 33: ['CHEST', 'Revés'] };
+        if (sp[i]) Object.assign(t, { type: sp[i][0], name: sp[i][1], price: 0, group: 'none' });
+        else if (i % 5 === 0) Object.assign(t, { type: 'STATION', name: names.shift(), price: 200, group: 'none' });
         else t.name = names.shift() || 'Rua ' + i;
         return t;
       });
-      const cols = ['#2f6bff', '#22c55e', '#facc15', '#ef4444'];
-      const players = Array.from({ length: 1 + body.bots_count }, (_, k) => ({ id: k + 1, name: k ? ['Gabriel', 'Larissa', 'Pedro'][k - 1] : body.human_name, is_bot: !!k, color: cols[k], balance: 1500, position: 0, bankrupt: false, properties: [] }));
-      D = { id: 'demo', city: body.city, players, board, current_turn: 1, status: 'in_progress', can_roll: true, can_buy: false, can_end_turn: false, last_dice: [1, 1], history: [] };
-      return Promise.resolve({ game_id: 'demo', state: structuredClone(D) });
+      R[b.room_id] = { id: b.room_id, city: b.city, board: { city: b.city, tiles }, candidates: ['Avenida Central', 'Jardim Botânico', 'Rua XV de Novembro', 'Parque Barigui'], voting: null,
+        game: { players: [], current_turn_player_id: '', dice_rolled_this_turn: false, is_started: false, is_over: false } };
+      return ok({ room_id: b.room_id, city: b.city, candidates: R[b.room_id].candidates });
     }
-    const me = D.players[0], snap = () => structuredClone(D);
-    if (path.endsWith('/roll')) {
-      const d = [1 + Math.floor(Math.random() * 6), 1 + Math.floor(Math.random() * 6)], from = me.position;
-      me.position = (me.position + d[0] + d[1]) % 40;
-      const t = D.board[me.position];
-      D.can_roll = false; D.can_end_turn = true; D.can_buy = t.price > 0 && !t.owner_id && t.type !== 'TAX';
-      const msg = `Você caiu em ${t.name}.` + (D.can_buy ? ` Comprar por ${brl(t.price)}?` : '');
-      return Promise.resolve({ dice: d, total: d[0] + d[1], passed_start: me.position < from, message: msg, state: snap() });
+    const rid = b ? b.room_id : new URLSearchParams(path.split('?')[1]).get('room_id'), room = R[rid];
+    if (!room) return no('room not found');
+    const g = room.game;
+    if (P.endsWith('/room/state')) { g.players.slice(1).forEach(() => {}); return ok(room); }
+    if (P.endsWith('/room/join')) {
+      let p = g.players.find((x) => x.id === b.player_id);
+      if (!p) { p = { id: 'p' + (g.players.length + 1), name: b.name, color: b.color, piece: b.piece, money: 1500, position: 0, is_bankrupt: false, properties: [] }; g.players.push(p);
+        if (g.players.length === 1) ['Gabriel', 'Larissa'].forEach((n, k) => g.players.push({ id: 'b' + k, name: n, color: COLORS[k + 1], money: 1500, position: 0, properties: [] })); }
+      return ok({ reconnected: false, player: p });
     }
-    if (path.endsWith('/buy')) {
-      const t = D.board[me.position]; t.owner_id = 1; me.balance -= t.price; me.properties.push(t.position); D.can_buy = false;
-      return Promise.resolve({ message: `Comprou ${t.name}`, state: snap() });
+    if (P.endsWith('/room/vote')) {
+      if (b.action === 'start') { room.voting = { candidates: room.candidates, deadline: new Date(Date.now() + VOTE_SECS * 1000).toISOString(), votes: {}, is_closed: false }; return ok({ status: 'voting_started', candidates: room.candidates, deadline: room.voting.deadline }); }
+      if (b.action === 'close') { const c = [0, 0, 0, 0]; Object.values(room.voting.votes).forEach((i) => c[i]++); const w = room.candidates[c.indexOf(Math.max(...c))]; room.voting.winner = w; room.voting.is_closed = true; room.board.tiles[39].name = w; return ok({ winner: w }); }
+      room.voting.votes[b.player_id] = b.candidate; return ok({ status: 'vote_recorded' });
     }
-    if (path.endsWith('/end-turn')) {
-      D.players.slice(1).forEach((b) => { b.position = (b.position + 2 + Math.floor(Math.random() * 10)) % 40; });
-      D.can_roll = true; D.can_end_turn = false; D.can_buy = false;
-      return Promise.resolve({ bot_actions: ['Os adversários jogaram.'], state: snap() });
+    if (P.endsWith('/room/start')) { g.is_started = true; g.current_turn_player_id = g.players[0].id; return ok(room); }
+    const me = g.players.find((x) => x.id === b.player_id);
+    if (P.endsWith('/room/roll')) {
+      const d1 = 1 + Math.floor(Math.random() * 6), d2 = 1 + Math.floor(Math.random() * 6);
+      me.position = (me.position + d1 + d2) % 40; g.dice_rolled_this_turn = true;
+      return ok({ ...room, dice: { die1: d1, die2: d2 } });
     }
-    return Promise.reject(new Error('Indisponível no modo demo'));
+    if (P.endsWith('/room/buy')) { const t = room.board.tiles[me.position]; t.owner_id = me.id; me.money -= t.price; me.properties.push(t.index); return ok(room); }
+    if (P.endsWith('/room/pass')) { g.players.slice(1).forEach((p) => { p.position = (p.position + 2 + Math.floor(Math.random() * 10)) % 40; }); g.dice_rolled_this_turn = false; return ok(room); }
+    return no('Indisponível no modo demo');
   }
-  if (DEMO) { $('startForm').requestSubmit(); }
 })();

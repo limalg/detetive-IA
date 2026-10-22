@@ -58,16 +58,41 @@
     <div id="sheetBody"></div>
   </aside>
 
-  <div class="start" id="start">
-    <form class="glass start-card" id="startForm">
+  <div class="start" id="start" data-view="home">
+    <div class="glass start-card">
       <h1>Banco Imobiliário</h1>
-      <p>Escolha sua cidade. As ruas viram o tabuleiro.</p>
-      <label>Cidade<input id="fCity" name="city" value="Curitiba, PR" autocomplete="off" required></label>
-      <label>Seu nome<input id="fName" name="name" value="Você" autocomplete="nickname" required></label>
-      <label>Adversários (IA)<select id="fBots" name="bots"><option>1</option><option>2</option><option selected>3</option></select></label>
-      <button class="primary" type="submit">Começar</button>
+      <form data-v="home" id="fHome">
+        <p>Digite sua cidade ou região. As ruas viram o tabuleiro.</p>
+        <label>Cidade ou região<input name="city" value="Curitiba, PR" autocomplete="off" required></label>
+        <label>Seu nome<input name="name" value="Você" autocomplete="nickname" maxlength="16" required></label>
+        <button class="primary" type="submit">Criar sala</button>
+        <div class="or"><span>ou entre numa sala</span></div>
+        <label>Código ou link da sala<input name="code" autocomplete="off" placeholder="ABC12"></label>
+        <button class="ghost" type="button" id="bCode">Entrar</button>
+      </form>
+      <form data-v="join" id="fJoin">
+        <p>Sala <b id="joinCode"></b> · <span id="joinCity"></span></p>
+        <label>Seu nome<input name="name" value="Você" autocomplete="nickname" maxlength="16" required></label>
+        <button class="primary" type="submit">Entrar na sala</button>
+      </form>
+      <section data-v="lobby">
+        <p>Candidatos a local mais icônico de <b id="lbCity"></b></p>
+        <ul class="cands" id="lbCands"></ul>
+        <p class="dim">Jogadores</p>
+        <ul class="chips" id="lbPlayers"></ul>
+        <label>Link da sala<span class="copy"><input id="lbLink" readonly><button type="button" class="mini" id="bCopy">Copiar</button></span></label>
+        <button class="primary" type="button" id="bVote">Iniciar votação (15s)</button>
+        <p class="dim" id="lbWait">Aguardando o anfitrião…</p>
+      </section>
+      <section data-v="vote">
+        <p>Qual o lugar mais icônico?</p>
+        <div class="count" id="vCount" role="timer" aria-live="off">15</div>
+        <div class="bar"><i id="vBar"></i></div>
+        <div class="cands vote" id="vOpts"></div>
+        <p class="dim" id="vMsg"></p>
+      </section>
       <small id="startErr" role="alert"></small>
-    </form>
+    </div>
   </div>
 </main>
 <script src="js/app.js"></script>
