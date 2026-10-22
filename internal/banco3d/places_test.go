@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestPlacesSuggestOfflineAndCache(t *testing.T) {
@@ -344,5 +345,105 @@ func TestWikipediaIsMainSourceWhenOverpassDown(t *testing.T) {
 	got := strings.Join(res.Candidates, "|")
 	if !strings.Contains(got, "Parque do Japão") || strings.Contains(got, "Meteorológica") || !res.Partial {
 		t.Errorf("candidates %v partial=%v", res.Candidates, res.Partial)
+	}
+}
+
+func TestBackgroundPassCompletesCachedAnswer(t *testing.T) {
+	svc := mockService(func(r *http.Request) (int, string) {
+		switch r.URL.Host {
+		case "nominatim.openstreetmap.org":
+			if strings.HasSuffix(r.URL.Path, "/details") {
+				return 200, `{"localname":"Maringá","centroid":{"coordinates":[-51.9,-23.4]}}`
+			}
+			if strings.HasSuffix(r.URL.Path, "/reverse") {
+				return 200, fmt.Sprintf(`{"address":{"city":"Maringá","road":"Rua Varrida %s","suburb":"Zona %s"}}`, r.URL.Query().Get("lat")[:7], r.URL.Query().Get("lon")[:7])
+			}
+			word := strings.Fields(r.URL.Query().Get("q"))[0]
+			var hs []string
+			for i := 0; i < 5; i++ {
+				hs = append(hs, fmt.Sprintf(`{"name":"%s Real %d","address":{"city":"Maringá"}}`, strings.ToUpper(word[:1])+word[1:], i))
+			}
+			hs = append(hs, `{"name":"Avenida Vizinha","address":{"city":"Sarandi"}}`)
+			return 200, `[` + strings.Join(hs, ",") + `]`
+		}
+		return 503, ""
+	})
+	first, err := svc.GetLandmarks("", "osm_12066357")
+	if err != nil || !first.Partial {
+		t.Fatalf("foreground answer should be partial: %+v %v", first, err)
+	}
+	var second *CityLandmarksResult
+	for i := 0; i < 100; i++ {
+		time.Sleep(50 * time.Millisecond)
+		if second, _ = svc.GetLandmarks("", "osm_12066357"); len(second.Landmarks) > len(first.Landmarks) {
+			break
+		}
+	}
+	if len(second.Landmarks) <= len(first.Landmarks) {
+		t.Fatalf("background pass did not improve: %d -> %d", len(first.Landmarks), len(second.Landmarks))
+	}
+	var stations int
+	for _, l := range second.Landmarks {
+		if strings.Contains(l.Name, "Vizinha") {
+			t.Errorf("other municipality leaked: %s", l.Name)
+		}
+		if l.Type == "station" {
+			stations++
+		}
+	}
+	if stations == 0 {
+		t.Error("terminal/rodoviária searches should yield stations")
+	}
+}
+
+func TestNominatim429BacksOff(t *testing.T) {
+	var nominatimCalls int
+	svc := mockService(func(r *http.Request) (int, string) {
+		if r.URL.Host == "nominatim.openstreetmap.org" {
+			nominatimCalls++
+			return 429, ""
+		}
+		return 503, ""
+	})
+	if _, err := svc.Suggest("zzbackoff"); err != nil {
+		t.Fatal(err)
+	}
+	var out any
+	err := svc.getJSON(context.Background(), "https://nominatim.openstreetmap.org/search", time.Second, true, &out)
+	if err != errNominatimBlocked {
+		t.Fatalf("want back-off error, got %v", err)
+	}
+	if _, _, _, err := svc.geocodeCity(context.Background(), "Qualquer"); err != errNominatimBlocked {
+		t.Fatalf("geocode must back off too: %v", err)
+	}
+	if nominatimCalls != 1 {
+		t.Errorf("after a 429 no more Nominatim requests are allowed, got %d", nominatimCalls)
+	}
+}
+
+func TestEmptyUtilitySlotsTakeRealPlaces(t *testing.T) {
+	var real []realPlace
+	for i := 0; i < 20; i++ {
+		real = append(real, realPlace{Name: fmt.Sprintf("Praça Real %d", i), Kind: "property", Score: 50 - i})
+	}
+	real = append(real,
+		realPlace{Name: "Shopping Real", Kind: "property", Score: 9},
+		realPlace{Name: "Avenida Longa", Kind: "property", Score: 8},
+		realPlace{Name: "Hospital Real", Kind: "property", Score: 7},
+		realPlace{Name: "Universidade Real", Kind: "property", Score: 6},
+		realPlace{Name: "Terminal Um", Kind: "station", Score: 5}, realPlace{Name: "Terminal Dois", Kind: "station", Score: 5},
+		realPlace{Name: "Terminal Três", Kind: "station", Score: 5}, realPlace{Name: "Terminal Quatro", Kind: "station", Score: 5})
+	res := buildLandmarks("Cidadela", real)
+	var utils []string
+	for _, l := range res.Landmarks {
+		if l.Type == "utility" {
+			utils = append(utils, l.Name)
+		}
+	}
+	if len(utils) != 2 || strings.Contains(strings.Join(utils, ","), "Avenida") {
+		t.Fatalf("utilities should be real non-street places, got %v", utils)
+	}
+	if len(res.Landmarks) != 28 || res.Partial {
+		t.Errorf("want 28 real names and partial=false, got %d partial=%v", len(res.Landmarks), res.Partial)
 	}
 }

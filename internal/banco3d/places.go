@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -52,8 +54,11 @@ type PlacesService struct {
 	rateMu        sync.Mutex
 	client        *http.Client // injectable (tests swap its Transport)
 	lastReqTime   time.Time
+	blockedUntil  time.Time // Nominatim 429 back-off
 	minGap        time.Duration
 	diskPath      string
+	bgRunning     map[string]bool
+	bgAttempts    map[string]int
 	suggestCache  map[string][]PlaceSuggestion
 	landmarkCache map[string]*CityLandmarksResult
 	detailsCache  map[string]PlaceDetails
@@ -79,6 +84,8 @@ func NewPlacesService() *PlacesService {
 		suggestCache:  make(map[string][]PlaceSuggestion),
 		landmarkCache: make(map[string]*CityLandmarksResult),
 		detailsCache:  make(map[string]PlaceDetails),
+		bgRunning:     map[string]bool{},
+		bgAttempts:    map[string]int{},
 	}
 }
 
@@ -140,7 +147,9 @@ func (s *PlacesService) Suggest(query string) ([]PlaceSuggestion, error) {
 
 func (s *PlacesService) fetchNominatimSuggest(query string) ([]PlaceSuggestion, error) {
 	endpoint := fmt.Sprintf("https://nominatim.openstreetmap.org/search?q=%s&format=json&addressdetails=1&limit=6", url.QueryEscape(query))
-	s.throttle()
+	if err := s.throttle(); err != nil {
+		return nil, err
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), nominatimTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
@@ -154,6 +163,7 @@ func (s *PlacesService) fetchNominatimSuggest(query string) ([]PlaceSuggestion, 
 		return nil, err
 	}
 	defer resp.Body.Close()
+	s.backoff(resp)
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("nominatim returned status %d", resp.StatusCode)
@@ -490,14 +500,20 @@ func (s *PlacesService) getLandmarks(cityName string, placeID string) (*CityLand
 	cached, ok := s.landmarkCache[cacheKey]
 	s.mu.Unlock()
 	if ok {
+		if cached.Partial && (lat != 0 || lon != 0) {
+			s.warm(cacheKey, cityName, lat, lon) // keep trying to complete it in the background
+		}
 		return cached, nil
 	}
 
 	var real []realPlace
 	if lat != 0 || lon != 0 {
-		real = s.fetchAllSources(ctx, cityName, lat, lon)
+		real = s.fetchAllSources(ctx, cityName, lat, lon, false)
 	}
 	res := buildLandmarks(cityName, real)
+	if res.Partial && (lat != 0 || lon != 0) {
+		s.warm(cacheKey, cityName, lat, lon) // a second GET returns the completed answer
+	}
 	if len(real) >= minRealPlaces { // never cache a degraded (sources-failed) answer
 		s.mu.Lock()
 		s.landmarkCache[cacheKey] = res
@@ -525,71 +541,6 @@ func countTop(ps []realPlace) (n int) {
 		}
 	}
 	return
-}
-
-// fetchAllSources queries the city sources in parallel (Overpass municipality, Wikipedia geosearch pt,
-// Nominatim city search), merges them by fame, and only if the city is short on famous places appends
-// the regional ones (strictly after every city place).
-func (s *PlacesService) fetchAllSources(ctx context.Context, cityName string, lat, lon float64) []realPlace {
-	var wg sync.WaitGroup
-	results := make([][]realPlace, 3)
-	for i, fn := range []func(context.Context, string, float64, float64) []realPlace{
-		s.fetchOverpassPlaces, s.fetchWikipediaPlaces, s.fetchNominatimPlaces,
-	} {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			results[i] = fn(ctx, cityName, lat, lon)
-		}()
-	}
-	wg.Wait()
-
-	byName := map[string]realPlace{}
-	for _, r := range results {
-		for _, p := range r {
-			k := strings.ToLower(p.Name)
-			if old, ok := byName[k]; !ok || p.Score > old.Score {
-				byName[k] = p
-			}
-		}
-	}
-	merged := make([]realPlace, 0, len(byName))
-	for _, p := range byName {
-		merged = append(merged, p)
-	}
-	sort.Slice(merged, func(i, j int) bool {
-		if merged[i].Score != merged[j].Score {
-			return merged[i].Score > merged[j].Score
-		}
-		return merged[i].Name < merged[j].Name
-	})
-
-	if countKind(merged, "property") < 22 || countTop(merged) < 4 {
-		for _, p := range s.fetchRegionalPlaces(ctx, cityName, lat, lon) {
-			if _, dup := byName[strings.ToLower(p.Name)]; !dup {
-				merged = append(merged, p)
-			}
-		}
-	}
-	return merged
-}
-
-// fetchRegionalPlaces is the last resort when the city lacks famous places: well-known
-// (wikidata-tagged) attractions within ~80 km, i.e. the surrounding state/region.
-func (s *PlacesService) fetchRegionalPlaces(ctx context.Context, cityName string, lat, lon float64) []realPlace {
-	f := fmt.Sprintf("(around:80000,%.4f,%.4f)", lat, lon)
-	q := `[out:json][timeout:7];(nwr` + f + `["tourism"~"^(attraction|museum)$"]["wikidata"]["name"];nwr` + f + `["historic"]["wikidata"]["name"];nwr` + f + `["leisure"="park"]["wikidata"]["name"];);out tags 300;`
-	els, err := s.overpass(ctx, q)
-	if err != nil {
-		return nil
-	}
-	var out []realPlace
-	for _, p := range classifyElements(cityName, els) {
-		if p.Kind == "property" {
-			out = append(out, p)
-		}
-	}
-	return out
 }
 
 // withExtras puts user-typed custom places first among the properties and candidates (returns a copy).
@@ -648,7 +599,7 @@ func (s *PlacesService) fetchOverpassPlaces(ctx context.Context, cityName string
 		{byArea, "(area.a)"},
 		{"", fmt.Sprintf("(around:6000,%.4f,%.4f)", lat, lon)},
 	} {
-		els, err := s.overpass(ctx, overpassQuery(scope.prelude, scope.filter))
+		els, err := s.overpass(ctx, overpassQuery(scope.prelude, scope.filter, overpassSecs(ctx)))
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil
@@ -662,8 +613,8 @@ func (s *PlacesService) fetchOverpassPlaces(ctx context.Context, cityName string
 	return nil
 }
 
-func overpassQuery(prelude, f string) string {
-	return `[out:json][timeout:7];` + prelude + `(
+func overpassQuery(prelude, f string, secs int) string {
+	return fmt.Sprintf(`[out:json][timeout:%d];`, secs) + prelude + `(
 way` + f + `["highway"~"^(primary|secondary|tertiary)$"]["name"];
 nwr` + f + `["leisure"="park"]["name"];
 nwr` + f + `["tourism"~"^(attraction|museum)$"]["name"];
@@ -698,7 +649,7 @@ func (s *PlacesService) overpass(ctx context.Context, query string) ([]map[strin
 					Tags map[string]string `json:"tags"`
 				} `json:"elements"`
 			}
-			if err := s.getJSON(ctx, ep+"?data="+url.QueryEscape(query), sourceTimeout, false, &data); err != nil {
+			if err := s.getJSON(ctx, ep+"?data="+url.QueryEscape(query), srcTimeout(ctx), false, &data); err != nil {
 				ch <- result{err: err}
 				return
 			}
@@ -730,7 +681,7 @@ func (s *PlacesService) fetchWikipediaPlaces(ctx context.Context, cityName strin
 		} `json:"query"`
 	}
 	endpoint := fmt.Sprintf("https://pt.wikipedia.org/w/api.php?action=query&list=geosearch&gscoord=%.4f|%.4f&gsradius=10000&gslimit=100&format=json", lat, lon)
-	if err := s.getJSON(ctx, endpoint, sourceTimeout, false, &data); err != nil {
+	if err := s.getJSON(ctx, endpoint, srcTimeout(ctx), false, &data); err != nil {
 		return nil
 	}
 	var out []realPlace
@@ -742,49 +693,318 @@ func (s *PlacesService) fetchWikipediaPlaces(ctx context.Context, cityName strin
 		if len(t) < 4 || len(t) > 34 || strings.EqualFold(t, cityName) || isMediaOrClub(t) {
 			continue
 		}
+		if k := wikiInfraKind(t); k != "" { // stations and utilities come from the same geosearch
+			out = append(out, realPlace{Name: t, Kind: k, Score: 8})
+			continue
+		}
 		score, top := 20, false
 		if isPlaceLike(t) { // only real landmarks may lead the vote candidates
 			score, top = 60, true
+		} else if !strings.Contains(t, " ") {
+			continue // a lone word is usually a neighbouring municipality or a suburb
 		}
 		out = append(out, realPlace{Name: t, Kind: "property", Score: score, Top: top})
 	}
 	return out
 }
 
-// fetchNominatimPlaces searches avenues, squares, parks and museums by name and keeps only hits whose
-// address municipality is the chosen city.
-func (s *PlacesService) fetchNominatimPlaces(ctx context.Context, cityName string, lat, lon float64) []realPlace {
-	var out []realPlace
-	for _, q := range []struct {
-		word  string
-		score int
-		top   bool
-	}{{"museu", 25, true}, {"parque", 14, true}, {"praça", 6, false}, {"avenida", 3, false}} {
-		var hits []struct {
-			Name    string            `json:"name"`
-			Address map[string]string `json:"address"`
+// fetchAllSources queries the city sources in parallel (Overpass municipality, Wikipedia geosearch pt,
+// Nominatim city searches), merges them by fame, and only if the city is short appends the regional
+// ones (strictly after every city place). full=true is the background pass: every Nominatim query
+// and the unfiltered regional sweep.
+func (s *PlacesService) fetchAllSources(ctx context.Context, cityName string, lat, lon float64, full bool) []realPlace {
+	var wg sync.WaitGroup
+	results := make([][]realPlace, 3)
+	for i, fn := range []func() []realPlace{
+		func() []realPlace { return s.fetchOverpassPlaces(ctx, cityName, lat, lon) },
+		func() []realPlace { return s.fetchWikipediaPlaces(ctx, cityName, lat, lon) },
+		func() []realPlace { return s.fetchNominatimPlaces(ctx, cityName, lat, lon, full) },
+	} {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			results[i] = fn()
+		}()
+	}
+	wg.Wait()
+
+	byName := map[string]realPlace{}
+	for _, r := range results {
+		for _, p := range r {
+			k := strings.ToLower(p.Name)
+			if old, ok := byName[k]; !ok || p.Score > old.Score {
+				byName[k] = p
+			}
 		}
-		endpoint := fmt.Sprintf("https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=40&q=%s",
-			url.QueryEscape(q.word+" "+cityName))
-		if err := s.getJSON(ctx, endpoint, sourceTimeout, true, &hits); err != nil {
+	}
+	merged := make([]realPlace, 0, len(byName))
+	for _, p := range byName {
+		merged = append(merged, p)
+	}
+	sort.Slice(merged, func(i, j int) bool {
+		if merged[i].Score != merged[j].Score {
+			return merged[i].Score > merged[j].Score
+		}
+		return merged[i].Name < merged[j].Name
+	})
+
+	if countKind(merged, "property") < 22 || countTop(merged) < 4 {
+		for _, p := range s.fetchRegionalPlaces(ctx, cityName, lat, lon, full) {
+			if _, dup := byName[strings.ToLower(p.Name)]; !dup {
+				byName[strings.ToLower(p.Name)] = p
+				merged = append(merged, p)
+			}
+		}
+	}
+	return merged
+}
+
+// fetchRegionalPlaces is the last resort when the city lacks places: real attractions within ~80 km,
+// i.e. the surrounding region. The fast pass keeps only wikidata-tagged (famous) ones; the full pass
+// also takes any named park/museum/historic site and Nominatim hits inside the 80 km box.
+func (s *PlacesService) fetchRegionalPlaces(ctx context.Context, cityName string, lat, lon float64, full bool) []realPlace {
+	f := fmt.Sprintf("(around:80000,%.4f,%.4f)", lat, lon)
+	wd := `["wikidata"]`
+	if full {
+		wd = ""
+	}
+	q := fmt.Sprintf(`[out:json][timeout:%d];(nwr`, overpassSecs(ctx)) + f + `["tourism"~"^(attraction|museum)$"]` + wd + `["name"];nwr` + f + `["historic"]` + wd + `["name"];nwr` + f + `["leisure"="park"]` + wd + `["name"];);out tags 600;`
+	var out []realPlace
+	if els, err := s.overpass(ctx, q); err == nil {
+		for _, p := range classifyElements(cityName, els) {
+			if p.Kind == "property" {
+				out = append(out, p)
+			}
+		}
+	}
+	if !full {
+		return out
+	}
+	// 0.72 degrees of latitude ~ 80 km; longitude is widened by 1/cos(lat).
+	dLat := 0.72
+	dLon := dLat / math.Max(math.Cos(lat*math.Pi/180), 0.2)
+	box := fmt.Sprintf("%.4f,%.4f,%.4f,%.4f", lon-dLon, lat+dLat, lon+dLon, lat-dLat)
+	for _, q := range []nominatimQuery{{"park", "property", 8, true}, {"museum", "property", 8, true}, {"stadium", "property", 6, true}} {
+		var hits []nominatimHit
+		endpoint := "https://nominatim.openstreetmap.org/search?format=json&addressdetails=0&limit=40&bounded=1&viewbox=" + box + "&q=" + url.QueryEscape(q.word)
+		if err := s.getJSON(ctx, endpoint, srcTimeout(ctx), true, &hits); err != nil {
 			if ctx.Err() != nil {
 				break
 			}
 			continue
 		}
 		for _, h := range hits {
-			a := h.Address
-			if city := firstNonEmpty(a["city"], a["town"], a["municipality"], a["village"]); !strings.EqualFold(city, cityName) {
-				continue
+			if n := strings.TrimSpace(h.Name); validPlaceName(n, cityName) {
+				out = append(out, realPlace{Name: n, Kind: "property", Score: q.score, Top: false})
 			}
-			n := strings.TrimSpace(h.Name)
-			if len(n) < 4 || len(n) > 34 || strings.EqualFold(n, cityName) || !strings.HasPrefix(strings.ToLower(n), q.word) && q.score < 14 {
-				continue
-			}
-			out = append(out, realPlace{Name: n, Kind: "property", Score: q.score, Top: q.top})
 		}
 	}
 	return out
+}
+
+type nominatimQuery struct {
+	word  string
+	kind  string // "property", "station", "utility"
+	score int
+	top   bool
+}
+
+type nominatimHit struct {
+	Name    string            `json:"name"`
+	Address map[string]string `json:"address"`
+}
+
+// nominatimQueries are Nominatim category phrases ("park in <city>"): they enumerate squares, parks,
+// museums, theatres, churches and stations of the city. The first fastQueries run in the foreground
+// request (1 req/s each), the rest only in the background pass.
+var nominatimQueries = []nominatimQuery{
+	{"museum", "property", 25, true}, {"park", "property", 14, true}, {"stadium", "property", 15, true},
+	{"bus station", "station", 6, false}, {"airport", "station", 7, false},
+	{"theatre", "property", 12, true}, {"railway station", "station", 5, false}, {"church", "property", 4, false},
+}
+
+const fastQueries = 5
+
+func validPlaceName(n, cityName string) bool {
+	return len(n) >= 4 && len(n) <= 34 && !strings.ContainsAny(n, ";") && !strings.EqualFold(n, cityName) && !isMediaOrClub(n)
+}
+
+// cleanName drops a trailing parenthetical: "Museu Casas Bonnet (1877)" -> "Museu Casas Bonnet".
+func cleanName(n string) string {
+	n = strings.TrimSpace(n)
+	if i := strings.Index(n, " ("); i > 0 {
+		n = n[:i]
+	}
+	return n
+}
+
+// shortenCity trims a too long name's trailing city: "Estação Rodoviária de Caxias do Sul" -> "Estação Rodoviária".
+func shortenCity(n, cityName string) string {
+	if len(n) <= 34 {
+		return n
+	}
+	for _, sep := range []string{" de ", " do ", " da ", " - "} {
+		if t, ok := strings.CutSuffix(n, sep+cityName); ok {
+			return t
+		}
+	}
+	return n
+}
+
+// notPlaceNoun rejects subdivisions and access points that merely mention a station word.
+func notPlaceNoun(n string) bool {
+	l := strings.ToLower(n)
+	for _, w := range []string{"residencial", "vila ", "jardim ", "jd ", "condomínio", "acesso", "loteamento", "hotel"} {
+		if strings.HasPrefix(l, w) {
+			return true
+		}
+	}
+	return false
+}
+
+// fetchNominatimPlaces searches by name inside the city and keeps only hits whose address municipality
+// is the chosen city.
+func (s *PlacesService) fetchNominatimPlaces(ctx context.Context, cityName string, lat, lon float64, full bool) []realPlace {
+	queries := nominatimQueries[:fastQueries]
+	if full {
+		queries = nominatimQueries
+	}
+	var out []realPlace
+	for _, q := range queries {
+		var hits []nominatimHit
+		endpoint := "https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=40&q=" + url.QueryEscape(q.word+" in "+cityName)
+		if err := s.getJSON(ctx, endpoint, srcTimeout(ctx), true, &hits); err != nil {
+			if ctx.Err() != nil {
+				return out
+			}
+			continue
+		}
+		for _, h := range hits {
+			n := shortenCity(cleanName(h.Name), cityName)
+			if !inCity(h.Address, cityName) || !validPlaceName(n, cityName) || q.kind == "station" && notPlaceNoun(n) {
+				continue
+			}
+			out = append(out, realPlace{Name: n, Kind: q.kind, Score: q.score, Top: q.top})
+		}
+	}
+	if full && countKind(out, "property") < 22 { // Nominatim asks for restraint: sweep only when still short
+		out = append(out, s.reverseSweep(ctx, cityName, lat, lon)...)
+	}
+	return out
+}
+
+func inCity(a map[string]string, cityName string) bool {
+	return strings.EqualFold(firstNonEmpty(a["city"], a["town"], a["municipality"], a["village"]), cityName)
+}
+
+// reverseSweep reverse-geocodes a grid of points around the center (1 req/s): every street the grid
+// touches is a real street of the city, and repeated hits rank the main ones higher. Suburb names
+// found on the way are returned as neighbourhoods.
+func (s *PlacesService) reverseSweep(ctx context.Context, cityName string, lat, lon float64) []realPlace {
+	type pt struct{ dLat, dLon float64 }
+	pts := []pt{{0, 0}}
+	for _, ring := range []struct {
+		km float64
+		n  int
+	}{{1.5, 6}, {4, 10}} {
+		for i := 0; i < ring.n; i++ {
+			a := 2 * math.Pi * float64(i) / float64(ring.n)
+			pts = append(pts, pt{ring.km * math.Sin(a) / 111, ring.km * math.Cos(a) / (111 * math.Max(math.Cos(lat*math.Pi/180), 0.2))})
+		}
+	}
+	roads := map[string]*realPlace{}
+	var order []string
+	for _, p := range pts {
+		var hit struct {
+			Address map[string]string `json:"address"`
+		}
+		endpoint := fmt.Sprintf("https://nominatim.openstreetmap.org/reverse?format=json&zoom=17&addressdetails=1&lat=%.5f&lon=%.5f", lat+p.dLat, lon+p.dLon)
+		if err := s.getJSON(ctx, endpoint, srcTimeout(ctx), true, &hit); err != nil {
+			if ctx.Err() != nil {
+				break
+			}
+			continue
+		}
+		if !inCity(hit.Address, cityName) {
+			continue
+		}
+		for _, f := range []struct {
+			key   string
+			score int
+		}{{"road", 3}, {"suburb", 1}, {"neighbourhood", 1}} {
+			n := cleanName(hit.Address[f.key])
+			if !validPlaceName(n, cityName) {
+				continue
+			}
+			k := strings.ToLower(n)
+			if r, ok := roads[k]; ok {
+				r.Score = min(r.Score+1, f.score+8) // repeated hits mark a main street
+				continue
+			}
+			roads[k] = &realPlace{Name: n, Kind: "property", Score: f.score}
+			order = append(order, k)
+		}
+	}
+	out := make([]realPlace, 0, len(order))
+	for _, k := range order {
+		out = append(out, *roads[k])
+	}
+	return out
+}
+
+type ctxKey int
+
+const bgKey ctxKey = 0
+
+// srcTimeout is the per-source timeout: 8s in the foreground request, 40s in the background pass.
+func srcTimeout(ctx context.Context) time.Duration {
+	if ctx.Value(bgKey) != nil {
+		return 40 * time.Second
+	}
+	return sourceTimeout
+}
+
+// overpassSecs is the server-side Overpass timeout matching srcTimeout.
+func overpassSecs(ctx context.Context) int { return int(srcTimeout(ctx).Seconds()) - 1 }
+
+const (
+	bgBudget      = 3 * time.Minute
+	maxBGAttempts = 4
+)
+
+// warm completes a partial answer in the background (every Nominatim query, long Overpass timeouts,
+// regional sweep) and replaces the cached result when it is better. At most one run per key at a time.
+func (s *PlacesService) warm(cacheKey, cityName string, lat, lon float64) {
+	s.mu.Lock()
+	if s.bgRunning[cacheKey] || s.bgAttempts[cacheKey] >= maxBGAttempts {
+		s.mu.Unlock()
+		return
+	}
+	s.bgRunning[cacheKey] = true
+	s.bgAttempts[cacheKey]++
+	s.mu.Unlock()
+
+	go func() {
+		ctx, cancel := context.WithTimeout(context.WithValue(context.Background(), bgKey, true), bgBudget)
+		defer cancel()
+		real := s.fetchAllSources(ctx, cityName, lat, lon, true)
+
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		s.bgRunning[cacheKey] = false
+		// Union with what is cached: each pass can only add real places, never lose earlier ones.
+		if old := s.landmarkCache[cacheKey]; old != nil {
+			for i, l := range old.Landmarks {
+				real = append(real, realPlace{Name: l.Name, Kind: l.Type, Score: 1000 - i, Top: slices.Contains(old.Candidates, l.Name)})
+			}
+		}
+		sort.SliceStable(real, func(i, j int) bool { return real[i].Score > real[j].Score })
+		res := buildLandmarks(cityName, real)
+		if old := s.landmarkCache[cacheKey]; old == nil || len(res.Landmarks) >= len(old.Landmarks) {
+			s.landmarkCache[cacheKey] = res
+			s.saveDiskLocked()
+		}
+	}()
 }
 
 func firstNonEmpty(ss ...string) string {
@@ -805,7 +1025,7 @@ func buildLandmarks(cityName string, real []realPlace) *CityLandmarksResult {
 	}
 
 	seen := map[string]bool{strings.ToLower(cityName): true}
-	var props, stations, utils, tops []string
+	var props, stations, utils, tops, spare []string
 	add := func(list *[]string, name string, limit int) {
 		k := strings.ToLower(name)
 		if name != "" && len(*list) < limit && !seen[k] {
@@ -823,6 +1043,11 @@ func buildLandmarks(cityName string, real []realPlace) *CityLandmarksResult {
 			if p.Top && len(tops) < 4 && !slices.Contains(tops, p.Name) {
 				tops = append(tops, p.Name)
 			}
+			if len(props) >= 22 && !seen[strings.ToLower(p.Name)] {
+				if k := ClassifyImageKind(p.Name, TileProperty); k != "street" && k != "avenue" {
+					spare = append(spare, p.Name) // real, unused: may fill empty utility slots
+				}
+			}
 			add(&props, p.Name, 22)
 		}
 	}
@@ -833,6 +1058,9 @@ func buildLandmarks(cityName string, real []realPlace) *CityLandmarksResult {
 		add(&stations, n, 4)
 	}
 	for _, n := range preset.utilities {
+		add(&utils, n, 2)
+	}
+	for _, n := range spare { // no utility found: any real place (mall, hospital, university...) takes the slot
 		add(&utils, n, 2)
 	}
 
@@ -868,7 +1096,9 @@ func buildLandmarks(cityName string, real []realPlace) *CityLandmarksResult {
 // and decodes JSON into out.
 func (s *PlacesService) getJSON(ctx context.Context, endpoint string, timeout time.Duration, nominatim bool, out any) error {
 	if nominatim {
-		s.throttle()
+		if err := s.throttle(); err != nil {
+			return err
+		}
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -882,6 +1112,9 @@ func (s *PlacesService) getJSON(ctx context.Context, endpoint string, timeout ti
 		return err
 	}
 	defer resp.Body.Close()
+	if nominatim {
+		s.backoff(resp)
+	}
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("%s returned status %d", req.URL.Host, resp.StatusCode)
 	}
@@ -892,14 +1125,35 @@ const nominatimTimeout = 5 * time.Second
 
 const userAgent = "DetetiveIABanco3D/0.7.2 (https://github.com/LimaEdu-7x/tabuleiro-ia)"
 
-// throttle enforces Nominatim's 1 request per second policy across goroutines.
-func (s *PlacesService) throttle() {
+var errNominatimBlocked = fmt.Errorf("nominatim backing off after HTTP 429")
+
+// throttle enforces Nominatim's 1 request per second policy across goroutines, and refuses
+// (errNominatimBlocked) while a 429 back-off is active so callers fall back to cache/Wikipedia.
+func (s *PlacesService) throttle() error {
 	s.rateMu.Lock()
 	defer s.rateMu.Unlock()
+	if time.Now().Before(s.blockedUntil) {
+		return errNominatimBlocked
+	}
 	if wait := s.minGap - time.Since(s.lastReqTime); wait > 0 {
 		time.Sleep(wait)
 	}
 	s.lastReqTime = time.Now()
+	return nil
+}
+
+// backoff stops all Nominatim traffic after a 429/403 for Retry-After seconds (default 10 min).
+func (s *PlacesService) backoff(resp *http.Response) {
+	if resp.StatusCode != http.StatusTooManyRequests && resp.StatusCode != http.StatusForbidden {
+		return
+	}
+	d := 10 * time.Minute
+	if secs, err := strconv.Atoi(resp.Header.Get("Retry-After")); err == nil && secs > 0 {
+		d = time.Duration(secs) * time.Second
+	}
+	s.rateMu.Lock()
+	s.blockedUntil = time.Now().Add(d)
+	s.rateMu.Unlock()
 }
 
 // diskCache is the on-disk snapshot of resolved places and landmark results.
@@ -940,7 +1194,7 @@ func (s *PlacesService) saveDiskLocked() {
 // isMediaOrClub drops Wikipedia hits that are broadcasters, clubs or weather stations, not places.
 func isMediaOrClub(title string) bool {
 	l := strings.ToLower(title)
-	for _, w := range []string{"meteorológica", "rádio", "futebol clube", "esporte clube", "clube de regatas", "tv ", " tv", "cnt ", "record", "rpc ", "futsal", " fm", "rede "} {
+	for _, w := range []string{"meteorológica", "rádio", "futebol clube", "esporte clube", "clube de regatas", "tv ", " tv", "cnt ", "record", "tvs", "rpc ", "futsal", " fm", "rede "} {
 		if strings.Contains(l, w) || strings.HasPrefix(l, w) {
 			return true
 		}
@@ -958,4 +1212,20 @@ func isPlaceLike(title string) bool {
 		}
 	}
 	return false
+}
+
+// wikiInfraKind classifies a Wikipedia title as a "station" or "utility" when it names one, else "".
+func wikiInfraKind(title string) string {
+	l := strings.ToLower(title)
+	for _, w := range []string{"estação ferroviária", "estação rodoviária", "rodoviária", "terminal ", "aeroporto", "estação de metrô", "estação central"} {
+		if strings.Contains(l, w) {
+			return "station"
+		}
+	}
+	for _, w := range []string{"usina", "hidrelétrica", "termelétrica", "subestação", "saneamento", "estação de tratamento", "companhia de", "barragem", "reservatório", "sanepar", "saae", "samae", "copel", "cpfl", "sabesp", "corsan", "celesc"} {
+		if strings.Contains(l, w) {
+			return "utility"
+		}
+	}
+	return ""
 }
