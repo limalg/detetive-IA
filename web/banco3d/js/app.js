@@ -39,7 +39,7 @@
   const TT = { GO: 'START', CHANCE: 'LUCK', CHEST: 'LUCK', FREE_PARKING: 'PARKING' };
   const luckName = (t) => (t.deck === 'CHEST' ? 'Revés' : t.deck === 'CHANCE' ? 'Sorte' : 'Sorte ou Revés');
   function norm(r) {
-    const g = r.game || {}, tiles = (r.board && r.board.tiles) || [];
+    const g = r.game || {}, tiles = (g.board && g.board.tiles) || (r.board && r.board.tiles) || []; // game.board is the live one (owner_id); top-level board can be a stale copy
     const players = (g.players || []).map((p) => ({ id: p.id, name: p.name, color: p.color, balance: p.money, position: p.position, bankrupt: p.is_bankrupt, properties: p.properties || [] }));
     const board = tiles.map((t) => ({ position: t.index, type: TT[t.type] || t.type, deck: t.type, name: t.name, group: t.group, price: t.price, rent: t.rent || [], rent_base: (t.rent || [])[0] || 0, build_cost: t.house_cost, image_kind: t.image_kind, description: t.description, mortgage: t.mortgage_value, owner_id: t.owner_id, houses: t.houses >= 5 ? 0 : t.houses, hotel: t.houses >= 5, queen: t.is_queen }));
     const cur = g.current_turn_player_id, me = players.find((p) => p.id === meId);
