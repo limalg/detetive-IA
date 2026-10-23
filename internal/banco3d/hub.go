@@ -104,11 +104,24 @@ func (h *RoomHub) saveToDiskLocked() error {
 	}
 
 	if h.storagePath == DefaultStoragePath {
-		_ = os.WriteFile("data/banco3d/rooms", data, 0644)
-		_ = os.WriteFile("data/banco3d_rooms.json", data, 0644)
+		_ = writeAtomic("data/banco3d/rooms", data)
+		_ = writeAtomic("data/banco3d_rooms.json", data)
 	}
 
-	return os.WriteFile(h.storagePath, data, 0644)
+	return writeAtomic(h.storagePath, data)
+}
+
+// writeAtomic grava via tmp+rename (kill no meio nunca deixa JSON truncado) e guarda o anterior em .bak.
+func writeAtomic(path string, data []byte) error {
+	_ = os.MkdirAll(filepath.Dir(path), 0755)
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0644); err != nil {
+		return err
+	}
+	if _, err := os.Stat(path); err == nil {
+		_ = os.Rename(path, path+".bak")
+	}
+	return os.Rename(tmp, path)
 }
 
 // SaveToDisk writes active rooms state to a persistent JSON snapshot.
@@ -130,27 +143,30 @@ func (h *RoomHub) LoadFromDisk() error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	paths := []string{h.storagePath, "data/banco3d/rooms.json", "data/banco3d/rooms", "data/banco3d_rooms.json"}
-	var data []byte
+	paths := []string{h.storagePath, h.storagePath + ".bak", "data/banco3d/rooms.json", "data/banco3d/rooms", "data/banco3d_rooms.json"}
+	var snaps map[string]RoomSnapshot
 	var readErr error
 	for _, p := range paths {
-		if b, err := os.ReadFile(p); err == nil && len(b) > 0 {
-			data = b
-			break
-		} else {
-			readErr = err
+		b, err := os.ReadFile(p)
+		if err != nil || len(b) == 0 {
+			if err != nil {
+				readErr = err
+			}
+			continue
 		}
+		var m map[string]RoomSnapshot
+		if err := json.Unmarshal(b, &m); err != nil {
+			readErr = err // arquivo corrompido: tenta o próximo (.bak)
+			continue
+		}
+		snaps, readErr = m, nil
+		break
 	}
-	if len(data) == 0 {
-		if os.IsNotExist(readErr) {
+	if snaps == nil {
+		if readErr == nil || os.IsNotExist(readErr) {
 			return nil
 		}
 		return readErr
-	}
-
-	var snaps map[string]RoomSnapshot
-	if err := json.Unmarshal(data, &snaps); err != nil {
-		return err
 	}
 
 	for id, s := range snaps {

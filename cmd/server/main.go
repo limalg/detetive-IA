@@ -10,8 +10,10 @@ import (
 	"os/signal"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	"detetive-ia/internal/auth"
+	"detetive-ia/internal/banco3d"
 	"detetive-ia/internal/db"
 	"detetive-ia/internal/game"
 	"detetive-ia/internal/room"
@@ -88,6 +90,8 @@ func main() {
 		StaticFS:    web.FileServer(),
 	}
 
+	// hub criado aqui para poder salvar periodicamente e no shutdown (rebuild/restart não perde salas)
+	cfg.Banco3DHub = banco3d.NewRoomHub()
 	srv := server.NewServer(cfg)
 
 	go func() {
@@ -99,9 +103,22 @@ func main() {
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
+	autosave := time.NewTicker(30 * time.Second)
+	defer autosave.Stop()
+wait:
+	for {
+		select {
+		case <-autosave.C:
+			_ = cfg.Banco3DHub.SaveToDisk()
+		case <-quit:
+			break wait
+		}
+	}
 
 	fmt.Println("Encerrando servidor Detetive IA...")
+	if err := cfg.Banco3DHub.SaveToDisk(); err != nil {
+		log.Printf("Aviso: falha ao salvar salas do Banco 3D no shutdown: %v", err)
+	}
 }
 
 // ensureAdmin cria o admin inicial a partir de ADMIN_USER/ADMIN_PASSWORD. Sem senha no env,
