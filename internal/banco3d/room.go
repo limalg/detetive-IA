@@ -111,6 +111,7 @@ type GameEvent struct {
 // Room represents a multiplayer room for 40-tile Banco Imobiliário.
 type Room struct {
 	mu               sync.Mutex
+	reqMu            sync.Mutex // serializa requisições HTTP e snapshots por sala
 	ID               string         `json:"id"`
 	City             string         `json:"city"`
 	Config           RoomConfig     `json:"config"`
@@ -129,6 +130,10 @@ type Room struct {
 	MatchEndsAt         *time.Time     `json:"match_ends_at,omitempty"`
 	LastTimeoutPlayerID string         `json:"last_timeout_player_id,omitempty"`
 }
+
+// LockReq serializes a whole HTTP request (read-modify-respond) on this room.
+func (r *Room) LockReq()   { r.reqMu.Lock() }
+func (r *Room) UnlockReq() { r.reqMu.Unlock() }
 
 // RecordEvent records an action in the room event stream.
 func (r *Room) RecordEvent(evt GameEvent) {

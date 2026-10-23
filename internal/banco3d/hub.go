@@ -63,15 +63,16 @@ func (h *RoomHub) saveToDiskLocked() error {
 	storageFileMu.Lock()
 	defer storageFileMu.Unlock()
 
-	snaps := make(map[string]RoomSnapshot)
+	snaps := make(map[string]json.RawMessage)
 	for id, r := range h.Rooms {
+		r.reqMu.Lock()
 		r.mu.Lock()
 		boardToSave := r.Board
 		if r.Game != nil && r.Game.Board != nil {
 			boardToSave = r.Game.Board
 			r.Board = r.Game.Board
 		}
-		snaps[id] = RoomSnapshot{
+		raw, err := json.Marshal(RoomSnapshot{
 			ID:               r.ID,
 			City:             r.City,
 			Config:           r.Config,
@@ -86,8 +87,13 @@ func (h *RoomHub) saveToDiskLocked() error {
 			DecisionDeadline: r.DecisionDeadline,
 			MatchEndsAt:      r.MatchEndsAt,
 			LastActivity:     r.LastActivity,
-		}
+		})
 		r.mu.Unlock()
+		r.reqMu.Unlock()
+		if err != nil {
+			return err
+		}
+		snaps[id] = raw
 	}
 
 	_ = os.MkdirAll(filepath.Dir(h.storagePath), 0755)
@@ -171,7 +177,9 @@ func (h *RoomHub) LoadFromDisk() error {
 		if r.Game != nil && r.Game.Board != nil {
 			r.Board = r.Game.Board
 		}
-		h.Rooms[id] = r
+		if _, live := h.Rooms[id]; !live { // nunca sobrescreve sala viva com snapshot antigo
+			h.Rooms[id] = r
+		}
 	}
 
 	return nil

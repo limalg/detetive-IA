@@ -189,6 +189,8 @@ func (h *Handler) HandleBanco3DRoomJoin(w http.ResponseWriter, r *http.Request) 
 		h.error(w, http.StatusNotFound, "room not found")
 		return
 	}
+	room.LockReq()
+	defer room.UnlockReq()
 
 	if req.PlayerID != "" {
 		p, err := room.ReconnectPlayer(req.PlayerID)
@@ -242,6 +244,8 @@ func (h *Handler) HandleBanco3DRoomVote(w http.ResponseWriter, r *http.Request) 
 		h.error(w, http.StatusNotFound, "room not found")
 		return
 	}
+	room.LockReq()
+	defer room.UnlockReq()
 
 	switch req.Action {
 	case "start":
@@ -292,6 +296,8 @@ func (h *Handler) HandleBanco3DRoomState(w http.ResponseWriter, r *http.Request)
 		h.error(w, http.StatusNotFound, "room not found")
 		return
 	}
+	room.LockReq()
+	defer room.UnlockReq()
 
 	h.json(w, http.StatusOK, h.formatRoomState(room, nil))
 }
@@ -318,6 +324,8 @@ func (h *Handler) HandleBanco3DRoomStart(w http.ResponseWriter, r *http.Request)
 		h.error(w, http.StatusNotFound, "room not found")
 		return
 	}
+	room.LockReq()
+	defer room.UnlockReq()
 
 	if err := room.StartGame(); err != nil {
 		h.error(w, http.StatusBadRequest, err.Error())
@@ -352,6 +360,8 @@ func (h *Handler) HandleBanco3DRoomRoll(w http.ResponseWriter, r *http.Request) 
 		h.error(w, http.StatusNotFound, "room not found")
 		return
 	}
+	room.LockReq()
+	defer room.UnlockReq()
 
 	if room.Game == nil || !room.Game.IsStarted {
 		h.error(w, http.StatusBadRequest, "game not started")
@@ -447,6 +457,8 @@ func (h *Handler) HandleBanco3DRoomBuy(w http.ResponseWriter, r *http.Request) {
 		h.error(w, http.StatusNotFound, "room not found")
 		return
 	}
+	room.LockReq()
+	defer room.UnlockReq()
 
 	if room.Game == nil || !room.Game.IsStarted {
 		h.error(w, http.StatusBadRequest, "game not started")
@@ -543,6 +555,8 @@ func (h *Handler) HandleBanco3DRoomPass(w http.ResponseWriter, r *http.Request) 
 		h.error(w, http.StatusNotFound, "room not found")
 		return
 	}
+	room.LockReq()
+	defer room.UnlockReq()
 
 	if room.Game == nil || !room.Game.IsStarted {
 		h.error(w, http.StatusBadRequest, "game not started")
@@ -613,6 +627,8 @@ func (h *Handler) HandleBanco3DRoomBuild(w http.ResponseWriter, r *http.Request)
 		h.error(w, http.StatusNotFound, "room not found")
 		return
 	}
+	room.LockReq()
+	defer room.UnlockReq()
 
 	if room.Game == nil || !room.Game.IsStarted {
 		h.error(w, http.StatusBadRequest, "game not started")
@@ -712,6 +728,8 @@ func (h *Handler) HandleBanco3DRoomTrade(w http.ResponseWriter, r *http.Request)
 		h.error(w, http.StatusNotFound, "room not found")
 		return
 	}
+	room.LockReq()
+	defer room.UnlockReq()
 
 	callerID := req.PlayerID
 	if callerID == "" {
@@ -873,6 +891,8 @@ func (h *Handler) HandleBanco3DRoomLeave(w http.ResponseWriter, r *http.Request)
 		h.error(w, http.StatusNotFound, "room not found")
 		return
 	}
+	room.LockReq()
+	defer room.UnlockReq()
 
 	if err := room.LeavePlayer(req.PlayerID); err != nil {
 		h.error(w, http.StatusBadRequest, err.Error())
