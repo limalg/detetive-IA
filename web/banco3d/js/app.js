@@ -43,7 +43,7 @@
   function norm(r) {
     const g = r.game || {}, tiles = (g.board && g.board.tiles) || (r.board && r.board.tiles) || []; // game.board is the live one (owner_id); top-level board can be a stale copy
     const players = (g.players || []).map((p) => ({ id: p.id, name: p.name, color: p.color, balance: p.money, position: p.position, bankrupt: p.is_bankrupt, properties: p.properties || [] }));
-    const board = tiles.map((t) => ({ position: t.index, type: TT[t.type] || t.type, deck: t.type, name: t.name, group: t.group, price: t.price, rent: t.rent || [], rent_base: (t.rent || [])[0] || 0, build_cost: t.house_cost, image_kind: t.image_kind, description: t.description, mortgage: t.mortgage_value, owner_id: t.owner_id, houses: t.houses >= 5 ? 0 : t.houses, hotel: t.houses >= 5, queen: t.is_queen, festival: festOn(t.festival_until, g.turn_index) }));
+    const board = tiles.map((t) => ({ position: t.index, type: TT[t.type] || t.type, deck: t.type, name: t.name, group: t.group, price: t.price, rent: t.rent || [], rent_base: (t.rent || [])[0] || 0, build_cost: t.house_cost, image_kind: t.image_kind, description: t.description, mortgage: t.mortgage_value, owner_id: t.owner_id, houses: t.houses >= 5 ? 0 : t.houses, hotel: t.houses >= 5, queen: t.is_queen, festival: festOn(t.festival_until, g.turn_index) || ((t.festival_multiplier || 1) > 1 && (t.festival_rounds || 0) > 0), champion: (t.championship_multiplier || 1) > 1 }));
     players.forEach((p) => { p.worth = p.balance + board.filter((t) => t.owner_id === p.id).reduce((s, t) => s + (t.price || 0) + (t.hotel ? 5 : t.houses || 0) * (t.build_cost || 0), 0); }); // net worth: cash + deeds + buildings
     const cur = g.current_turn_player_id, me = players.find((p) => p.id === meId);
     const mine = cur === meId && g.is_started && !g.is_over, rolled = !!g.dice_rolled_this_turn;
@@ -438,6 +438,7 @@
       }
       el.classList.toggle('mono', t.type === 'PROPERTY' && mono[t.group]);
       el.classList.toggle('fest', !!t.festival);
+      el.classList.toggle('champ', !!t.champion);
       el.querySelector('.nm').textContent = CORNER[t.type] || (t.type === 'LUCK' ? luckName(t) : t.name);
     });
   }
@@ -585,7 +586,7 @@
       } else if (!pawns.has(p.id)) placePawn(p, p.position);
       prevPos.set(p.id, p.position);
     }
-    (evs || []).filter((e) => e.type === 'festival').forEach((e) => { const t = $('board').children[e.tile ?? e.position ?? e.to]; if (t && maxMotion()) { t.classList.remove('fest-pop'); void t.offsetWidth; t.classList.add('fest-pop'); setTimeout(() => t.classList.remove('fest-pop'), 1600); } });
+    (evs || []).filter((e) => e.type === 'festival' || e.type === 'championship').forEach((e) => { const t = $('board').children[e.tile ?? e.position ?? e.to]; if (t && maxMotion()) { t.classList.remove('fest-pop'); void t.offsetWidth; t.classList.add('fest-pop'); setTimeout(() => t.classList.remove('fest-pop'), 1600); } });
     const salary = (evs || []).filter((e) => e.type === 'salary'), cardEvs = (evs || []).filter((e) => e.type === 'card');
     salary.forEach((e) => fxSrc.set(e.player_id, $('board').children[0]));
     render();
@@ -601,7 +602,7 @@
     if (fresh && !cardEvSeen) cardQ.push({ deck: c.deck, title: c.title, text: '', amount: c.delta, jail: c.jail, who: c.who });
     if (cardQ.length) pumpCards();
     if (!evs) return '';
-    const evMsg = (e) => e.message || (e.type === 'salary' ? `${(state.players.find((x) => x.id === e.player_id) || {}).name || 'Jogador'} recebeu ${brl(e.amount ?? e.value ?? 0)} ao passar pela Saída` : '');
+    const evMsg = (e) => e.message || (e.type === 'salary' ? `${(state.players.find((x) => x.id === e.player_id) || {}).name || 'Jogador'} recebeu ${brl(e.amount ?? e.value ?? 0)} ao passar pela Saída` : ['festival', 'championship', 'destroy'].includes(e.type) ? e.text || '' : '');
     const msgs = evs.filter((e) => !['roll', 'pass', 'card', 'move'].includes(e.type)).map(evMsg).filter(Boolean);
     if (msgs.length && !quiet) toast(msgs[msgs.length - 1]);
     return msgs.join(' · ');
@@ -749,7 +750,18 @@
     const body = { room_id: roomId, action: 'propose', player_id: meId, to_player_id: f.to.value, give: { props: ids('give'), cash: +f.giveCash.value || 0 }, want: { props: ids('want'), cash: +f.wantCash.value || 0 } };
     if (!body.give.props.length && !body.want.props.length && !body.give.cash && !body.want.cash) { $('tradeMsg').textContent = 'Escolha algo para trocar.'; $('tradeMsg').classList.add('bad'); return; }
     run(async () => {
-      try { const r = await api('/api/banco3d/room/trade', body); await commit(r.game ? r : await getRoom(roomId)); closeTrade(); toast(r.pending_trade ? 'Proposta enviada. Aguardando resposta.' : 'Troca feita!'); }
+      try {
+        const cash0 = state.players.find((p) => p.id === meId).balance;
+        const r = await api('/api/banco3d/room/trade', body);
+        await commit(r.game ? r : await getRoom(roomId));
+        // a bot answers on the spot and the reply carries no verdict: infer it from who owns the tiles / how much cash moved
+        const tl = state.board, moved = body.give.props.length || body.want.props.length
+          ? body.want.props.every((i) => tl[i].owner_id === meId) && body.give.props.every((i) => tl[i].owner_id === body.to_player_id)
+          : state.players.find((p) => p.id === meId).balance !== cash0;
+        if (r.pending_trade) { closeTrade(); toast('Proposta enviada. Aguardando resposta.'); }
+        else if (moved) { closeTrade(); toast('Troca feita!'); }
+        else { $('tradeMsg').textContent = 'O jogador recusou a proposta. Ajuste a oferta e tente de novo.'; $('tradeMsg').classList.add('bad'); }
+      }
       catch (x) { $('tradeMsg').textContent = x.message; $('tradeMsg').classList.add('bad'); }
     });
   };
