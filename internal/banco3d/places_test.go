@@ -623,3 +623,44 @@ func TestSuggestBrazilFirstAndStateAware(t *testing.T) {
 		t.Errorf("suggestions must be [] not nil: %#v", got)
 	}
 }
+
+func TestIBGEDistrictsFillSmallCity(t *testing.T) {
+	var ibgeCalls []string
+	svc := mockService(func(r *http.Request) (int, string) {
+		switch r.URL.Host {
+		case "nominatim.openstreetmap.org":
+			return 200, `[{"place_id":10351030,"class":"boundary","place_rank":16,"lat":"-22.65","lon":"-43.04","display_name":"Magé","address":{"city":"Magé","state":"Rio de Janeiro","country":"Brasil"}}]`
+		case "servicodados.ibge.gov.br":
+			ibgeCalls = append(ibgeCalls, r.URL.Path)
+			switch {
+			case strings.HasSuffix(r.URL.Path, "/estados/RJ/municipios"):
+				return 200, `[{"id":3302502,"nome":"Mangaratiba"},{"id":3302809,"nome":"Magé"}]`
+			case strings.HasSuffix(r.URL.Path, "/3302809/distritos"):
+				return 200, `[{"nome":"Magé"},{"nome":"Santo Aleixo"},{"nome":"Guia de Pacobaíba"},{"nome":"Inhomirim"}]`
+			case strings.HasSuffix(r.URL.Path, "/3302809/subdistritos"):
+				return 200, `[{"nome":"Piabetá"},{"nome":"Fragoso"}]`
+			}
+		}
+		return 200, `{"elements":[]}`
+	})
+	sg, _ := svc.Suggest("Magé RJ")
+	if len(sg) != 1 {
+		t.Fatalf("suggest: %+v", sg)
+	}
+	res, err := svc.GetLandmarks("", sg[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := map[string]bool{}
+	for _, l := range res.Landmarks {
+		names[l.Name] = true
+	}
+	for _, want := range []string{"Santo Aleixo", "Guia de Pacobaíba", "Inhomirim", "Piabetá", "Fragoso"} {
+		if !names[want] {
+			t.Errorf("official district %s missing: %v", want, names)
+		}
+	}
+	if names["Magé"] || len(ibgeCalls) != 3 {
+		t.Errorf("city itself must not be a tile; IBGE calls: %v", ibgeCalls)
+	}
+}

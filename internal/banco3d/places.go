@@ -44,9 +44,10 @@ type CityLandmarksResult struct {
 
 // PlaceDetails stores resolved geocoding info for a place.
 type PlaceDetails struct {
-	City string
-	Lat  float64
-	Lon  float64
+	City  string
+	State string
+	Lat   float64
+	Lon   float64
 }
 
 // PlacesService handles geocoding, autocomplete and landmark extraction.
@@ -269,9 +270,10 @@ func (s *PlacesService) fetchNominatimSuggest(query, state string, brOnly bool) 
 		_, _ = fmt.Sscanf(r.Lat, "%f", &latF)
 		_, _ = fmt.Sscanf(r.Lon, "%f", &lonF)
 		s.detailsCache[id] = PlaceDetails{
-			City: cityName,
-			Lat:  latF,
-			Lon:  lonF,
+			City:  cityName,
+			State: r.Address.State,
+			Lat:   latF,
+			Lon:   lonF,
 		}
 	}
 	s.saveDiskLocked() // lock already held; keeps place_id -> city across restarts
@@ -767,12 +769,13 @@ func (s *PlacesService) fetchWikipediaPlaces(ctx context.Context, cityName strin
 // every Nominatim query.
 func (s *PlacesService) fetchAllSources(ctx context.Context, cityName string, lat, lon float64, full bool) []realPlace {
 	var wg sync.WaitGroup
-	results := make([][]realPlace, 5)
+	results := make([][]realPlace, 6)
 	for i, fn := range []func() []realPlace{
 		func() []realPlace { return s.fetchOverpassPlaces(ctx, cityName, lat, lon) },
 		func() []realPlace { return s.fetchWikipediaPlaces(ctx, cityName, lat, lon) },
 		func() []realPlace { return s.fetchWikidataPlaces(ctx, cityName, lat, lon) },
 		func() []realPlace { return s.fetchWikiCategoryPlaces(ctx, cityName) },
+		func() []realPlace { return s.fetchIBGEPlaces(ctx, cityName, lat, lon) },
 		func() []realPlace { return s.fetchNominatimPlaces(ctx, cityName, lat, lon, full) },
 	} {
 		wg.Add(1)
@@ -1201,7 +1204,7 @@ func (s *PlacesService) backoff(resp *http.Response) {
 }
 
 // diskSchemaVersion invalidates caches written by older builds (v<2 could hold street names as cities).
-const diskSchemaVersion = 5
+const diskSchemaVersion = 6
 
 // diskCache is the on-disk snapshot of resolved places and landmark results.
 type diskCache struct {
@@ -1480,4 +1483,66 @@ func containsAny(s string, subs ...string) bool {
 		}
 	}
 	return false
+}
+
+// stateOf finds the state recorded when the city came from the autocomplete (same name, centroid within ~0.5°).
+func (s *PlacesService) stateOf(cityName string, lat, lon float64) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, d := range s.detailsCache {
+		if d.State != "" && strings.EqualFold(d.City, cityName) && math.Abs(d.Lat-lat) < 0.5 && math.Abs(d.Lon-lon) < 0.5 {
+			return d.State
+		}
+	}
+	return ""
+}
+
+// fetchIBGEPlaces lists the OFFICIAL districts and sub-districts (bairros) of a Brazilian municipality from
+// the IBGE Localidades API. shortcut: needs the state, known only for autocomplete-chosen cities; others skip IBGE.
+func (s *PlacesService) fetchIBGEPlaces(ctx context.Context, cityName string, lat, lon float64) []realPlace {
+	state := s.stateOf(cityName, lat, lon)
+	uf := ""
+	for k, v := range brStates {
+		if fold(v) == fold(state) {
+			uf = strings.ToUpper(k)
+		}
+	}
+	if uf == "" {
+		return nil
+	}
+	var munis []struct {
+		ID   int    `json:"id"`
+		Nome string `json:"nome"`
+	}
+	base := "https://servicodados.ibge.gov.br/api/v1/localidades/"
+	if s.getJSON(ctx, base+"estados/"+uf+"/municipios", srcTimeout(ctx), false, &munis) != nil {
+		return nil
+	}
+	id := 0
+	for _, m := range munis {
+		if fold(m.Nome) == fold(cityName) {
+			id = m.ID
+		}
+	}
+	if id == 0 {
+		return nil
+	}
+	var out []realPlace
+	for _, part := range []struct {
+		path  string
+		score int
+	}{{"distritos", 24}, {"subdistritos", 22}} {
+		var items []struct {
+			Nome string `json:"nome"`
+		}
+		if s.getJSON(ctx, fmt.Sprintf("%smunicipios/%d/%s", base, id, part.path), srcTimeout(ctx), false, &items) != nil {
+			continue
+		}
+		for _, it := range items {
+			if n := strings.TrimSpace(it.Nome); validPlaceName(n, cityName) {
+				out = append(out, realPlace{Name: n, Kind: "property", Score: part.score})
+			}
+		}
+	}
+	return out
 }
