@@ -603,7 +603,8 @@
     if (cardQ.length) pumpCards();
     if (!evs) return '';
     const evMsg = (e) => e.message || (e.type === 'salary' ? `${(state.players.find((x) => x.id === e.player_id) || {}).name || 'Jogador'} recebeu ${brl(e.amount ?? e.value ?? 0)} ao passar pela Saída` : ['festival', 'championship', 'destroy'].includes(e.type) ? e.text || '' : '');
-    const msgs = evs.filter((e) => !['roll', 'pass', 'card', 'move'].includes(e.type)).map(evMsg).filter(Boolean);
+    const idle = evs.filter((e) => e.type === 'pass' && /inativ/i.test(e.text || '')).map((e) => `${e.player_id === meId ? 'Você' : e.player_name || 'Jogador'} passou por inatividade`);
+    const msgs = evs.filter((e) => !['roll', 'pass', 'card', 'move'].includes(e.type)).map(evMsg).concat(idle).filter(Boolean);
     if (msgs.length && !quiet) toast(msgs[msgs.length - 1]);
     return msgs.join(' · ');
   }
@@ -759,7 +760,7 @@
           ? body.want.props.every((i) => tl[i].owner_id === meId) && body.give.props.every((i) => tl[i].owner_id === body.to_player_id)
           : state.players.find((p) => p.id === meId).balance !== cash0;
         if (r.pending_trade) { closeTrade(); toast('Proposta enviada. Aguardando resposta.'); }
-        else if (moved) { closeTrade(); toast('Troca feita!'); }
+        else if (r.trade_status ? r.trade_status === 'accepted' : moved) { closeTrade(); toast('Troca feita!'); } // older servers send no verdict: fall back to ownership
         else { $('tradeMsg').textContent = 'O jogador recusou a proposta. Ajuste a oferta e tente de novo.'; $('tradeMsg').classList.add('bad'); }
       }
       catch (x) { $('tradeMsg').textContent = x.message; $('tradeMsg').classList.add('bad'); }
