@@ -232,10 +232,10 @@ func TestThreeConsecutiveDoublesSendsToJail(t *testing.T) {
 	if err != nil {
 		t.Fatalf("erro roll 3: %v", err)
 	}
-	if !p1.InJail || p1.Position != 10 {
-		t.Errorf("na 3ª dupla consecutiva o jogador DEVE ir para a prisão (casa 10, in_jail=true), posição atual: %d, inJail: %v", p1.Position, p1.InJail)
+	if !p1.InJail || p1.Position != 20 {
+		t.Errorf("na 3ª dupla consecutiva o jogador DEVE ir para a prisão (casa 20, in_jail=true), posição atual: %d, inJail: %v", p1.Position, p1.InJail)
 	}
-	if res3.NewPosition != 10 {
+	if res3.NewPosition != 20 {
 		t.Errorf("res3.NewPosition deve ser 10, obtido %d", res3.NewPosition)
 	}
 }

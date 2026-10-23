@@ -10,16 +10,22 @@ import (
 type TileType string
 
 const (
-	TileGo          TileType = "GO"
+	TileStart       TileType = "START"
+	TileTravel      TileType = "TRAVEL"
+	TileJail        TileType = "JAIL"
+	TileSpecialTax  TileType = "SPECIAL_TAX"
+	TileLuck        TileType = "LUCK"
 	TileProperty    TileType = "PROPERTY"
 	TileStation     TileType = "STATION"
 	TileUtility     TileType = "UTILITY"
 	TileTax         TileType = "TAX"
-	TileChance      TileType = "CHANCE" // Sorte
-	TileChest       TileType = "CHEST"  // Revés
-	TileJail        TileType = "JAIL"
-	TileFreeParking TileType = "FREE_PARKING"
-	TileGoToJail    TileType = "GO_TO_JAIL"
+
+	// Backward-compatibility aliases
+	TileGo          TileType = "START"
+	TileChance      TileType = "LUCK"
+	TileChest       TileType = "LUCK"
+	TileFreeParking TileType = "JAIL"
+	TileGoToJail    TileType = "SPECIAL_TAX"
 )
 
 // ColorGroup represents the color category of a property.
@@ -230,35 +236,35 @@ func NewStandardBoard(cityName string, customTiles []Tile) *Board {
 		}
 	}
 
-	// 40 squares layout (Canonical Business Tour / Monopoly layout: 22 properties, 4 stations, 2 utilities, 2 taxes, 3 chance, 3 chest, 4 corners)
+	// 40 squares layout (Business Tour corners: 0=START, 10=TRAVEL, 20=JAIL, 30=SPECIAL_TAX; unified LUCK tiles; 22 properties, 4 stations, 2 utilities, 2 taxes)
 	// Side 1 (0-9)
-	tiles[0] = Tile{Index: 0, Name: "SAÍDA", Type: TileGo, Group: ColorNone, ImageKind: "go_flag", Description: "Ponto de partida clássico"}
+	tiles[0] = Tile{Index: 0, Name: "INÍCIO", Type: TileStart, Group: ColorNone, ImageKind: "go_flag", Description: "Ponto de partida clássico (receba salário ao passar)"}
 	tiles[1] = makeProp(1, fmt.Sprintf("Marrom A (%s)", cityName), ColorBrown, false)
-	tiles[2] = Tile{Index: 2, Name: "Revés", Type: TileChest, Group: ColorNone, ImageKind: "chance_card_chest", Description: "Carta de revés econômico"}
+	tiles[2] = Tile{Index: 2, Name: "Sorte ou Revés", Type: TileLuck, Group: ColorNone, ImageKind: "chance_card_chest", Description: "Carta surpresa de Sorte ou Revés"}
 	tiles[3] = makeProp(3, fmt.Sprintf("Marrom B (%s)", cityName), ColorBrown, false)
 	tiles[4] = Tile{Index: 4, Name: "Taxa Municipal", Type: TileTax, Group: ColorNone, TaxAmount: 200, ImageKind: "tax_receipt", Description: "Taxa municipal fixa de $ 200"}
 	tiles[5] = makeStation(5, "Estação Sul")
 	tiles[6] = makeProp(6, fmt.Sprintf("Azul-claro A (%s)", cityName), ColorLightBlue, false)
-	tiles[7] = Tile{Index: 7, Name: "Sorte", Type: TileChance, Group: ColorNone, ImageKind: "chance_card_chest", Description: "Carta surpresa de sorte"}
+	tiles[7] = Tile{Index: 7, Name: "Sorte ou Revés", Type: TileLuck, Group: ColorNone, ImageKind: "chance_card_chest", Description: "Carta surpresa de Sorte ou Revés"}
 	tiles[8] = makeProp(8, fmt.Sprintf("Azul-claro B (%s)", cityName), ColorLightBlue, false)
 	tiles[9] = makeProp(9, fmt.Sprintf("Azul-claro C (%s)", cityName), ColorLightBlue, false)
 
 	// Side 2 (10-19)
-	tiles[10] = Tile{Index: 10, Name: "PRISÃO", Type: TileJail, Group: ColorNone, ImageKind: "jail_bars", Description: "Visitas ou cumprimento de pena"}
+	tiles[10] = Tile{Index: 10, Name: "VIAGEM", Type: TileTravel, Group: ColorNone, ImageKind: "plane", Description: "World Tour: viagem e visita livre sem penalidade"}
 	tiles[11] = makeProp(11, fmt.Sprintf("Rosa A (%s)", cityName), ColorPink, false)
 	tiles[12] = makeUtility(12, "Companhia de Energia", true)
 	tiles[13] = makeProp(13, fmt.Sprintf("Rosa B (%s)", cityName), ColorPink, false)
 	tiles[14] = makeProp(14, fmt.Sprintf("Rosa C (%s)", cityName), ColorPink, false)
 	tiles[15] = makeStation(15, "Estação Oeste")
 	tiles[16] = makeProp(16, fmt.Sprintf("Laranja A (%s)", cityName), ColorOrange, false)
-	tiles[17] = Tile{Index: 17, Name: "Revés", Type: TileChest, Group: ColorNone, ImageKind: "chance_card_chest", Description: "Carta de revés econômico"}
+	tiles[17] = Tile{Index: 17, Name: "Sorte ou Revés", Type: TileLuck, Group: ColorNone, ImageKind: "chance_card_chest", Description: "Carta surpresa de Sorte ou Revés"}
 	tiles[18] = makeProp(18, fmt.Sprintf("Laranja B (%s)", cityName), ColorOrange, false)
 	tiles[19] = makeProp(19, fmt.Sprintf("Laranja C (%s)", cityName), ColorOrange, false)
 
 	// Side 3 (20-29)
-	tiles[20] = Tile{Index: 20, Name: "Campeonato", Type: TileFreeParking, Group: ColorNone, ImageKind: "trophy", Description: "Campeonato Mundial: aluguel ×3 na sua propriedade por 1 rodada"}
+	tiles[20] = Tile{Index: 20, Name: "ILHA PERDIDA", Type: TileJail, Group: ColorNone, ImageKind: "island", Description: "Ilha Perdida (Prisão): 3 duplas ou 'Vá para a Prisão' enviam para cá; visitante passa sem efeito"}
 	tiles[21] = makeProp(21, fmt.Sprintf("Vermelho A (%s)", cityName), ColorRed, false)
-	tiles[22] = Tile{Index: 22, Name: "Sorte", Type: TileChance, Group: ColorNone, ImageKind: "chance_card_chest", Description: "Carta surpresa de sorte"}
+	tiles[22] = Tile{Index: 22, Name: "Sorte ou Revés", Type: TileLuck, Group: ColorNone, ImageKind: "chance_card_chest", Description: "Carta surpresa de Sorte ou Revés"}
 	tiles[23] = makeProp(23, fmt.Sprintf("Vermelho B (%s)", cityName), ColorRed, false)
 	tiles[24] = makeProp(24, fmt.Sprintf("Vermelho C (%s)", cityName), ColorRed, false)
 	tiles[25] = makeStation(25, "Estação Norte")
@@ -268,13 +274,13 @@ func NewStandardBoard(cityName string, customTiles []Tile) *Board {
 	tiles[29] = makeProp(29, fmt.Sprintf("Amarelo C (%s)", cityName), ColorYellow, false)
 
 	// Side 4 (30-39)
-	tiles[30] = Tile{Index: 30, Name: "VÁ PARA A CADEIA", Type: TileGoToJail, Group: ColorNone, ImageKind: "go_to_jail_handcuffs", Description: "Vá direto para a cadeia"}
+	tiles[30] = Tile{Index: 30, Name: "IMPOSTO ESPECIAL", Type: TileSpecialTax, Group: ColorNone, ImageKind: "tax_receipt", Description: "Imposto Especial: sorteia carta Sorte ou Revés e paga 10% do caixa (máx R$ 200)"}
 	tiles[31] = makeProp(31, fmt.Sprintf("Verde A (%s)", cityName), ColorGreen, false)
 	tiles[32] = makeProp(32, fmt.Sprintf("Verde B (%s)", cityName), ColorGreen, false)
-	tiles[33] = Tile{Index: 33, Name: "Revés", Type: TileChest, Group: ColorNone, ImageKind: "chance_card_chest", Description: "Carta de revés econômico"}
+	tiles[33] = Tile{Index: 33, Name: "Sorte ou Revés", Type: TileLuck, Group: ColorNone, ImageKind: "chance_card_chest", Description: "Carta surpresa de Sorte ou Revés"}
 	tiles[34] = makeProp(34, fmt.Sprintf("Verde C (%s)", cityName), ColorGreen, false)
 	tiles[35] = makeStation(35, "Estação Leste")
-	tiles[36] = Tile{Index: 36, Name: "Sorte", Type: TileChance, Group: ColorNone, ImageKind: "chance_card_chest", Description: "Carta surpresa de sorte"}
+	tiles[36] = Tile{Index: 36, Name: "Sorte ou Revés", Type: TileLuck, Group: ColorNone, ImageKind: "chance_card_chest", Description: "Carta surpresa de Sorte ou Revés"}
 	tiles[37] = makeProp(37, fmt.Sprintf("Azul-escuro Secundária (%s)", cityName), ColorDarkBlue, false)
 	tiles[38] = Tile{Index: 38, Name: "Imposto de Luxo", Type: TileTax, Group: ColorNone, TaxAmount: 100, ImageKind: "luxury_diamond", DarkMode: true, Description: "Tributo de luxo de $ 100"}
 	queenTile := makeProp(39, fmt.Sprintf("Ponto Mais Icônico (%s)", cityName), ColorDarkBlue, true)

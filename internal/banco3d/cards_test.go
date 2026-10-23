@@ -70,8 +70,8 @@ func TestCardExecutionInGame(t *testing.T) {
 		Action: banco3d.CardActionGoToJail,
 	}
 	game.ApplyCard(p1.ID, cardJail)
-	if p1.Position != 10 {
-		t.Errorf("jogador deveria estar na casa 10 (prisão), está em %d", p1.Position)
+	if p1.Position != 20 {
+		t.Errorf("jogador deveria estar na casa 20 (prisão), está em %d", p1.Position)
 	}
 	if !p1.IsJailed {
 		t.Errorf("jogador deveria estar preso")

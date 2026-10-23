@@ -2,6 +2,7 @@ package banco3d
 
 import (
 	"errors"
+	"fmt"
 	"math/rand"
 	"strings"
 	"sync"
@@ -12,8 +13,9 @@ import (
 type CardType string
 
 const (
-	CardTypeChance CardType = "CHANCE"
-	CardTypeChest  CardType = "CHEST"
+	CardTypeLuck   CardType = "LUCK"
+	CardTypeChance CardType = "LUCK"
+	CardTypeChest  CardType = "LUCK"
 )
 
 // CardAction defines the mechanical effect executed when the card is drawn.
@@ -40,6 +42,7 @@ const (
 	CardActionFestival           CardAction = "FESTIVAL"
 	CardActionSanitaryInspection CardAction = "SANITARY_INSPECTION"
 	CardActionRealEstateCrisis   CardAction = "REAL_ESTATE_CRISIS"
+	CardActionChampionship       CardAction = "CHAMPIONSHIP"
 )
 
 // Card represents a thematic Chance or Community Chest card.
@@ -69,8 +72,10 @@ type CardResult struct {
 	ImageKind     string `json:"image_kind,omitempty"`
 	DestroyedTile int    `json:"destroyed_tile,omitempty"`
 	DestroyedWhat string `json:"destroyed_what,omitempty"` // "house" | "hotel" | "property"
-	FestivalTile  int    `json:"festival_tile,omitempty"`
-	WentToJail    bool   `json:"went_to_jail"`
+	FestivalTile     int    `json:"festival_tile,omitempty"`
+	ChampionshipTile int    `json:"championship_tile,omitempty"`
+	Message          string `json:"message,omitempty"`
+	WentToJail       bool   `json:"went_to_jail"`
 	HasFreeCard   bool   `json:"has_free_card"`
 }
 
@@ -98,6 +103,7 @@ var cityCardCatalogs = map[string]CityDeck{
 			{ID: "cwb-c11", Deck: CardTypeChance, Type: CardTypeChance, Title: "Apagão no Sistema Elétrico", Text: "Subestação de energia sofreu pane total: você perde a próxima rodada!", Effect: CardActionBlackout, Action: CardActionBlackout, ImageKind: "blackout"},
 			{ID: "cwb-c12", Deck: CardTypeChance, Type: CardTypeChance, Title: "Greve Geral de Ônibus", Text: "Paralisação geral dos biarticulados: volte 3 casas.", Effect: CardActionStrike, Action: CardActionStrike, Amount: -3, ImageKind: "strike"},
 			{ID: "cwb-c13", Deck: CardTypeChance, Type: CardTypeChance, Title: "Crise Imobiliária Regional", Text: "Desaceleração econômica afeta inquilinos: pague R$ 100 em taxa de estabilização.", Effect: CardActionRealEstateCrisis, Action: CardActionRealEstateCrisis, Amount: -100, ImageKind: "crisis"},
+			{ID: "cwb-champ", Deck: CardTypeLuck, Type: CardTypeLuck, Title: "Campeonato Mundial", Text: "Curitiba sediará o Campeonato Mundial! O aluguel da sua melhor propriedade fica ×3 por 1 rodada.", Effect: CardActionChampionship, Action: CardActionChampionship, ImageKind: "festival"},
 		},
 		Chest: []Card{
 			{ID: "cwb-k1", Deck: CardTypeChest, Type: CardTypeChest, Title: "Calçadão da Rua XV", Text: "Receita recorde com quiosques de flores e café: receba R$ 200.", Effect: CardActionMoney, Action: CardActionMoney, Amount: 200, Value: 200, ImageKind: "inheritance"},
@@ -170,6 +176,7 @@ var genericDeck = CityDeck{
 		{ID: "gen-c10", Deck: CardTypeChance, Type: CardTypeChance, Title: "Blecaute Geral", Text: "Falta generalizada de luz paralisa operações: perca a próxima rodada!", Effect: CardActionBlackout, Action: CardActionBlackout, ImageKind: "blackout"},
 		{ID: "gen-c11", Deck: CardTypeChance, Type: CardTypeChance, Title: "Greve de Transportes", Text: "Ruas bloqueadas por manifestação: recue 3 casas.", Effect: CardActionStrike, Action: CardActionStrike, Amount: -3, ImageKind: "strike"},
 		{ID: "gen-c12", Deck: CardTypeChance, Type: CardTypeChance, Title: "Crise Imobiliária", Text: "Inquilinos renegociam aluguel em baixa: pague taxa emergencial de R$ 100.", Effect: CardActionRealEstateCrisis, Action: CardActionRealEstateCrisis, Amount: -100, ImageKind: "crisis"},
+		{ID: "gen-champ", Deck: CardTypeLuck, Type: CardTypeLuck, Title: "Campeonato Mundial", Text: "Sua cidade sediará o Campeonato Mundial! O aluguel da sua melhor propriedade fica ×3 por 1 rodada.", Effect: CardActionChampionship, Action: CardActionChampionship, ImageKind: "festival"},
 	},
 	Chest: []Card{
 		{ID: "gen-k1", Deck: CardTypeChest, Type: CardTypeChest, Title: "Erro do Banco a seu Favor", Text: "Auditoria contábil estornou taxas indevidas: receba R$ 200.", Effect: CardActionMoney, Action: CardActionMoney, Amount: 200, Value: 200, ImageKind: "lottery"},
@@ -191,44 +198,66 @@ var genericDeck = CityDeck{
 type DeckManager struct {
 	mu        sync.Mutex
 	City      string
+	cards     []Card
+	cardIdx   int
 	chance    []Card
 	chest     []Card
 	chanceIdx int
 	chestIdx  int
 }
 
-// NewDeckManager instantiates a deck for the specified city.
+// NewDeckManager instantiates a unified mixed deck for the specified city.
 func NewDeckManager(cityName string) *DeckManager {
 	deck := GetDeckForCity(cityName)
+	var allCards []Card
+	maxLen := len(deck.Chance)
+	if len(deck.Chest) > maxLen {
+		maxLen = len(deck.Chest)
+	}
+	for i := 0; i < maxLen; i++ {
+		if i < len(deck.Chance) {
+			allCards = append(allCards, deck.Chance[i])
+		}
+		if i < len(deck.Chest) {
+			allCards = append(allCards, deck.Chest[i])
+		}
+	}
+	if len(allCards) == 0 {
+		allCards = append(allCards, genericDeck.Chance...)
+		allCards = append(allCards, genericDeck.Chest...)
+	}
+	for i := range allCards {
+		allCards[i].Deck = CardTypeLuck
+		allCards[i].Type = CardTypeLuck
+	}
 	return &DeckManager{
 		City:   deck.City,
-		chance: append([]Card(nil), deck.Chance...),
-		chest:  append([]Card(nil), deck.Chest...),
+		cards:  allCards,
+		chance: allCards,
+		chest:  allCards,
 	}
 }
 
-// DrawChance draws the next chance card in rotation.
-func (dm *DeckManager) DrawChance() Card {
+// DrawLuck draws the next card from the unified mixed rotation.
+func (dm *DeckManager) DrawLuck() Card {
 	dm.mu.Lock()
 	defer dm.mu.Unlock()
-	if len(dm.chance) == 0 {
+	if len(dm.cards) == 0 {
 		return genericDeck.Chance[0]
 	}
-	card := dm.chance[dm.chanceIdx%len(dm.chance)]
-	dm.chanceIdx++
+	card := dm.cards[dm.cardIdx%len(dm.cards)]
+	dm.cardIdx++
 	return card
 }
 
-// DrawChest draws the next community chest card in rotation.
+// DrawChance draws the next card in unified rotation (backward compatibility).
+func (dm *DeckManager) DrawChance() Card {
+	return dm.DrawLuck()
+}
+
+// DrawChest draws the next card in unified rotation (backward compatibility).
 func (dm *DeckManager) DrawChest() Card {
-	dm.mu.Lock()
-	defer dm.mu.Unlock()
-	if len(dm.chest) == 0 {
-		return genericDeck.Chest[0]
-	}
-	card := dm.chest[dm.chestIdx%len(dm.chest)]
-	dm.chestIdx++
-	return card
+	return dm.DrawLuck()
 }
 
 // GetDeckForCity matches a city query to a catalog or returns generic cards.
@@ -297,12 +326,21 @@ func (g *Game) ResolveCard(playerID string, card Card) (*CardResult, error) {
 		}
 		g.resolveTileLanding(p)
 	case CardActionGoToJail:
-		p.Position = 10
+		p.Position = 20
 		p.InJail = true
 		p.IsJailed = true
 		p.JailTurns = 0
-		result.NewPosition = 10
+		result.NewPosition = 20
 		result.WentToJail = true
+	case CardActionChampionship:
+		champTile := g.ActivateChampionship(p.ID)
+		if champTile != nil {
+			result.Message = fmt.Sprintf("%s sediou o Campeonato Mundial em %s! Aluguel triplicado!", p.Name, champTile.Name)
+			result.ChampionshipTile = champTile.Index
+		} else {
+			result.MoneyDelta = 50
+			result.Message = fmt.Sprintf("%s participou do Campeonato Mundial e recebeu R$ 50 de premiação esportiva!", p.Name)
+		}
 	case CardActionGetOutOfJail:
 		p.GetOutOfJailCards++
 		result.HasFreeCard = true

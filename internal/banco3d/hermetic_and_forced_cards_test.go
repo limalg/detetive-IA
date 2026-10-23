@@ -22,8 +22,8 @@ func TestHermeticBoardGeneration(t *testing.T) {
 	if board.Tiles[0].Type != banco3d.TileGo {
 		t.Errorf("casa 0 deveria ser TileGo, obtido %s", board.Tiles[0].Type)
 	}
-	if board.Tiles[20].Name != "Campeonato" {
-		t.Errorf("casa 20 deveria ser Campeonato, obtido %s", board.Tiles[20].Name)
+	if board.Tiles[20].Name != "ILHA PERDIDA" || board.Tiles[20].Type != banco3d.TileJail {
+		t.Errorf("casa 20 deveria ser ILHA PERDIDA (TileJail), obtido %s", board.Tiles[20].Name)
 	}
 }
 
@@ -108,8 +108,8 @@ func TestForcedGoToJailCardExecution(t *testing.T) {
 	if !res.WentToJail || !p1.InJail || !p1.IsJailed {
 		t.Errorf("jogador deveria estar preso: res.WentToJail=%v, p1.InJail=%v", res.WentToJail, p1.InJail)
 	}
-	if p1.Position != 10 {
-		t.Errorf("posição do jogador deveria ser 10, obtido %d", p1.Position)
+	if p1.Position != 20 {
+		t.Errorf("posição do jogador deveria ser 20, obtido %d", p1.Position)
 	}
 	if p1.Money != initialMoney {
 		t.Errorf("jogador NÃO pode receber salário ao ir para a prisão! saldo anterior %d, atual %d", initialMoney, p1.Money)

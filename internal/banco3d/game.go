@@ -40,6 +40,7 @@ type DiceResult struct {
 	CardDrawn        *CardResult `json:"card_drawn,omitempty"`
 	ChampionshipTile int         `json:"championship_tile,omitempty"`
 	ChampionshipText string      `json:"championship_text,omitempty"`
+	WentToJail       bool        `json:"went_to_jail,omitempty"`
 }
 
 // Game represents the state and rules engine for a 40-tile match.
@@ -197,8 +198,8 @@ func (g *Game) RollDice(playerID string, d1, d2 int) (*DiceResult, error) {
 					Die2:        d2,
 					Total:       total,
 					IsDouble:    false,
-					OldPosition: 10,
-					NewPosition: 10,
+					OldPosition: p.Position,
+					NewPosition: p.Position,
 				}
 				g.LastDiceResult = res
 				return res, nil
@@ -208,7 +209,7 @@ func (g *Game) RollDice(playerID string, d1, d2 int) (*DiceResult, error) {
 
 	// Regra clássica: 3 duplas consecutivas no mesmo turno leva direto para a prisão!
 	if isDouble && g.ConsecutiveDoubles >= 3 {
-		p.Position = 10
+		p.Position = 20
 		p.InJail = true
 		p.IsJailed = true
 		p.JailTurns = 0
@@ -221,7 +222,8 @@ func (g *Game) RollDice(playerID string, d1, d2 int) (*DiceResult, error) {
 			Total:       total,
 			IsDouble:    true,
 			OldPosition: oldPos,
-			NewPosition: 10,
+			NewPosition: 20,
+			WentToJail:  true,
 		}
 		g.LastDiceResult = res
 		return res, nil
@@ -277,35 +279,43 @@ func (g *Game) RollDice(playerID string, d1, d2 int) (*DiceResult, error) {
 				g.declareBankruptcy(p)
 			}
 		}
-	case TileChance:
+	case TileLuck:
 		if g.Deck != nil {
-			card := g.Deck.DrawChance()
+			card := g.Deck.DrawLuck()
 			if cardResult, err := g.ResolveCard(p.ID, card); err == nil {
 				res.CardDrawn = cardResult
 				g.LastCardResult = cardResult
 			}
 		}
-	case TileChest:
+	case TileSpecialTax:
+		// 1. Sorteia carta Sorte ou Revés
 		if g.Deck != nil {
-			card := g.Deck.DrawChest()
+			card := g.Deck.DrawLuck()
 			if cardResult, err := g.ResolveCard(p.ID, card); err == nil {
 				res.CardDrawn = cardResult
 				g.LastCardResult = cardResult
 			}
 		}
-	case TileGoToJail:
-		p.Position = 10
-		p.InJail = true
-		p.IsJailed = true
-	case TileFreeParking:
-		champTile := g.ActivateChampionship(p.ID)
-		if champTile != nil {
-			res.ChampionshipTile = champTile.Index
-			res.ChampionshipText = fmt.Sprintf("%s sediou o Campeonato Mundial em %s! Aluguel duplicado!", p.Name, champTile.Name)
-		} else {
-			res.ChampionshipTile = 20
-			res.ChampionshipText = fmt.Sprintf("%s visitou o Campeonato Mundial e recebeu R$ 50 de premiação esportiva!", p.Name)
+		// 2. Imposto especial = 10% do caixa, máx R$ 200
+		tax := int(float64(p.Money) * 0.10)
+		if tax > 200 {
+			tax = 200
 		}
+		if tax < 0 {
+			tax = 0
+		}
+		if tax > 0 {
+			p.Money -= tax
+			res.RentPaid = tax
+			res.RentTo = "banco"
+			if p.Money < 0 {
+				g.declareBankruptcy(p)
+			}
+		}
+	case TileTravel:
+		// Visita livre sem efeito ruim
+	case TileJail:
+		// Visita livre sem efeito ruim (visitante passa sem efeito)
 	}
 
 	g.LastDiceResult = res
@@ -428,10 +438,20 @@ func (g *Game) resolveTileLanding(p *Player) {
 				g.declareBankruptcy(p)
 			}
 		}
-	case TileGoToJail:
-		p.Position = 10
-		p.InJail = true
-		p.IsJailed = true
+	case TileSpecialTax:
+		tax := int(float64(p.Money) * 0.10)
+		if tax > 200 {
+			tax = 200
+		}
+		if tax < 0 {
+			tax = 0
+		}
+		if tax > 0 {
+			p.Money -= tax
+			if p.Money < 0 {
+				g.declareBankruptcy(p)
+			}
+		}
 	}
 }
 

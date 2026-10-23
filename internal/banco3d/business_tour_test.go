@@ -61,9 +61,9 @@ func TestFestivalRentMultiplierAndTTL(t *testing.T) {
 	}
 }
 
-// TestWorldChampionshipTile20 verifies that landing on Tile 20 (Campeonato Mundial)
-// hosts the championship on player's best property doubling rent.
-func TestWorldChampionshipTile20(t *testing.T) {
+// TestWorldChampionshipCard verifies that the Championship effect (rent x3)
+// is activated via Sorte ou Revés card on player's most valuable property.
+func TestWorldChampionshipCard(t *testing.T) {
 	room, err := banco3d.NewRoom("room-champ-test", "Curitiba")
 	if err != nil {
 		t.Fatalf("falha ao criar sala: %v", err)
@@ -79,31 +79,86 @@ func TestWorldChampionshipTile20(t *testing.T) {
 	board.Tiles[39].OwnerID = p1.ID
 	p1.Properties = []int{1, 39}
 
-	// Alice cai na casa 20 (Campeonato Mundial)
-	p1.Position = 14
-	dice, err := room.Game.RollDice(p1.ID, 3, 3) // 14 + 6 = 20
-	if err != nil {
-		t.Fatalf("falha ao rolar: %v", err)
-	}
-	if dice.NewPosition != 20 {
-		t.Fatalf("esperava cair na casa 20, caiu em %d", dice.NewPosition)
+	cardChamp := banco3d.Card{
+		ID:     "c-champ-test",
+		Deck:   banco3d.CardTypeLuck,
+		Type:   banco3d.CardTypeLuck,
+		Title:  "Campeonato Mundial",
+		Effect: banco3d.CardActionChampionship,
+		Action: banco3d.CardActionChampionship,
 	}
 
-	// Casa 39 (mais cara) deve receber ChampionshipMultiplier = 3 (conforme spec Master: aluguel x3)
+	resAlice, err := room.Game.ResolveCard(p1.ID, cardChamp)
+	if err != nil {
+		t.Fatalf("erro ao resolver carta campeonato: %v", err)
+	}
+	if resAlice.ChampionshipTile != 39 {
+		t.Errorf("campeonato deveria ser na casa 39, obtido %d", resAlice.ChampionshipTile)
+	}
 	if board.Tiles[39].ChampionshipMultiplier != 3 {
 		t.Errorf("casa 39 deveria ter ChampionshipMultiplier = 3, obtido %d", board.Tiles[39].ChampionshipMultiplier)
 	}
-	if board.Tiles[1].ChampionshipMultiplier != 0 && board.Tiles[1].ChampionshipMultiplier != 1 {
-		t.Errorf("casa 1 NÃO deveria ter campeonato, obtido %d", board.Tiles[1].ChampionshipMultiplier)
+
+	// Bob sem propriedades: recebe prêmio esportivo de R$ 50
+	bobInitial := p2.Money
+	resBob, _ := room.Game.ResolveCard(p2.ID, cardChamp)
+	if p2.Money != bobInitial+50 || resBob.MoneyDelta != 50 {
+		t.Errorf("Bob sem propriedades deveria receber R$ 50 de premiação esportiva, saldo: %d", p2.Money)
+	}
+}
+
+// TestBusinessTourCornersAndSpecialTax verifies the 4 corners:
+// 10=TRAVEL (safe visit), 20=JAIL (visitor safe visit), 30=SPECIAL_TAX (draw card + 10% tax max 200)
+func TestBusinessTourCornersAndSpecialTax(t *testing.T) {
+	room, _ := banco3d.NewRoom("room-corners-test", "Curitiba")
+	p1, _ := room.JoinPlayer("Alice", "#3b82f6", "car")
+	_, _ = room.JoinPlayer("Bob", "#ef4444", "hat")
+	_ = room.StartGame()
+
+	// 1. Casa 10: VIAGEM (World Tour) - visita livre sem penalidade
+	p1.Position = 8
+	dice10, err := room.Game.RollDice(p1.ID, 1, 1)
+	if err != nil || dice10.NewPosition != 10 {
+		t.Fatalf("erro rolando para casa 10: %v, pos: %d", err, dice10.NewPosition)
+	}
+	if p1.InJail || p1.IsJailed {
+		t.Errorf("casa 10 (VIAGEM) NÃO deve prender jogador!")
+	}
+	if dice10.RentPaid != 0 {
+		t.Errorf("casa 10 (VIAGEM) não deve cobrar aluguel ou taxa!")
 	}
 
-	// Bob sem propriedades cai na casa 20: deve receber prêmio esportivo de R$ 50
+	// 2. Casa 20: ILHA PERDIDA - visitante passa sem efeito
 	_ = room.Game.AutoPassTurn()
-	p2.Position = 14
-	bobInitial := p2.Money
-	_, _ = room.Game.RollDice(p2.ID, 3, 3) // 14 + 6 = 20
-	if p2.Money != bobInitial+50 {
-		t.Errorf("Bob sem propriedades deveria receber R$ 50 de premiação esportiva, obtido %d (antes: %d)", p2.Money, bobInitial)
+	room.Game.CurrentTurnPlayerID = p1.ID
+	room.Game.DiceRolledThisTurn = false
+	p1.Position = 14
+	dice20, err := room.Game.RollDice(p1.ID, 3, 3)
+	if err != nil || dice20.NewPosition != 20 {
+		t.Fatalf("erro rolando para casa 20: %v, pos: %d", err, dice20.NewPosition)
+	}
+	if p1.InJail || p1.IsJailed {
+		t.Errorf("ao cair na casa 20 (ILHA PERDIDA) andando, jogador é mero visitante e NÃO vai para a prisão!")
+	}
+
+	// 3. Casa 30: IMPOSTO ESPECIAL - sorteia carta Sorte ou Revés e paga 10% do caixa (máx R$ 200)
+	_ = room.Game.AutoPassTurn()
+	room.Game.CurrentTurnPlayerID = p1.ID
+	room.Game.DiceRolledThisTurn = false
+	p1.Position = 24
+	p1.Money = 1500
+	dice30, err := room.Game.RollDice(p1.ID, 2, 4) // 24 + 6 = 30
+	if err != nil || dice30.NewPosition != 30 {
+		t.Fatalf("erro rolando para casa 30: %v, pos: %d", err, dice30.NewPosition)
+	}
+	if dice30.RentPaid > 200 {
+		t.Errorf("imposto especial não pode exceder R$ 200, cobrou: %d", dice30.RentPaid)
+	}
+	if dice30.RentPaid <= 0 {
+		t.Errorf("imposto especial deveria ser cobrado (10%% do caixa, máx 200), cobrou: %d", dice30.RentPaid)
+	}
+	if dice30.CardDrawn == nil {
+		t.Errorf("casa 30 deve sortear uma carta de Sorte ou Revés!")
 	}
 }
 

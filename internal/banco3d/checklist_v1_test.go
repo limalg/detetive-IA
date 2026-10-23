@@ -37,8 +37,8 @@ func TestGoToJailCardMechanics(t *testing.T) {
 	if !p1.InJail || !p1.IsJailed {
 		t.Errorf("jogador deveria estar preso (in_jail=true)")
 	}
-	if p1.Position != 10 {
-		t.Errorf("jogador deveria estar na casa 10 (prisão), atual: %d", p1.Position)
+	if p1.Position != 20 {
+		t.Errorf("jogador deveria estar na casa 20 (prisão), atual: %d", p1.Position)
 	}
 	if res.SalaryPaid != 0 {
 		t.Errorf("não deve receber salário ao ir para a prisão, recebido: %d", res.SalaryPaid)

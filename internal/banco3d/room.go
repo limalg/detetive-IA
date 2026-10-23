@@ -279,15 +279,37 @@ func (r *Room) RecordTurnRollAndMove(playerID, pName string, dice *DiceResult) {
 		}
 	}
 
-	// Campeonato Mundial (Business Tour casa 20)
-	if dice.ChampionshipText != "" {
+	// Campeonato Mundial (efeito carta / Sorte ou Revés)
+	if dice.ChampionshipText != "" || (dice.CardDrawn != nil && (dice.CardDrawn.Card.Effect == CardActionChampionship || dice.CardDrawn.Card.Action == CardActionChampionship)) {
+		champText := dice.ChampionshipText
+		champTile := dice.ChampionshipTile
+		if dice.CardDrawn != nil && (dice.CardDrawn.Card.Effect == CardActionChampionship || dice.CardDrawn.Card.Action == CardActionChampionship) {
+			if champText == "" {
+				champText = dice.CardDrawn.Message
+			}
+			if champTile == 0 && dice.CardDrawn.ChampionshipTile != 0 {
+				champTile = dice.CardDrawn.ChampionshipTile
+			}
+		}
 		r.RecordEvent(GameEvent{
 			Type:       "championship",
 			PlayerID:   playerID,
 			PlayerName: pName,
-			Tile:       dice.ChampionshipTile,
-			TileIndex:  dice.ChampionshipTile,
-			Text:       dice.ChampionshipText,
+			Tile:       champTile,
+			TileIndex:  champTile,
+			Text:       champText,
+		})
+	}
+
+	// Evento jail se enviado à prisão neste turno
+	if dice.WentToJail || (dice.CardDrawn != nil && dice.CardDrawn.WentToJail) {
+		r.RecordEvent(GameEvent{
+			Type:       "jail",
+			PlayerID:   playerID,
+			PlayerName: pName,
+			Tile:       20,
+			TileIndex:  20,
+			Text:       fmt.Sprintf("%s foi para a prisão (Ilha Perdida)!", pName),
 		})
 	}
 
@@ -307,8 +329,12 @@ func (r *Room) RecordTurnRollAndMove(playerID, pName string, dice *DiceResult) {
 		})
 	}
 
-	// 5. rent (se pagou aluguel)
+	// 5. rent (se pagou aluguel ou imposto especial)
 	if dice.RentPaid > 0 {
+		rentText := fmt.Sprintf("%s pagou R$ %d de aluguel", pName, dice.RentPaid)
+		if dice.RentTo == "banco" || dice.NewPosition == 30 {
+			rentText = fmt.Sprintf("%s pagou R$ %d de Imposto Especial", pName, dice.RentPaid)
+		}
 		r.RecordEvent(GameEvent{
 			Type:       "rent",
 			PlayerID:   playerID,
@@ -317,7 +343,7 @@ func (r *Room) RecordTurnRollAndMove(playerID, pName string, dice *DiceResult) {
 			Value:      dice.RentPaid,
 			ToPlayerID: dice.RentTo,
 			Tile:       dice.NewPosition,
-			Text:       fmt.Sprintf("%s pagou R$ %d de aluguel", pName, dice.RentPaid),
+			Text:       rentText,
 		})
 	}
 }
@@ -568,22 +594,14 @@ func (r *Room) executeBotTurnLocked(bot *Player, fixedD1, fixedD2 int) error {
 
 	r.RecordTurnRollAndMove(bot.ID, bot.Name, diceRes)
 
-	// Se o jogador foi enviado para a prisão neste turno (3ª dupla consecutiva, casa 30 ou carta):
-	if bot.InJail && diceRes.NewPosition == 10 && (diceRes.OldPosition != 10 || (diceRes.CardDrawn != nil && diceRes.CardDrawn.WentToJail)) {
-		r.RecordEvent(GameEvent{
-			Type:       "jail",
-			PlayerID:   bot.ID,
-			PlayerName: bot.Name,
-			Tile:       10,
-			TileIndex:  10,
-			Text:       fmt.Sprintf("%s foi para a prisão!", bot.Name),
-		})
+	// Se o jogador foi enviado para a prisão neste turno (3ª dupla consecutiva ou carta):
+	if bot.InJail && diceRes.NewPosition == 20 && (diceRes.OldPosition != 20 || (diceRes.CardDrawn != nil && diceRes.CardDrawn.WentToJail)) {
 		_ = r.Game.AutoPassTurn()
 		r.RecordEvent(GameEvent{
 			Type:       "pass",
 			PlayerID:   bot.ID,
 			PlayerName: bot.Name,
-			Text:       fmt.Sprintf("%s passou a vez", bot.Name),
+			Text:       fmt.Sprintf("%s passou a vez (na prisão)", bot.Name),
 		})
 		r.LastActivity = time.Now()
 		return nil

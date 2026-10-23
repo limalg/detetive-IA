@@ -177,8 +177,8 @@ func TestCardSalaryAndJailExclusion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("erro ao resolver carta de prisão: %v", err)
 	}
-	if resJail.NewPosition != 10 {
-		t.Errorf("esperado posição 10 (prisão), recebido %d", resJail.NewPosition)
+	if resJail.NewPosition != 20 {
+		t.Errorf("esperado posição 20 (prisão), recebido %d", resJail.NewPosition)
 	}
 	if resJail.SalaryPaid != 0 {
 		t.Errorf("carta de ir para a prisão NÃO pode pagar salário, pagou: %d", resJail.SalaryPaid)
