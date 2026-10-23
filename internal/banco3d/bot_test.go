@@ -25,9 +25,9 @@ func TestBotBuyDecisions(t *testing.T) {
 	}
 
 	// 3. Hard bot completing group: Squeeze rule
-	// Brown group: tile 1 and tile 2.
-	tile2 := &board.Tiles[2]
-	tile2.OwnerID = p1.ID // bot already owns tile 2
+	// Brown group: tile 1 and tile 3.
+	tile3 := &board.Tiles[3]
+	tile3.OwnerID = p1.ID // bot already owns tile 3
 
 	// Hard reserve is 400. If cash is 440, 440 - 60 = 380 < 400.
 	// But completing group halves required reserve to 200! So 380 >= 200 -> should buy!
@@ -44,17 +44,17 @@ func TestBotBuildDecisions(t *testing.T) {
 	bot.IsBot = true
 	_, _ = game.AddPlayer("Human", "#3b82f6", "car")
 
-	// Grant bot both Brown properties (tiles 1 and 2)
+	// Grant bot both Brown properties (tiles 1 and 3)
 	board.Tiles[1].OwnerID = bot.ID
-	board.Tiles[2].OwnerID = bot.ID
-	bot.Properties = []int{1, 2}
+	board.Tiles[3].OwnerID = bot.ID
+	bot.Properties = []int{1, 3}
 	bot.Money = 1000 // plenty of cash
 	_ = game.Start()
 	game.CurrentTurnPlayerID = bot.ID
 
-	// Should decide to build on tile 1
+	// Should decide to build on tile 1 or 3
 	tileIdx, canBuild := BotAI.DecideBuild(game, bot, "normal")
-	if !canBuild || (tileIdx != 1 && tileIdx != 2) {
+	if !canBuild || (tileIdx != 1 && tileIdx != 3) {
 		t.Fatalf("bot deveria conseguir construir no grupo marrom completo, obteve tile %d, canBuild=%v", tileIdx, canBuild)
 	}
 

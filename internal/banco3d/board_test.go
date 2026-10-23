@@ -54,10 +54,10 @@ func TestBoardStructure(t *testing.T) {
 	if !queen.IsQueen {
 		t.Errorf("casa 39 deve ser IsQueen=true")
 	}
-	if queen.Price != 800 {
-		t.Errorf("casa 39 deve custar 800, recebido %d", queen.Price)
+	if queen.Price != 400 {
+		t.Errorf("casa 39 deve custar 400, recebido %d", queen.Price)
 	}
-	if queen.Rent[0] != 60 {
-		t.Errorf("casa 39 aluguel base deve ser 60, recebido %d", queen.Rent[0])
+	if queen.Rent[0] != 50 {
+		t.Errorf("casa 39 aluguel base deve ser 50, recebido %d", queen.Rent[0])
 	}
 }

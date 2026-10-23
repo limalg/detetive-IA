@@ -62,8 +62,8 @@ func GenerateCityBoard(query string, apiKey string) (*Board, []string, error) {
 func buildBoardFromPreset(cityName string, p cityPreset) *Board {
 	b := NewStandardBoard(cityName, nil)
 
-	// Injetar nomes de propriedades
-	propIndices := []int{1, 2, 4, 6, 7, 9, 11, 12, 14, 16, 17, 19, 21, 22, 23, 24, 26, 27, 29, 31, 32, 36}
+	// Injetar nomes de propriedades (21 normais + 39 rainha/mais prestigiada)
+	propIndices := []int{1, 3, 6, 8, 9, 11, 13, 14, 16, 18, 19, 21, 23, 24, 26, 27, 29, 31, 32, 34, 37}
 	for i, idx := range propIndices {
 		if i < len(p.props) {
 			b.Tiles[idx].Name = p.props[i]
@@ -74,13 +74,20 @@ func buildBoardFromPreset(cityName string, p cityPreset) *Board {
 	}
 
 	// Casa rainha (índice 39) recebe inicialmente o primeiro candidato (será sobrescrito na votação)
-	b.Tiles[39].Name = p.candidates[0]
+	if len(p.candidates) > 0 && p.candidates[0] != "" {
+		b.Tiles[39].Name = p.candidates[0]
+	} else if len(p.props) > 21 {
+		b.Tiles[39].Name = p.props[21]
+	}
 	b.Tiles[39].ImageKind = "landmark"
-	b.Tiles[39].MortgageValue = 400
+	b.Tiles[39].Price = 400
+	b.Tiles[39].Rent = [6]int{50, 200, 600, 1400, 1700, 2000}
+	b.Tiles[39].HouseCost = 200
+	b.Tiles[39].MortgageValue = 200
 	b.Tiles[39].Description = fmt.Sprintf("Propriedade Real mais prestigiada de %s", cityName)
 
-	// Estações
-	stIndices := []int{3, 13, 25, 33}
+	// Estações (4 posições clássicas: 5, 15, 25, 35)
+	stIndices := []int{5, 15, 25, 35}
 	for i, idx := range stIndices {
 		if i < len(p.stations) {
 			b.Tiles[idx].Name = p.stations[i]
@@ -89,11 +96,11 @@ func buildBoardFromPreset(cityName string, p cityPreset) *Board {
 		}
 	}
 
-	// Utilitários
+	// Utilitários (2 posições clássicas: 12 e 28)
 	if len(p.utilities) >= 2 {
-		b.Tiles[8].Name = p.utilities[0]
-		b.Tiles[8].ImageKind = "utility"
-		b.Tiles[8].MortgageValue = 75
+		b.Tiles[12].Name = p.utilities[0]
+		b.Tiles[12].ImageKind = "utility"
+		b.Tiles[12].MortgageValue = 75
 		b.Tiles[28].Name = p.utilities[1]
 		b.Tiles[28].ImageKind = "utility"
 		b.Tiles[28].MortgageValue = 75

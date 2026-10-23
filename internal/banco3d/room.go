@@ -239,8 +239,12 @@ func (r *Room) RecordTurnRollAndMove(playerID, pName string, dice *DiceResult) {
 			Tile:       dice.NewPosition,
 		})
 
-		// Evento destroy se alguma construção foi destruída
+		// Evento destroy se alguma construção ou propriedade foi destruída
 		if dice.CardDrawn.DestroyedWhat != "" {
+			destroyText := fmt.Sprintf("%s teve 1 %s destruído na casa %d", pName, dice.CardDrawn.DestroyedWhat, dice.CardDrawn.DestroyedTile)
+			if dice.CardDrawn.DestroyedWhat == "property" {
+				destroyText = fmt.Sprintf("%s perdeu a propriedade na casa %d devido ao terremoto", pName, dice.CardDrawn.DestroyedTile)
+			}
 			r.RecordEvent(GameEvent{
 				Type:       "destroy",
 				PlayerID:   playerID,
@@ -248,7 +252,7 @@ func (r *Room) RecordTurnRollAndMove(playerID, pName string, dice *DiceResult) {
 				Tile:       dice.CardDrawn.DestroyedTile,
 				TileIndex:  dice.CardDrawn.DestroyedTile,
 				What:       dice.CardDrawn.DestroyedWhat,
-				Text:       fmt.Sprintf("%s teve 1 %s destruído na casa %d", pName, dice.CardDrawn.DestroyedWhat, dice.CardDrawn.DestroyedTile),
+				Text:       destroyText,
 			})
 		}
 	}

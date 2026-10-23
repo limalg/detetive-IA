@@ -109,15 +109,15 @@ func TestSalaryPassingGoAndConfigurableAmount(t *testing.T) {
 	game.AddPlayer("Ana", "#ef4444", "hat")
 	_ = game.Start()
 
-	// Passar pelo GO (de 38 para 2 andando 4)
+	// Passar pelo GO (de 38 para 1 andando 3)
 	p1.Position = 38
 	mBefore := p1.Money
-	res, err := game.RollDice(p1.ID, 2, 2)
+	res, err := game.RollDice(p1.ID, 1, 2)
 	if err != nil {
 		t.Fatalf("erro ao rolar: %v", err)
 	}
-	if res.NewPosition != 2 {
-		t.Fatalf("esperado nova posicao 2, recebido %d", res.NewPosition)
+	if res.NewPosition != 1 {
+		t.Fatalf("esperado nova posicao 1, recebido %d", res.NewPosition)
 	}
 	if p1.Money != mBefore+350 {
 		t.Errorf("esperado salário customizado de 350, saldo: %d (era %d)", p1.Money, mBefore)
@@ -195,10 +195,10 @@ func TestGameBuildAndTrade(t *testing.T) {
 	p2, _ := game.AddPlayer("Ana", "#ef4444", "hat")
 	game.Start()
 
-	// 1. Dar o grupo Marrom (casas 1 e 2) para p1
+	// 1. Dar o grupo Marrom (casas 1 e 3) para p1
 	board.Tiles[1].OwnerID = p1.ID
-	board.Tiles[2].OwnerID = p1.ID
-	p1.Properties = []int{1, 2}
+	board.Tiles[3].OwnerID = p1.ID
+	p1.Properties = []int{1, 3}
 
 	// 2. Construir casa na casa 1 (custo 50)
 	moneyBefore := p1.Money
@@ -212,14 +212,14 @@ func TestGameBuildAndTrade(t *testing.T) {
 		t.Errorf("dinheiro esperado %d, recebido %d", moneyBefore-50, p1.Money)
 	}
 
-	// 3. Negociar casa 2 de p1 para p2 por R$ 100
+	// 3. Negociar casa 3 de p1 para p2 por R$ 100
 	p1Cash := p1.Money
 	p2Cash := p2.Money
-	if err := game.TradeProperties(p1.ID, p2.ID, 2, 100); err != nil {
+	if err := game.TradeProperties(p1.ID, p2.ID, 3, 100); err != nil {
 		t.Fatalf("falha no trade: %v", err)
 	}
-	if board.Tiles[2].OwnerID != p2.ID {
-		t.Errorf("dono da casa 2 deve ser p2, recebido %s", board.Tiles[2].OwnerID)
+	if board.Tiles[3].OwnerID != p2.ID {
+		t.Errorf("dono da casa 3 deve ser p2, recebido %s", board.Tiles[3].OwnerID)
 	}
 	if p1.Money != p1Cash+100 {
 		t.Errorf("p1 dinheiro esperado %d, recebido %d", p1Cash+100, p1.Money)

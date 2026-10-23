@@ -2,6 +2,7 @@ package banco3d
 
 import (
 	"errors"
+	"math/rand"
 	"strings"
 	"sync"
 )
@@ -66,7 +67,7 @@ type CardResult struct {
 	SalaryPaid    int    `json:"salary_paid,omitempty"`
 	ImageKind     string `json:"image_kind,omitempty"`
 	DestroyedTile int    `json:"destroyed_tile,omitempty"`
-	DestroyedWhat string `json:"destroyed_what,omitempty"` // "house" | "hotel"
+	DestroyedWhat string `json:"destroyed_what,omitempty"` // "house" | "hotel" | "property"
 	WentToJail    bool   `json:"went_to_jail"`
 	HasFreeCard   bool   `json:"has_free_card"`
 }
@@ -379,6 +380,23 @@ func (g *Game) ResolveCard(playerID string, card Card) (*CardResult, error) {
 				targetTile.Houses--
 				result.DestroyedWhat = "house"
 			}
+		} else if len(p.Properties) > 0 && rand.Intn(100) < 10 {
+			// (A) Em casos raros (ex.: 10% se sem construções), a propriedade volta ao banco
+			propIdx := p.Properties[rand.Intn(len(p.Properties))]
+			t := &g.Board.Tiles[propIdx]
+			t.OwnerID = ""
+			t.Houses = 0
+			t.IsMortgaged = false
+			t.Mortgaged = false
+			newProps := make([]int, 0, len(p.Properties)-1)
+			for _, idx := range p.Properties {
+				if idx != propIdx {
+					newProps = append(newProps, idx)
+				}
+			}
+			p.Properties = newProps
+			result.DestroyedTile = propIdx
+			result.DestroyedWhat = "property"
 		}
 	case CardActionFlood:
 		houseRate := card.HouseCost

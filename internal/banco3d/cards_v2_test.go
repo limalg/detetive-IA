@@ -58,8 +58,8 @@ func TestEarthquakeDestroysHouseAndEmitsDestroyEvent(t *testing.T) {
 
 	// 1. Dá grupo Marrom para p1 e constrói 1 casa na casa 1
 	board.Tiles[1].OwnerID = p1.ID
-	board.Tiles[2].OwnerID = p1.ID
-	p1.Properties = []int{1, 2}
+	board.Tiles[3].OwnerID = p1.ID
+	p1.Properties = []int{1, 3}
 	_ = game.BuildHouse(p1.ID, 1)
 
 	if board.Tiles[1].Houses != 1 {
@@ -112,8 +112,8 @@ func TestFreeUpgradeBuildsHouse(t *testing.T) {
 	_ = game.Start()
 
 	board.Tiles[1].OwnerID = p1.ID
-	board.Tiles[2].OwnerID = p1.ID
-	p1.Properties = []int{1, 2}
+	board.Tiles[3].OwnerID = p1.ID
+	p1.Properties = []int{1, 3}
 
 	cardUpgrade := banco3d.Card{
 		ID:        "card-up",
@@ -129,8 +129,8 @@ func TestFreeUpgradeBuildsHouse(t *testing.T) {
 		t.Fatalf("erro ao resolver reforma gratuita: %v", err)
 	}
 
-	// Uma das propriedades (1 ou 2) deve ter ganhado 1 casa
-	totalHouses := board.Tiles[1].Houses + board.Tiles[2].Houses
+	// Uma das propriedades (1 ou 3) deve ter ganhado 1 casa
+	totalHouses := board.Tiles[1].Houses + board.Tiles[3].Houses
 	if totalHouses != 1 {
 		t.Errorf("esperava 1 casa construída gratuitamente, obtido %d", totalHouses)
 	}

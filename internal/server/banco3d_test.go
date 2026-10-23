@@ -633,12 +633,12 @@ func TestBanco3DPlacesAndEventsAPI(t *testing.T) {
 		t.Fatalf("falha ao iniciar sala: %d", rrStart.Code)
 	}
 
-	// Jogador 1 rola os dados
+	// Jogador 1 rola os dados (1+2=3, caindo na casa 3 que é propriedade comprável)
 	rollBody, _ := json.Marshal(map[string]interface{}{
 		"room_id":   "sala-events-test",
 		"player_id": p1ID,
 		"d1":        1,
-		"d2":        1,
+		"d2":        2,
 	})
 	rrRoll := httptest.NewRecorder()
 	router.ServeHTTP(rrRoll, httptest.NewRequest("POST", "/api/banco3d/room/roll", bytes.NewReader(rollBody)))
@@ -664,7 +664,7 @@ func TestBanco3DPlacesAndEventsAPI(t *testing.T) {
 	if stateAfterRoll.Events[1].Type != "move" {
 		t.Errorf("segundo evento deveria ser move, obteve %s", stateAfterRoll.Events[1].Type)
 	}
-	// Tile 2 (1+1=2) é comprável, portanto pending_decision deve ser 'buy'
+	// Tile 3 (1+2=3) é propriedade comprável, portanto pending_decision deve ser 'buy'
 	if stateAfterRoll.PendingDecision != "buy" {
 		t.Errorf("esperava pending_decision 'buy', obteve %s", stateAfterRoll.PendingDecision)
 	}

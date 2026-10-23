@@ -113,12 +113,12 @@ func (v *VotingSession) CloseAndElect(board *Board) (string, error) {
 		queen.Name = winner
 		queen.Group = ColorDarkBlue
 		queen.IsQueen = true
-		queen.Price = 800
-		queen.Rent = [6]int{60, 300, 900, 1750, 2000, 2500}
+		queen.Price = 400
+		queen.Rent = [6]int{50, 200, 600, 1400, 1700, 2000}
 		queen.HouseCost = 200
 		queen.ImageKind = "prop_strip_queen"
 		queen.DarkMode = true
-		queen.MortgageValue = 400
+		queen.MortgageValue = 200
 		queen.Description = fmt.Sprintf("Propriedade Real Suprema: %s", winner)
 	}
 
