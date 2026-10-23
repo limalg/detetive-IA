@@ -376,22 +376,33 @@ func (h *Handler) HandleBanco3DRoomRoll(w http.ResponseWriter, r *http.Request) 
 		tile.OwnerID == "" && p != nil && p.Money >= tile.Price && !p.InJail
 
 	if canBuy {
-		deadline := time.Now().Add(8 * time.Second)
+		deadline := time.Now().Add(12 * time.Second)
 		room.DecisionDeadline = &deadline
 		room.PendingDecision = "buy"
 		room.DecisionPlayerID = req.PlayerID
 	} else {
-		// Se não há decisão de compra, passa a vez automaticamente
+		// Se não há decisão de compra:
 		room.PendingDecision = ""
 		room.DecisionDeadline = nil
 		room.DecisionPlayerID = ""
-		_ = room.Game.AutoPassTurn()
-		room.RecordEvent(banco3d.GameEvent{
-			Type:       "pass",
-			PlayerID:   req.PlayerID,
-			PlayerName: pName,
-			Text:       fmt.Sprintf("%s passou a vez", pName),
-		})
+		if dice.IsDouble {
+			// Regra clássica: tirou dupla joga de novo!
+			room.Game.ResetForDoubleRoll()
+			room.RecordEvent(banco3d.GameEvent{
+				Type:       "double_roll",
+				PlayerID:   req.PlayerID,
+				PlayerName: pName,
+				Text:       fmt.Sprintf("%s tirou duplas (%d+%d) e joga novamente!", pName, dice.Die1, dice.Die2),
+			})
+		} else {
+			_ = room.Game.AutoPassTurn()
+			room.RecordEvent(banco3d.GameEvent{
+				Type:       "pass",
+				PlayerID:   req.PlayerID,
+				PlayerName: pName,
+				Text:       fmt.Sprintf("%s passou a vez", pName),
+			})
+		}
 	}
 
 	go func() { _ = hub.SaveToDisk() }()
@@ -447,17 +458,31 @@ func (h *Handler) HandleBanco3DRoomBuy(w http.ResponseWriter, r *http.Request) {
 		Text:       fmt.Sprintf("%s comprou %s por $ %d", pName, tileName, tilePrice),
 	})
 
-	// Compra realizada -> encerra decisão e passa a vez automaticamente
+	// Compra realizada -> encerra decisão de compra
 	room.PendingDecision = ""
 	room.DecisionDeadline = nil
 	room.DecisionPlayerID = ""
-	_ = room.Game.AutoPassTurn()
-	room.RecordEvent(banco3d.GameEvent{
-		Type:       "pass",
-		PlayerID:   req.PlayerID,
-		PlayerName: pName,
-		Text:       fmt.Sprintf("%s passou a vez", pName),
-	})
+
+	isDouble := room.Game.LastDiceResult != nil && room.Game.LastDiceResult.IsDouble
+	if isDouble {
+		// Regra clássica: tirou dupla joga de novo!
+		room.Game.ResetForDoubleRoll()
+		room.RecordEvent(banco3d.GameEvent{
+			Type:       "double_roll",
+			PlayerID:   req.PlayerID,
+			PlayerName: pName,
+			Text:       fmt.Sprintf("%s tirou duplas e joga novamente!", pName),
+		})
+	} else {
+		// Sem dupla: encerra e passa a vez automaticamente ao próximo jogador
+		_ = room.Game.AutoPassTurn()
+		room.RecordEvent(banco3d.GameEvent{
+			Type:       "pass",
+			PlayerID:   req.PlayerID,
+			PlayerName: pName,
+			Text:       fmt.Sprintf("%s passou a vez", pName),
+		})
+	}
 
 	go func() { _ = hub.SaveToDisk() }()
 	h.json(w, http.StatusOK, h.formatRoomState(room, nil))

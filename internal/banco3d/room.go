@@ -82,6 +82,8 @@ type GameEvent struct {
 	Deck       string    `json:"deck,omitempty"` // "chance" | "chest"
 	Title      string    `json:"title,omitempty"`
 	Effect     string    `json:"effect,omitempty"`
+	ImageKind  string    `json:"image_kind,omitempty"`
+	What       string    `json:"what,omitempty"` // "house" | "hotel"
 	Dice       *[2]int   `json:"dice,omitempty"`
 	Die1       int       `json:"die1,omitempty"`
 	Die2       int       `json:"die2,omitempty"`
@@ -218,6 +220,11 @@ func (r *Room) RecordTurnRollAndMove(playerID, pName string, dice *DiceResult) {
 			cardText = fmt.Sprintf("%s tirou carta: %s", pName, card.Title)
 		}
 
+		imgKind := card.ImageKind
+		if imgKind == "" && dice.CardDrawn.ImageKind != "" {
+			imgKind = dice.CardDrawn.ImageKind
+		}
+
 		r.RecordEvent(GameEvent{
 			Type:       "card",
 			PlayerID:   playerID,
@@ -228,8 +235,22 @@ func (r *Room) RecordTurnRollAndMove(playerID, pName string, dice *DiceResult) {
 			Amount:     cardAmount,
 			Value:      cardAmount,
 			Effect:     effect,
+			ImageKind:  imgKind,
 			Tile:       dice.NewPosition,
 		})
+
+		// Evento destroy se alguma construção foi destruída
+		if dice.CardDrawn.DestroyedWhat != "" {
+			r.RecordEvent(GameEvent{
+				Type:       "destroy",
+				PlayerID:   playerID,
+				PlayerName: pName,
+				Tile:       dice.CardDrawn.DestroyedTile,
+				TileIndex:  dice.CardDrawn.DestroyedTile,
+				What:       dice.CardDrawn.DestroyedWhat,
+				Text:       fmt.Sprintf("%s teve 1 %s destruído na casa %d", pName, dice.CardDrawn.DestroyedWhat, dice.CardDrawn.DestroyedTile),
+			})
+		}
 	}
 
 	// 4. salary (se houve salário pelo dado ou pela carta)
@@ -537,8 +558,8 @@ func (r *Room) CheckTurnTimeout() bool {
 		return true
 	}
 
-	// 3. Inactive turn timeout (30s)
-	if time.Since(r.Game.TurnStartTime) >= r.TurnTimeout {
+	// 3. Inactive turn timeout (30s) - apenas quando não há decisão de compra pendente
+	if r.PendingDecision == "" && time.Since(r.Game.TurnStartTime) >= r.TurnTimeout {
 		r.PendingDecision = ""
 		r.DecisionDeadline = nil
 		r.DecisionPlayerID = ""

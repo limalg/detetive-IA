@@ -22,6 +22,7 @@ type Player struct {
 	GetOutOfJailCards int    `json:"get_out_of_jail_cards"`
 	IsBankrupt        bool   `json:"is_bankrupt"`
 	IsBot             bool   `json:"is_bot"`
+	SkipNextTurn      bool   `json:"skip_next_turn,omitempty"`
 	Properties        []int  `json:"properties"` // Índices das casas possuídas
 }
 
@@ -55,7 +56,16 @@ type Game struct {
 	Deck                *DeckManager `json:"deck,omitempty"`
 	LastCard            *Card        `json:"last_card,omitempty"`
 	LastCardResult      *CardResult  `json:"last_card_result,omitempty"`
+	LastDiceResult      *DiceResult  `json:"last_dice_result,omitempty"`
 	SalaryAmount        int          `json:"salary_amount,omitempty"`
+}
+
+// ResetForDoubleRoll resets the turn state allowing the player to roll again (classical doubles rule).
+func (g *Game) ResetForDoubleRoll() {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.DiceRolledThisTurn = false
+	g.TurnStartTime = time.Now()
 }
 
 // GetSalaryAmount returns the configured salary for passing/stopping at GO (default 200).
@@ -223,6 +233,7 @@ func (g *Game) RollDice(playerID string, d1, d2 int) (*DiceResult, error) {
 		p.IsJailed = true
 	}
 
+	g.LastDiceResult = res
 	return res, nil
 }
 
@@ -475,6 +486,10 @@ func (g *Game) advanceTurn() {
 		g.TurnIndex = (g.TurnIndex + 1) % len(g.Players)
 		candidate := g.Players[g.TurnIndex]
 		if !candidate.IsBankrupt {
+			if candidate.SkipNextTurn {
+				candidate.SkipNextTurn = false
+				continue
+			}
 			g.CurrentTurnPlayerID = candidate.ID
 			g.DiceRolledThisTurn = false
 			g.TurnStartTime = time.Now()
