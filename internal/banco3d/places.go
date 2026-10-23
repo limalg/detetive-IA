@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 )
 
 // PlaceSuggestion describes an autocomplete search hit.
@@ -343,7 +344,7 @@ func classifyElements(cityName string, tagsList []map[string]string) []realPlace
 		case t["tourism"] != "" || t["historic"] != "":
 			base, top = 20, true
 		case t["leisure"] == "park":
-			base, top = 12, true
+			base = 12 // notable only with wikipedia/wikidata (below)
 		case t["amenity"] == "place_of_worship":
 			base = 8
 		case t["place"] != "":
@@ -769,7 +770,7 @@ func (s *PlacesService) fetchAllSources(ctx context.Context, cityName string, la
 		return merged[i].Name < merged[j].Name
 	})
 
-	return dropForeign(cityName, merged)
+	return dedupeVariants(dropForeign(cityName, goodNames(merged)))
 }
 
 // dropForeign removes names that belong to another catalog city's preset (e.g. Cristo Redentor in Magé):
@@ -817,7 +818,7 @@ type nominatimHit struct {
 // museums, theatres, churches and stations of the city. The first fastQueries run in the foreground
 // request (1 req/s each), the rest only in the background pass.
 var nominatimQueries = []nominatimQuery{
-	{"museum", "property", 25, true}, {"park", "property", 14, true}, {"stadium", "property", 15, true},
+	{"museum", "property", 25, true}, {"park", "property", 14, false}, {"stadium", "property", 15, false},
 	{"bus station", "station", 6, false}, {"airport", "station", 7, false},
 	{"theatre", "property", 12, true}, {"railway station", "station", 5, false}, {"church", "property", 4, false},
 }
@@ -1063,12 +1064,9 @@ func buildLandmarks(cityName string, real []realPlace) *CityLandmarksResult {
 		add(&utils, n, 2)
 	}
 
-	candidates := tops
-	for _, n := range props { // fewer than 4 landmark-grade places: top up with the best-scored ones
-		if len(candidates) >= 4 {
-			break
-		}
-		if !slices.Contains(candidates, n) {
+	candidates := tops // only notable items (article, tourism, heritage); never padded with ordinary places
+	for _, n := range preset.candidates {
+		if len(candidates) < 4 && n != "" && !slices.Contains(candidates, n) {
 			candidates = append(candidates, n)
 		}
 	}
@@ -1162,7 +1160,7 @@ func (s *PlacesService) backoff(resp *http.Response) {
 }
 
 // diskSchemaVersion invalidates caches written by older builds (v<2 could hold street names as cities).
-const diskSchemaVersion = 3
+const diskSchemaVersion = 4
 
 // diskCache is the on-disk snapshot of resolved places and landmark results.
 type diskCache struct {
@@ -1266,4 +1264,58 @@ func (s *PlacesService) unavailable(msg string) *UnavailableError {
 		wait = d
 	}
 	return &UnavailableError{Msg: msg, RetryAfter: wait.Round(time.Second)}
+}
+
+var genericWords = []string{"parte", "área", "sem nome", "bancos", "quadra", "campo de futebol", "campinho", "parquinho", "principal", "segunda", "primeira", "ponto final", "chácara", "sítio", "fazenda", "terreno", "lote"}
+var nameParticles = map[string]bool{"de": true, "da": true, "do": true, "das": true, "dos": true, "e": true, "a": true, "o": true, "em": true, "com": true}
+
+// goodName keeps only well-formed proper names: capitalised words, no generic descriptions, no club acronyms.
+func goodName(n string) bool {
+	l := strings.ToLower(n)
+	for _, w := range genericWords {
+		if strings.Contains(l, w) {
+			return false
+		}
+	}
+	for _, w := range strings.Fields(n) {
+		r := []rune(w)
+		if len(r) <= 3 && nameParticles[strings.ToLower(w)] {
+			continue
+		}
+		if !unicode.IsUpper(r[0]) && unicode.IsLetter(r[0]) && !strings.HasPrefix(strings.ToLower(w), "d'") {
+			return false // "parte verde", "Joaquim leitão"
+		}
+		if len(r) >= 4 && w == strings.ToUpper(w) && strings.ToLower(w) != w {
+			return false // "VILA INCA FC"
+		}
+		if lw := strings.ToLower(w); lw == "fc" || lw == "ec" || lw == "sc" {
+			return false
+		}
+	}
+	return true
+}
+
+func goodNames(ps []realPlace) []realPlace {
+	out := ps[:0:0]
+	for _, p := range ps {
+		if goodName(p.Name) {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// dedupeVariants drops "Praça  Da Capela" style repeats of a name already kept (case/space/accent-insensitive),
+// keeping the highest-scored first occurrence (ps is sorted by score).
+func dedupeVariants(ps []realPlace) []realPlace {
+	seen := map[string]bool{}
+	out := ps[:0:0]
+	for _, p := range ps {
+		k := strings.ToLower(strings.Join(strings.Fields(p.Name), " "))
+		if !seen[k] {
+			seen[k] = true
+			out = append(out, p)
+		}
+	}
+	return out
 }

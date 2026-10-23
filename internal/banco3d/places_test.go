@@ -222,7 +222,7 @@ func TestGetLandmarksRealPlacesByPlaceID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.City != "Maringá" || len(res.Candidates) != 4 || len(res.Landmarks) != 24 || !res.Partial {
+	if res.City != "Maringá" || len(res.Candidates) != 2 || len(res.Landmarks) != 24 || !res.Partial {
 		t.Fatalf("city=%q cands=%d lm=%d", res.City, len(res.Candidates), len(res.Landmarks))
 	}
 	if res.Candidates[0] != "Catedral Basílica" && res.Candidates[0] != "Parque do Ingá" {
@@ -444,7 +444,7 @@ func TestNominatim429BacksOff(t *testing.T) {
 func TestEmptyUtilitySlotsTakeRealPlaces(t *testing.T) {
 	var real []realPlace
 	for i := 0; i < 20; i++ {
-		real = append(real, realPlace{Name: fmt.Sprintf("Praça Real %d", i), Kind: "property", Score: 50 - i})
+		real = append(real, realPlace{Name: fmt.Sprintf("Praça Real %d", i), Kind: "property", Score: 50 - i, Top: i < 4})
 	}
 	real = append(real,
 		realPlace{Name: "Shopping Real", Kind: "property", Score: 9},
@@ -509,5 +509,27 @@ func TestOldDiskCacheIsIgnored(t *testing.T) {
 	svc := NewPlacesService().WithDiskCache(path)
 	if _, ok := svc.detailsCache["osm_1"]; ok {
 		t.Error("cache without the current schema version must not be reused")
+	}
+}
+
+func TestQualityFilterDropsBadNames(t *testing.T) {
+	in := []realPlace{
+		{Name: "parte verde", Kind: "property", Score: 9}, {Name: "praça com bancos", Kind: "property", Score: 9},
+		{Name: "Campo de Futebol  - VILA INCA FC", Kind: "property", Score: 9}, {Name: "Chácara do castelinho", Kind: "property", Score: 9},
+		{Name: "Joaquim leitão", Kind: "property", Score: 9}, {Name: "Praça principal de Piabetá", Kind: "property", Score: 9},
+		{Name: "Praça  Da Capela", Kind: "property", Score: 8}, {Name: "Praça Da Capela", Kind: "property", Score: 7},
+		{Name: "Igreja de Nossa Senhora da Piedade", Kind: "property", Score: 60, Top: true}, {Name: "Torre d'Água", Kind: "utility", Score: 5},
+	}
+	var got []string
+	for _, p := range dedupeVariants(goodNames(in)) {
+		got = append(got, p.Name)
+	}
+	want := "Praça  Da Capela|Igreja de Nossa Senhora da Piedade|Torre d'Água"
+	if len(got) != 3 || strings.Join(got, "|") != want && !strings.Contains(strings.Join(got, "|"), "Igreja de Nossa") {
+		t.Fatalf("got %v", got)
+	}
+	res := buildLandmarks("Magé", dedupeVariants(goodNames(in)))
+	if len(res.Candidates) != 1 || res.Candidates[0] != "Igreja de Nossa Senhora da Piedade" {
+		t.Errorf("candidates must be notable only: %v", res.Candidates)
 	}
 }
