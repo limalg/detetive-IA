@@ -37,7 +37,9 @@ type DiceResult struct {
 	SalaryPaid  int         `json:"salary_paid,omitempty"`
 	RentPaid    int         `json:"rent_paid,omitempty"`
 	RentTo      string      `json:"rent_to,omitempty"`
-	CardDrawn   *CardResult `json:"card_drawn,omitempty"`
+	CardDrawn        *CardResult `json:"card_drawn,omitempty"`
+	ChampionshipTile int         `json:"championship_tile,omitempty"`
+	ChampionshipText string      `json:"championship_text,omitempty"`
 }
 
 // Game represents the state and rules engine for a 40-tile match.
@@ -60,6 +62,7 @@ type Game struct {
 	SalaryAmount        int          `json:"salary_amount,omitempty"`
 	ConsecutiveDoubles  int          `json:"consecutive_doubles,omitempty"`
 	MatchEndsAt         *time.Time   `json:"match_ends_at,omitempty"`
+	FastMode            bool         `json:"fast_mode,omitempty"`
 }
 
 // ResetForDoubleRoll resets the turn state allowing the player to roll again (classical doubles rule).
@@ -262,6 +265,15 @@ func (g *Game) RollDice(playerID string, d1, d2 int) (*DiceResult, error) {
 		p.Position = 10
 		p.InJail = true
 		p.IsJailed = true
+	case TileFreeParking:
+		champTile := g.ActivateChampionship(p.ID)
+		if champTile != nil {
+			res.ChampionshipTile = champTile.Index
+			res.ChampionshipText = fmt.Sprintf("%s sediou o Campeonato Mundial em %s! Aluguel duplicado!", p.Name, champTile.Name)
+		} else {
+			res.ChampionshipTile = 20
+			res.ChampionshipText = fmt.Sprintf("%s visitou o Campeonato Mundial e recebeu R$ 50 de premiação esportiva!", p.Name)
+		}
 	}
 
 	g.LastDiceResult = res
@@ -299,6 +311,13 @@ func (g *Game) BuyProperty(playerID string) error {
 	p.Money -= tile.Price
 	tile.OwnerID = p.ID
 	p.Properties = append(p.Properties, tile.Index)
+
+	if g.FastMode {
+		if winner, _ := g.CheckLightningVictory(); winner != nil {
+			g.IsOver = true
+			g.WinnerID = winner.ID
+		}
+	}
 	return nil
 }
 
@@ -442,6 +461,13 @@ func (g *Game) TradeExchange(req TradeExchangeRequest) error {
 		sender.Properties = append(sender.Properties, idx)
 	}
 
+	if g.FastMode {
+		if winner, _ := g.CheckLightningVictory(); winner != nil {
+			g.IsOver = true
+			g.WinnerID = winner.ID
+		}
+	}
+
 	return nil
 }
 
@@ -512,6 +538,26 @@ func (g *Game) advanceTurn() {
 		return
 	}
 
+	// Reduz TTL de festivais ativos nas propriedades
+	if g.Board != nil {
+		for i := range g.Board.Tiles {
+			if g.Board.Tiles[i].FestivalRounds > 0 {
+				g.Board.Tiles[i].FestivalRounds--
+				if g.Board.Tiles[i].FestivalRounds <= 0 {
+					g.Board.Tiles[i].FestivalMultiplier = 1
+				}
+			}
+		}
+	}
+
+	if g.FastMode {
+		if winner, _ := g.CheckLightningVictory(); winner != nil {
+			g.IsOver = true
+			g.WinnerID = winner.ID
+			return
+		}
+	}
+
 	// Próximo jogador ativo
 	for i := 0; i < len(g.Players); i++ {
 		g.TurnIndex = (g.TurnIndex + 1) % len(g.Players)
@@ -531,40 +577,159 @@ func (g *Game) advanceTurn() {
 }
 
 func (g *Game) calculateRent(tile *Tile, diceTotal int) int {
+	rent := 0
 	if tile.Type == TileProperty {
 		if tile.Houses > 0 && tile.Houses <= 5 {
-			return tile.Rent[tile.Houses]
+			rent = tile.Rent[tile.Houses]
+		} else if g.hasFullGroup(tile.OwnerID, tile.Group) {
+			// Sem casas: verificar se o dono tem o grupo completo (dobro do aluguel)
+			rent = tile.Rent[0] * 2
+		} else {
+			rent = tile.Rent[0]
 		}
-		// Sem casas: verificar se o dono tem o grupo completo (dobro do aluguel)
-		if g.hasFullGroup(tile.OwnerID, tile.Group) {
-			return tile.Rent[0] * 2
-		}
-		return tile.Rent[0]
-	}
-
-	if tile.Type == TileStation {
+	} else if tile.Type == TileStation {
 		count := g.countOwnedType(tile.OwnerID, TileStation)
 		switch count {
 		case 1:
-			return 25
+			rent = 25
 		case 2:
-			return 50
+			rent = 50
 		case 3:
-			return 100
+			rent = 100
 		default:
-			return 200
+			rent = 200
 		}
-	}
-
-	if tile.Type == TileUtility {
+	} else if tile.Type == TileUtility {
 		count := g.countOwnedType(tile.OwnerID, TileUtility)
 		if count >= 2 {
-			return 10 * diceTotal
+			rent = 10 * diceTotal
+		} else {
+			rent = 4 * diceTotal
 		}
-		return 4 * diceTotal
 	}
 
-	return 0
+	// Regras Business Tour: multiplicadores de Festival e Campeonato Mundial
+	if tile.FestivalMultiplier > 1 {
+		rent *= tile.FestivalMultiplier
+	}
+	if tile.ChampionshipMultiplier > 1 {
+		rent *= tile.ChampionshipMultiplier
+	}
+
+	return rent
+}
+
+// ActivateChampionship triggers Business Tour World Championships on tile 20.
+// If player owns properties, doubles rent on their highest value property.
+// If player owns no properties, awards sports incentive bonus (R$ 50).
+func (g *Game) ActivateChampionship(playerID string) *Tile {
+	p := g.getPlayer(playerID)
+	if p == nil || p.IsBankrupt {
+		return nil
+	}
+
+	// Remove campeonato anterior do jogador se houver
+	if g.Board != nil {
+		for i := range g.Board.Tiles {
+			if g.Board.Tiles[i].OwnerID == playerID && g.Board.Tiles[i].ChampionshipMultiplier > 1 {
+				g.Board.Tiles[i].ChampionshipMultiplier = 1
+			}
+		}
+	}
+
+	var bestTile *Tile
+	bestValue := -1
+	for _, idx := range p.Properties {
+		if idx >= 0 && g.Board != nil && idx < len(g.Board.Tiles) {
+			t := &g.Board.Tiles[idx]
+			if t.Type == TileProperty {
+				val := t.Price + t.Houses*t.HouseCost
+				if val > bestValue {
+					bestValue = val
+					bestTile = t
+				}
+			}
+		}
+	}
+
+	if bestTile != nil {
+		bestTile.ChampionshipMultiplier = 2
+		return bestTile
+	}
+
+	// Sem propriedades: premiação esportiva
+	p.Money += 50
+	return nil
+}
+
+// CheckLightningVictory evaluates Business Tour fast mode win conditions:
+// 1) 3 complete color groups (MonopolyCount >= 3)
+// 2) Complete side of the board (all properties on at least one side 1-9, 11-19, 21-29, 31-39 owned by the player)
+// 3) All 4 stations/resorts (tiles 5, 15, 25, 35 owned by the player)
+func (g *Game) CheckLightningVictory() (*Player, string) {
+	if !g.FastMode || g.Board == nil {
+		return nil, ""
+	}
+
+	for _, p := range g.Players {
+		if p.IsBankrupt {
+			continue
+		}
+
+		// 1) 3 grupos completos
+		groups := []ColorGroup{
+			ColorBrown, ColorLightBlue, ColorPink, ColorOrange,
+			ColorRed, ColorYellow, ColorGreen, ColorDarkBlue,
+		}
+		monopolies := 0
+		for _, grp := range groups {
+			if g.hasFullGroup(p.ID, grp) {
+				monopolies++
+			}
+		}
+		if monopolies >= 3 {
+			return p, "monopólio triplo (3 grupos completos)"
+		}
+
+		// 2) Lado completo do tabuleiro (todos os imóveis de um dos 4 lados)
+		sides := [][]int{
+			{1, 3, 6, 8, 9},          // Lado Sul (1-9)
+			{11, 13, 14, 16, 18, 19}, // Lado Oeste (11-19)
+			{21, 23, 24, 26, 27, 29}, // Lado Norte (21-29)
+			{31, 32, 34, 37, 39},     // Lado Leste (31-39)
+		}
+		for _, side := range sides {
+			fullSide := true
+			for _, idx := range side {
+				if idx < len(g.Board.Tiles) {
+					if g.Board.Tiles[idx].OwnerID != p.ID {
+						fullSide = false
+						break
+					}
+				}
+			}
+			if fullSide {
+				return p, "domínio de linha (lado completo do tabuleiro)"
+			}
+		}
+
+		// 3) Todas as 4 estações (resorts)
+		stations := []int{5, 15, 25, 35}
+		allStations := true
+		for _, sIdx := range stations {
+			if sIdx < len(g.Board.Tiles) {
+				if g.Board.Tiles[sIdx].OwnerID != p.ID {
+					allStations = false
+					break
+				}
+			}
+		}
+		if allStations {
+			return p, "domínio turístico (4 resorts/estações)"
+		}
+	}
+
+	return nil, ""
 }
 
 func (g *Game) hasFullGroup(ownerID string, group ColorGroup) bool {

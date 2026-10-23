@@ -55,6 +55,9 @@ type Tile struct {
 	Description   string     `json:"description,omitempty"`
 	ImageKind     string     `json:"image_kind,omitempty"` // street, avenue, square, park, landmark, station, utility
 	DarkMode      bool       `json:"dark_mode,omitempty"`
+	FestivalMultiplier     int        `json:"festival_multiplier,omitempty"`
+	FestivalRounds         int        `json:"festival_rounds,omitempty"`
+	ChampionshipMultiplier int        `json:"championship_multiplier,omitempty"`
 }
 
 // Board represents the 40-tile game board for a specific city.

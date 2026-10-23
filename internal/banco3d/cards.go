@@ -68,6 +68,7 @@ type CardResult struct {
 	ImageKind     string `json:"image_kind,omitempty"`
 	DestroyedTile int    `json:"destroyed_tile,omitempty"`
 	DestroyedWhat string `json:"destroyed_what,omitempty"` // "house" | "hotel" | "property"
+	FestivalTile  int    `json:"festival_tile,omitempty"`
 	WentToJail    bool   `json:"went_to_jail"`
 	HasFreeCard   bool   `json:"has_free_card"`
 }
@@ -529,6 +530,27 @@ func (g *Game) ResolveCard(playerID string, card Card) (*CardResult, error) {
 		}
 		p.Money += collected
 		result.MoneyDelta = collected
+
+		// Business Tour: ativa bandeira de Festival em propriedade do jogador (dobra aluguel por 1 rodada)
+		var festTile *Tile
+		for _, idx := range p.Properties {
+			if idx >= 0 && idx < len(g.Board.Tiles) {
+				t := &g.Board.Tiles[idx]
+				if t.Type == TileProperty {
+					festTile = t
+					break
+				}
+			}
+		}
+		if festTile != nil {
+			festTile.FestivalMultiplier = 2
+			rounds := len(g.Players)
+			if rounds <= 0 {
+				rounds = 4
+			}
+			festTile.FestivalRounds = rounds
+			result.FestivalTile = festTile.Index
+		}
 	case CardActionSanitaryInspection:
 		fine := amount
 		if fine == 0 {

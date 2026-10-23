@@ -39,6 +39,7 @@ type RoomConfig struct {
 	TurnSeconds     int        `json:"turn_seconds"`
 	SalaryAmount    int        `json:"salary_amount"` // Salário ao passar ou parar no início (padrão 200)
 	MatchMinutes    int        `json:"match_minutes"` // 0=sem limite, 15/30/60/90
+	FastMode        bool       `json:"fast_mode"`     // Business Tour vitória relâmpago: 3 grupos, lado completo ou 4 estações
 	Rules           RuleConfig `json:"rules"`
 }
 
@@ -260,6 +261,30 @@ func (r *Room) RecordTurnRollAndMove(playerID, pName string, dice *DiceResult) {
 				Text:       destroyText,
 			})
 		}
+
+		// Evento festival se ativou festival do bairro
+		if dice.CardDrawn.FestivalTile > 0 {
+			r.RecordEvent(GameEvent{
+				Type:       "festival",
+				PlayerID:   playerID,
+				PlayerName: pName,
+				Tile:       dice.CardDrawn.FestivalTile,
+				TileIndex:  dice.CardDrawn.FestivalTile,
+				Text:       fmt.Sprintf("Festival do Bairro ativado na casa %d! Aluguel duplicado por 1 rodada!", dice.CardDrawn.FestivalTile),
+			})
+		}
+	}
+
+	// Campeonato Mundial (Business Tour casa 20)
+	if dice.ChampionshipText != "" {
+		r.RecordEvent(GameEvent{
+			Type:       "championship",
+			PlayerID:   playerID,
+			PlayerName: pName,
+			Tile:       dice.ChampionshipTile,
+			TileIndex:  dice.ChampionshipTile,
+			Text:       dice.ChampionshipText,
+		})
 	}
 
 	// 4. salary (se houve salário pelo dado ou pela carta)
@@ -323,12 +348,14 @@ func NewRoom(id, city string, opts ...*RoomConfig) (*Room, error) {
 		if userCfg.MatchMinutes >= 0 {
 			cfg.MatchMinutes = userCfg.MatchMinutes
 		}
+		cfg.FastMode = userCfg.FastMode
 		cfg.Rules = userCfg.Rules
 	}
 	if cfg.SalaryAmount <= 0 {
 		cfg.SalaryAmount = 200
 	}
 	game.SalaryAmount = cfg.SalaryAmount
+	game.FastMode = cfg.FastMode
 
 	return &Room{
 		ID:           id,
@@ -451,6 +478,9 @@ func (r *Room) StartGame() error {
 		}
 	}
 
+	if r.Game != nil {
+		r.Game.FastMode = r.Config.FastMode
+	}
 	err := r.Game.Start()
 	if err != nil {
 		return err
@@ -476,6 +506,14 @@ func (r *Room) BuyProperty(playerID string) error {
 	}
 	if r.Game.Board != nil {
 		r.Board = r.Game.Board
+	}
+	if r.Game.IsOver && r.Game.WinnerID != "" {
+		r.RecordEvent(GameEvent{
+			Type:     "game_over",
+			PlayerID: r.Game.WinnerID,
+			WinnerID: r.Game.WinnerID,
+			Text:     "Vitória Relâmpago conquistada!",
+		})
 	}
 	r.LastActivity = time.Now()
 	return nil
