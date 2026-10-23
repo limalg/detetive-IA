@@ -37,7 +37,7 @@
 
   // ---------- backend shape -> view shape ----------
   const TT = { GO: 'START', CHANCE: 'LUCK', CHEST: 'LUCK', FREE_PARKING: 'PARKING' };
-  const luckName = (t) => (t.deck === 'CHEST' ? 'Revés' : t.deck === 'CHANCE' ? 'Sorte' : 'Sorte ou Revés');
+  const luckName = () => 'Sorte ou Revés'; // CHANCE and CHEST share one tile look
   // festival_until: ISO date or a turn number; unknown/absent = no festival
   const festOn = (f, turn) => !!f && (typeof f === 'string' ? Date.parse(f) > Date.now() : typeof f === 'number' ? f > (turn || 0) : !!f);
   function norm(r) {
@@ -57,26 +57,24 @@
 
   // ---------- board ----------
   const STATION_ICONS = ['bolt', 'drop', 'wifi', 'train'];
-  const CORNER = { START: 'Saída', JAIL: 'Ilha Perdida', PARKING: 'Campeonato', GO_TO_JAIL: 'Vá para a Ilha' };
-  const CSUB = { START: 'Receba o salário', JAIL: 'Só visitando', PARKING: 'Visitante', GO_TO_JAIL: 'Direto para a prisão' };
+  const CORNER = { START: 'Início', TRAVEL: 'Viagem', JAIL: 'Ilha Perdida', SPECIAL_TAX: 'Imposto Especial', PARKING: 'Campeonato', GO_TO_JAIL: 'Vá para a Ilha' };
+  const CSUB = { START: 'Receba o salário', TRAVEL: 'World Tour', JAIL: 'Prisão', SPECIAL_TAX: 'Sorte ou imposto', PARKING: 'Visitante', GO_TO_JAIL: 'Direto para a prisão' };
   // short price for the tiles: R$ 60, R$ 400, R$ 1,2K
   const kshort = (n) => (n >= 1000 ? 'R$ ' + (n / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + 'K' : 'R$ ' + n);
-  const side = (i, q) => (i < q ? 'L' : i < 2 * q ? 'T' : i < 3 * q ? 'R' : 'B');
+  const side = (i, q) => (i < q ? 'B' : i < 2 * q ? 'L' : i < 3 * q ? 'T' : 'R');
   function cell(i, q) {
     const S = q + 1;
-    if (i === 0) return [S, 1];
-    if (i < q) return [S - i, 1];
-    if (i === q) return [1, 1];
-    if (i < 2 * q) return [1, i - q + 1];
-    if (i === 2 * q) return [1, S];
-    if (i < 3 * q) return [i - 2 * q + 1, S];
-    if (i === 3 * q) return [S, S];
-    return [S, S - (i - 3 * q)];
+    if (i < q) return [S, S - i];
+    if (i < 2 * q) return [S - (i - q), 1];
+    if (i < 3 * q) return [1, i - 2 * q + 1];
+    return [i - 3 * q + 1, S];
   }
   const use = (id) => `<svg aria-hidden="true"><use href="#i-${id}"/></svg>`;
   function tileIcon(t, n) {
     if (t.type === 'START') return 'arrow';
     if (t.type === 'JAIL') return 'island';
+    if (t.type === 'TRAVEL') return 'plane';
+    if (t.type === 'SPECIAL_TAX') return 'coin';
     if (t.type === 'PARKING') return 'trophy';
     if (t.type === 'GO_TO_JAIL') return 'plane';
     if (t.type === 'LUCK') return 'q';
@@ -87,7 +85,7 @@
 
   function buildBoard() {
     const board = $('board'), tiles = state.board, N = tiles.length, q = N / 4, S = q + 1;
-    const tracks = `1.7fr repeat(${q - 1}, 1fr) 1.7fr`;
+    const tracks = `1.9fr repeat(${q - 1}, 1fr) 1.9fr`;
     board.style.gridTemplateColumns = tracks;
     board.style.gridTemplateRows = tracks;
     board.style.setProperty('--span', S - 2);
@@ -141,7 +139,7 @@
     c.innerHTML =
       `<div class="clock" id="matchClock" role="timer" aria-label="Tempo restante da partida" hidden>${use('clock')}<b id="clockTxt">--:--</b></div>` +
       `<div class="logo"><svg viewBox="0 0 64 32" aria-hidden="true"><path d="M4 30V16l8-6v20M16 30V8l9-6v28M29 30V12l9-4v22M42 30V4l10 6v20M56 30V14l4 2v14" fill="none" stroke="currentColor" stroke-width="2.500"/></svg>BANCO IMOBILIÁRIO</div>` +
-      `<div class="piles"><div class="pile" title="Sorte">${use('q')}</div><div class="pile" title="Revés">${use('house')}</div></div>`;
+      `<div class="piles"><div class="pile" title="Sorte ou Revés">${use('q')}</div><div class="pile" title="Sorte ou Revés">${use('q')}</div></div>`;
     return c;
   }
 
@@ -210,6 +208,8 @@
   let motion = 'max';
   try { if (localStorage.getItem('banco3d:motion') === 'reduced') motion = 'reduced'; } catch { /* storage blocked */ }
   const maxMotion = () => motion === 'max';
+  // screen/modal changes: View Transitions API where available (CSS animation fallback otherwise); fn runs either way
+  const vt = (fn) => { if (document.startViewTransition && maxMotion()) document.startViewTransition(fn); else fn(); };
   function camera(pos) {
     const st = $('table').style, b = $('board');
     if (pos == null || !maxMotion() || $('table').classList.contains('flat') || !boardBuilt) {
@@ -510,14 +510,14 @@
     while (cardQ.length) {
       const c = cardQ.shift();
       if (c.destroy != null) { camera(c.destroy); crumble(c.destroy); await sleep(maxMotion() ? 1500 : 1); continue; }
-      const chest = /chest|rev/i.test(c.deck || ''), p = state.players.find((x) => x.id === c.who), amt = Number(c.amount) || 0;
-      $('cfxDeck').textContent = chest ? 'Revés' : 'Sorte';
-      $('cfxWho').textContent = `${chest ? 'Revés' : 'Sorte'}${p ? ' de ' + (p.id === meId ? 'você' : p.name) : ''}`;
+      const p = state.players.find((x) => x.id === c.who), amt = Number(c.amount) || 0;
+      $('cfxDeck').textContent = 'Sorte ou Revés';
+      $('cfxWho').textContent = `Sorte ou Revés${p ? ' de ' + (p.id === meId ? 'você' : p.name) : ''}`;
       const art = CARDIMG[c.kind] || '', img = $('cfxImg'); img.hidden = !art; if (art) img.src = art;
       $('cfxTitle').textContent = c.title || ''; $('cfxText').textContent = c.text || '';
       const fx = $('cfxFx'); fx.className = amt > 0 ? 'up' : amt < 0 ? 'down' : '';
       fx.textContent = c.jail ? 'Vá para a Cadeia' : amt ? `${amt > 0 ? '+' : '−'}${brl(Math.abs(amt))}` : '';
-      card.className = 'cfx-card ' + (chest ? 'chest' : 'chance') + (art ? ' art' : '');
+      card.className = 'cfx-card chance' + (art ? ' art' : '');
       box.hidden = false; void card.offsetWidth;
       card.classList.add('in'); await sleep(maxMotion() ? 450 : 1); card.classList.add('flip');
       await new Promise((ok) => { cardClose = ok; setTimeout(ok, 3300); });
@@ -738,9 +738,9 @@
     $('tradeTo').innerHTML = others.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');
     $('tradeForm').giveCash.value = 0; $('tradeForm').wantCash.value = 0;
     $('tradeMsg').textContent = 'A troca vale na hora, sem aceite do outro jogador.'; $('tradeMsg').classList.remove('bad');
-    tradeOpener = document.activeElement; fillTrade(); $('trade').hidden = false; $('tradeTo').focus();
+    tradeOpener = document.activeElement; fillTrade(); vt(() => { $('trade').hidden = false; $('tradeTo').focus(); });
   }
-  function closeTrade() { $('trade').hidden = true; if (tradeOpener && tradeOpener.focus) tradeOpener.focus(); }
+  function closeTrade() { vt(() => { $('trade').hidden = true; if (tradeOpener && tradeOpener.focus) tradeOpener.focus(); }); }
   $('btnTrade').onclick = openTrade;
   $('tradeTo').onchange = fillTrade;
   $('tradeX').onclick = $('tradeCancel').onclick = closeTrade;
@@ -789,8 +789,8 @@
     if (+f.bots.value > max) f.querySelector(`[name=bots][value="${max}"]`).checked = true;
     $('diffSegs').classList.toggle('off', +f.bots.value === 0);
   }
-  function openCfg() { cfgOpener = document.activeElement; fillCfg(); $('cfg').hidden = false; cf().city.focus(); }
-  function closeCfg() { $('cfg').hidden = true; if (cfgOpener && cfgOpener.focus) cfgOpener.focus(); }
+  function openCfg() { cfgOpener = document.activeElement; fillCfg(); vt(() => { $('cfg').hidden = false; cf().city.focus(); }); }
+  function closeCfg() { vt(() => { $('cfg').hidden = true; if (cfgOpener && cfgOpener.focus) cfgOpener.focus(); }); }
   cf().addEventListener('change', syncBots);
   $('bCfg').onclick = openCfg;
   $('cfgX').onclick = $('cfgCancel').onclick = closeCfg;
@@ -821,7 +821,7 @@
   // ---------- modals: options menu, rules, leave confirmation, final ranking ----------
   function modal(id, focusId) {
     const el = $(id); let opener = null;
-    const m = { open() { opener = document.activeElement; el.hidden = false; $(focusId).focus(); }, close() { el.hidden = true; if (opener && opener.focus) opener.focus(); } };
+    const m = { open() { opener = document.activeElement; vt(() => { el.hidden = false; $(focusId).focus(); }); }, close() { vt(() => { el.hidden = true; if (opener && opener.focus) opener.focus(); }); } };
     el.addEventListener('keydown', (e) => { if (e.key === 'Escape' && id !== 'final') m.close(); });
     el.addEventListener('mousedown', (e) => { if (e.target === el && id !== 'final') m.close(); });
     return m;
@@ -873,9 +873,13 @@
   }
 
   // ---------- lobby / voting / room flow ----------
+  let curView = 'home'; // logical view: the DOM follows one frame later when a view transition runs
   const setView = (v) => {
-    $('start').dataset.view = v; $('start').hidden = v === 'game';
-    if (v === 'game') { const t = $('table'); t.classList.remove('enter'); void t.offsetWidth; t.classList.add('enter'); } // flat -> tilt entrance
+    curView = v;
+    vt(() => {
+      $('start').dataset.view = v; $('start').hidden = v === 'game';
+      if (v === 'game') { const t = $('table'); t.classList.remove('enter'); void t.offsetWidth; t.classList.add('enter'); } // flat -> tilt entrance
+    });
   };
   const err = (m) => ($('startErr').textContent = m || '');
   const newCode = () => Array.from({ length: 5 }, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.floor(Math.random() * 32)]).join('');
@@ -966,7 +970,7 @@
       const r = await getRoom(roomId);
       raw = r;
       if (r.game.is_started) {
-        if (!$('start').hidden) { setView('game'); boardBuilt = false; }
+        if (curView !== 'game') { setView('game'); boardBuilt = false; }
         await commit(r);
         if (lastTurn !== null && lastTurn !== state.current_turn && state.status === 'in_progress') {
           const cur = state.players.find((p) => p.id === state.current_turn);
@@ -1067,7 +1071,7 @@
       const G = ['brown', 'light_blue', 'pink', 'orange', 'red', 'yellow', 'green', 'dark_blue'];
       const tiles = Array.from({ length: 40 }, (_, i) => {
         const t = { index: i, name: '', type: 'PROPERTY', group: G[Math.min(7, Math.floor(i / 5))], price: 60 + i * 9, rent: [2 + i], house_cost: 50, owner_id: '', houses: 0, is_queen: i === 39 };
-        const sp = { 0: ['GO', 'Saída'], 10: ['JAIL', 'Prisão'], 20: ['FREE_PARKING', 'Visitante'], 30: ['GO_TO_JAIL', 'Vá para a Cadeia'], 4: ['TAX', 'Imposto'], 38: ['TAX', 'Imposto'], 7: ['CHANCE', 'Sorte'], 22: ['CHANCE', 'Sorte'], 17: ['CHEST', 'Revés'], 33: ['CHEST', 'Revés'] };
+        const sp = { 0: ['GO', 'Início'], 10: ['TRAVEL', 'Viagem'], 20: ['JAIL', 'Ilha Perdida'], 30: ['SPECIAL_TAX', 'Imposto Especial'], 4: ['TAX', 'Imposto'], 38: ['TAX', 'Imposto'], 7: ['CHANCE', 'Sorte'], 22: ['CHANCE', 'Sorte'], 17: ['CHEST', 'Revés'], 33: ['CHEST', 'Revés'] };
         if (sp[i]) Object.assign(t, { type: sp[i][0], name: sp[i][1], price: 0, group: 'none' });
         else if (i % 5 === 0) Object.assign(t, { type: 'STATION', name: names.shift(), price: 200, group: 'none' });
         else t.name = names.shift() || 'Rua ' + i;
