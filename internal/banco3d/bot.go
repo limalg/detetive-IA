@@ -29,7 +29,7 @@ func GetBotParams(diff string) BotParams {
 		return BotParams{
 			MinReserve:      100,
 			NoiseRate:       0.25,
-			TradeThreshold:  0.70,
+			TradeThreshold:  1.05,
 			CanProposeTrade: false,
 			SqueezeMargin:   false,
 		}
@@ -37,7 +37,7 @@ func GetBotParams(diff string) BotParams {
 		return BotParams{
 			MinReserve:      400,
 			NoiseRate:       0.0,
-			TradeThreshold:  1.15,
+			TradeThreshold:  1.20,
 			CanProposeTrade: true,
 			SqueezeMargin:   true,
 		}
@@ -45,7 +45,7 @@ func GetBotParams(diff string) BotParams {
 		return BotParams{
 			MinReserve:      250,
 			NoiseRate:       0.10,
-			TradeThreshold:  1.00,
+			TradeThreshold:  1.10,
 			CanProposeTrade: true,
 			SqueezeMargin:   false,
 		}
@@ -187,29 +187,92 @@ func (b *BotDecisionEngine) DecideMortgage(g *Game, p *Player) (int, bool) {
 func (b *BotDecisionEngine) EvaluateTrade(g *Game, p *Player, proposal TradeProposal, diff string) bool {
 	params := GetBotParams(diff)
 
-	// Calculate perceived value offered vs requested
+	// O que o bot recebe: OfferedCash + OfferedTiles (oferecidos pelo proponente)
 	offeredValue := proposal.OfferedCash
+	completesBotGroup := false
 	for _, idx := range proposal.OfferedTiles {
 		if idx >= 0 && idx < len(g.Board.Tiles) {
 			t := &g.Board.Tiles[idx]
-			offeredValue += t.Price + t.Rent[0]*2
+			val := t.Price + t.Houses*t.HouseCost
+			if t.IsMortgaged || t.Mortgaged {
+				val = t.Price / 2
+			}
+			// Bônus se completar monopólio para o bot
+			if t.Group != ColorNone {
+				groupIndices := g.Board.GetGroupIndices(t.Group)
+				botOwnedInGroup := 0
+				for _, gIdx := range groupIndices {
+					if gIdx == idx {
+						continue
+					}
+					if g.Board.Tiles[gIdx].OwnerID == p.ID {
+						botOwnedInGroup++
+					}
+				}
+				if len(groupIndices) > 1 && botOwnedInGroup == len(groupIndices)-1 {
+					val += t.Price // bônus de 100% por fechar monopólio
+					completesBotGroup = true
+				}
+			}
+			offeredValue += val
 		}
 	}
 
+	// O que o bot entrega: RequestedCash + RequestedTiles (solicitados pelo proponente)
 	requestedValue := proposal.RequestedCash
+	givesOpponentMonopoly := false
 	for _, idx := range proposal.RequestedTiles {
 		if idx >= 0 && idx < len(g.Board.Tiles) {
 			t := &g.Board.Tiles[idx]
-			requestedValue += t.Price + t.Rent[0]*2
+			val := t.Price + t.Houses*t.HouseCost
+			if t.IsMortgaged || t.Mortgaged {
+				val = t.Price / 2
+			}
+			// Penalidade severa se quebrar monopólio do bot ou der monopólio ao adversário
+			if t.Group != ColorNone {
+				groupIndices := g.Board.GetGroupIndices(t.Group)
+				senderOwnedInGroup := 0
+				botOwnedInGroup := 0
+				for _, gIdx := range groupIndices {
+					if gIdx == idx {
+						continue
+					}
+					if g.Board.Tiles[gIdx].OwnerID == proposal.SenderID {
+						senderOwnedInGroup++
+					}
+					if g.Board.Tiles[gIdx].OwnerID == p.ID {
+						botOwnedInGroup++
+					}
+				}
+				if len(groupIndices) > 1 && senderOwnedInGroup == len(groupIndices)-1 {
+					val = int(float64(val) * 2.5) // dar monopólio a adversário é caríssimo
+					givesOpponentMonopoly = true
+				}
+				if len(groupIndices) > 1 && botOwnedInGroup >= len(groupIndices)-1 {
+					val = int(float64(val) * 2.0) // entregar quase-monopólio próprio
+				}
+			}
+			requestedValue += val
 		}
 	}
 
-	// Check if this proposal takes money leaving bot in debt
+	// Não aceita se deixar o bot em saldo negativo
 	if p.Money+(proposal.OfferedCash-proposal.RequestedCash) < 0 {
 		return false
 	}
 
+	// Dificuldade Hard: nunca dá monopólio ao adversário a menos que também feche monopólio para si
+	if strings.ToLower(diff) == "hard" && givesOpponentMonopoly && !completesBotGroup {
+		return false
+	}
+
 	ratio := float64(offeredValue) / float64(max(1, requestedValue))
+
+	// Se fecha monopólio para o bot, aceita com leve flexibilidade (ex: >= 0.95 no normal)
+	if completesBotGroup && ratio >= 0.95 {
+		return true
+	}
+
 	return ratio >= params.TradeThreshold
 }
 

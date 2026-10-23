@@ -355,14 +355,14 @@
   let mineSig = '', mineSet = new Set();
   function renderMine() {
     const mine = state.board.filter((t) => t.owner_id === meId).sort((x, y) => String(x.group || '~').localeCompare(String(y.group || '~')) || x.position - y.position);
-    const sig = mine.map((t) => `${t.position}:${t.houses}:${t.hotel}`).join('|');
+    const sig = mine.map((t) => `${t.position}:${t.houses}:${t.hotel}:${canBuild(t) ? 1 : 0}`).join('|');
     $('myProps').dataset.empty = mine.length ? '' : '1';
     if (sig === mineSig) return;
     mineSig = sig;
     const prev = mineSet; mineSet = new Set(mine.map((t) => t.position));
     $('myList').innerHTML = mine.map((t) => {
       const lv = t.hotel ? '★' : t.houses || '';
-      return `<button type="button" class="mp${prev.size && !prev.has(t.position) ? ' new' : ''}" data-i="${t.position}" style="--gc:${t.type === 'PROPERTY' ? `var(--g-${t.group})` : '#5b6b82'}" aria-label="${esc(t.name)}, ${brl(t.price)}${lv ? ', ' + (t.hotel ? 'hotel' : t.houses + ' casas') : ''}">${t.type === 'PROPERTY' ? '' : use(tileIcon(t, t.position))}${lv ? `<em>${lv}</em>` : ''}</button>`;
+      return `<button type="button" class="mp${prev.size && !prev.has(t.position) ? ' new' : ''}" data-i="${t.position}" style="--gc:${t.type === 'PROPERTY' ? `var(--g-${t.group})` : '#5b6b82'}" aria-label="${esc(t.name)}, ${brl(t.price)}${lv ? ', ' + (t.hotel ? 'hotel' : t.houses + ' casas') : ''}">${t.type === 'PROPERTY' ? '' : use(tileIcon(t, t.position))}${lv ? `<em>${lv}</em>` : ''}${canBuild(t) ? '<span class="mpb" title="Construir" aria-hidden="true">+</span>' : ''}</button>`;
     }).join('');
     tipHide();
   }
@@ -380,7 +380,26 @@
   $('myList').addEventListener('mouseout', (e) => { if (mpBtn(e)) tipHide(); });
   $('myList').addEventListener('focusin', (e) => { const b = mpBtn(e); if (b) tipShow(b); });
   $('myList').addEventListener('focusout', tipHide);
-  $('myList').addEventListener('click', (e) => { const b = mpBtn(e); if (b) { tipHide(); showTile(+b.dataset.i); } });
+  $('myList').addEventListener('click', (e) => { const b = mpBtn(e); if (!b) return; tipHide(); if (e.target.closest('.mpb')) buildAt(+b.dataset.i); else showTile(+b.dataset.i); });
+
+  function buildWhy(t) {
+    const me = state.players.find((p) => p.id === meId);
+    if (!me || t.type !== 'PROPERTY' || t.owner_id !== meId) return 'Só em propriedades suas.';
+    if (state.status !== 'in_progress' || state.current_turn !== meId) return 'Só no seu turno.';
+    if (!state.board.filter((x) => x.type === 'PROPERTY' && x.group === t.group).every((x) => x.owner_id === meId)) return 'Precisa do grupo de cor completo.';
+    if (t.hotel) return 'Já tem hotel.';
+    if (me.balance < (t.build_cost || 0)) return 'Saldo insuficiente.';
+    return '';
+  }
+  const canBuild = (t) => !buildWhy(t);
+  const buildLabel = (t) => `Construir ${t.houses === 4 ? 'hotel' : 'casa'} · ${brl(t.build_cost || 0)}`;
+  const buildAt = (i) => run(async () => {
+    try {
+      const r = await act('build', { tile_index: i });
+      await commit(r.game ? r : await getRoom(roomId)); // render() sees the higher level and plays the 'rise' animation
+      toast(`${state.board[i].name}: ${state.board[i].hotel ? 'hotel' : state.board[i].houses + ' casa(s)'}`);
+    } catch (x) { toast(x.message); }
+  });
 
   // one 3D building: front / right / left walls + roof lid, built from the footprint up
   const bxHtml = (cls, rise) => `<i class="bx ${cls}${rise ? ' rise' : ''}"><b class="ft"></b><b class="rt"></b><b class="lf"></b><b class="tp"></b></i>`;
@@ -398,7 +417,7 @@
     $('btnRoll').disabled = busy || !state.can_roll;
     $('btnBuy').disabled = !state.can_buy; // stays armed while the pawn is still walking
     $('btnEnd').disabled = busy || !state.can_buy;
-    $('btnBuild').disabled = true; $('btnBuild').title = 'Em breve';
+    $('btnBuild').disabled = busy || !state.board.some(canBuild); $('btnBuild').title = $('btnBuild').disabled ? 'Precisa do grupo de cor completo, no seu turno' : '';
     $('btnTrade').disabled = busy || state.status !== 'in_progress' || state.players.filter((p) => !p.bankrupt).length < 2;
     const gOwn = {}, mono = {}; // monopoly = every tile of the group has the same owner
     state.board.forEach((t) => { if (t.type === 'PROPERTY') (gOwn[t.group] = gOwn[t.group] || []).push(t.owner_id || ''); });
@@ -524,7 +543,7 @@
       d.animate([{ opacity: 0, transform: 'translateY(0) scale(.4)' }, { opacity: .8, offset: .25 }, { opacity: 0, transform: `translate(${(Math.random() - .5) * 1.5}em,-2.2em) scale(1.6)` }], { duration: 1100, delay: 250 + k * 60, easing: 'ease-out', fill: 'both' }).onfinish = () => d.remove();
     }
   }
-  if (DEMO) window.__demo = { card: (c) => { cardQ.push(c); pumpCards(); }, destroy: (pos) => { cardQ.push({ destroy: pos }); pumpCards(); } };
+  if (DEMO) window.__demo = { own: (g) => demoApi('/room/__own', { room_id: roomId, player_id: meId, group: g }), card: (c) => { cardQ.push(c); pumpCards(); }, destroy: (pos) => { cardQ.push({ destroy: pos }); pumpCards(); } };
   // events[]: only entries not seen before are new; the first payload just primes the set
   const seenEv = new Set();
   const evKey = (e) => e.seq ?? e.id ?? `${e.timestamp}|${e.type}|${e.player_id}`;
@@ -640,6 +659,20 @@
   $('btnBuy').onclick = async () => { while (busy) await sleep(100); if (state.can_buy) buy(); };
   const buy = () => run(async () => { const r = await act('buy'); await commit(r.game ? r : await getRoom(roomId)); toast('Comprado!'); });
   $('btnEnd').onclick = () => passTurn();
+  $('btnBuild').onclick = () => {
+    const l = state.board.filter(canBuild);
+    if (!l.length) return;
+    sheet('Construir', `<ul class="blist">${l.map((t) => `<li style="--gc:var(--g-${t.group})"><i></i><span>${esc(t.name)}<small>${t.hotel ? '' : t.houses + ' casa(s)'}</small></span><button type="button" class="primary build-go" data-b="${t.position}">${buildLabel(t)}</button></li>`).join('')}</ul>`);
+  };
+  // build buttons inside the sheet (detail and list)
+  $('sheetBody').addEventListener('click', async (e) => {
+    const b = e.target.closest('.build-go');
+    if (!b) return;
+    const i = +b.dataset.b, list = !!b.closest('.blist');
+    b.disabled = true;
+    await buildAt(i);
+    if (!list) showTile(i); else if (state.board.some(canBuild)) $('btnBuild').click(); else $('sheet').hidden = true;
+  });
   $('btnMap').onclick = () => { const f = $('table').classList.toggle('flat'); $('btnMap').setAttribute('aria-pressed', f); if (f) camera(null); else followTurn(); setTimeout(placeAll, 1050); };
 
   let cardTimer = null;
@@ -654,7 +687,7 @@
       ? ['Aluguel base', '1 casa', '2 casas', '3 casas', '4 casas', 'Hotel'].map((l, n) => `<dt>${l}</dt><dd>${brl(t.rent[n])}</dd>`).join('')
       : (t.rent_base ? `<dt>Aluguel</dt><dd>${brl(t.rent_base)}</dd>` : '');
     const layers = idx < 0 ? '' : `<img class="on" src="${list[idx]}" alt="">${list.length > 1 ? '<img alt="">' : ''}`;
-    sheet(t.name, `<div class="pc"><div class="pc-img" style="--gc:${gc}">${layers}${t.price ? `<span class="pc-pr">${brl(t.price)}</span>` : ''}<span class="pc-ic">${use(tileIcon(t, i))}</span><span class="pc-cap">${KIND_LABEL[k] || ''}${t.queen ? ' · ★ ícone da cidade' : ''}</span></div>${t.description ? `<p>${esc(t.description)}</p>` : ''}<dl><dt>Preço</dt><dd>${brl(t.price)}</dd>${rent}${t.build_cost ? `<dt>Casa custa</dt><dd>${brl(t.build_cost)}</dd>` : ''}${t.mortgage ? `<dt>Hipoteca</dt><dd>${brl(t.mortgage)}</dd>` : ''}<dt>Dono</dt><dd>${o ? esc(o.name) : 'Livre'}</dd></dl></div>`);
+    sheet(t.name, `<div class="pc"><div class="pc-img" style="--gc:${gc}">${layers}${t.price ? `<span class="pc-pr">${brl(t.price)}</span>` : ''}<span class="pc-ic">${use(tileIcon(t, i))}</span><span class="pc-cap">${KIND_LABEL[k] || ''}${t.queen ? ' · ★ ícone da cidade' : ''}</span></div>${t.description ? `<p>${esc(t.description)}</p>` : ''}<dl><dt>Preço</dt><dd>${brl(t.price)}</dd>${rent}${t.build_cost ? `<dt>Casa custa</dt><dd>${brl(t.build_cost)}</dd>` : ''}${t.mortgage ? `<dt>Hipoteca</dt><dd>${brl(t.mortgage)}</dd>` : ''}<dt>Dono</dt><dd>${o ? esc(o.name) : 'Livre'}</dd></dl>${t.type === 'PROPERTY' && t.owner_id === meId ? `<button type="button" class="primary build-go" data-b="${i}" ${canBuild(t) ? '' : 'disabled'}>${buildLabel(t)}</button>${canBuild(t) ? '' : `<p class="dim">${buildWhy(t)}</p>`}` : ''}</div>`);
     // every ~6s fade to the next variant of this kind (skipped with reduced motion)
     const imgs = $('sheetBody').querySelectorAll('.pc-img img');
     if (imgs.length === 2 && maxMotion()) {
@@ -1057,6 +1090,8 @@
       if (tt === 'CHANCE' || tt === 'CHEST') { const dl = [200, -100, 50][Math.floor(Math.random() * 3)]; me.money += dl; g.turn_index = (g.turn_index || 0) + 1; g.last_card_result = { card: { id: 'c' + g.turn_index, deck: tt, title: tt === 'CHANCE' ? 'Feira de artesanato lotada' : 'Conserto do bonde', text: 'Você ganhou destaque no bairro e a cidade reconhece o esforço.' }, player_id: me.id, money_delta: dl }; room.events.push({ type: 'card', player_id: me.id, deck: tt, title: g.last_card_result.card.title, text: g.last_card_result.card.text, amount: dl, timestamp: 'c' + Date.now() }); }
       return ok({ ...room, dice: { die1: d1, die2: d2 } });
     }
+    if (P.endsWith('/room/__own')) { room.board.tiles.forEach((t) => { if (t.group === b.group && t.type === 'PROPERTY') { t.owner_id = me.id; if (!me.properties.includes(t.index)) me.properties.push(t.index); } }); return ok(room); }
+    if (P.endsWith('/room/build')) { const t = room.board.tiles[b.tile_index]; t.houses = (t.houses || 0) + 1; me.money -= t.house_cost || 50; return ok(room); }
     if (P.endsWith('/room/buy')) { const t = room.board.tiles[me.position]; t.owner_id = me.id; me.money -= t.price; me.properties.push(t.index); return ok(room); }
     if (P.endsWith('/room/trade')) {
       const swap = (t) => { const a = g.players.find((x) => x.id === t.sender_id), o = g.players.find((x) => x.id === t.receiver_id); t.offered_tiles.forEach((k) => { room.board.tiles[k].owner_id = o.id; }); t.requested_tiles.forEach((k) => { room.board.tiles[k].owner_id = a.id; }); a.money += t.requested_cash - t.offered_cash; o.money += t.offered_cash - t.requested_cash; };

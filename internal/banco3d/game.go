@@ -59,6 +59,7 @@ type Game struct {
 	LastDiceResult      *DiceResult  `json:"last_dice_result,omitempty"`
 	SalaryAmount        int          `json:"salary_amount,omitempty"`
 	ConsecutiveDoubles  int          `json:"consecutive_doubles,omitempty"`
+	MatchEndsAt         *time.Time   `json:"match_ends_at,omitempty"`
 }
 
 // ResetForDoubleRoll resets the turn state allowing the player to roll again (classical doubles rule).
@@ -590,6 +591,106 @@ func (g *Game) countOwnedType(ownerID string, tType TileType) int {
 		}
 	}
 	return c
+}
+
+// PayJailBail allows a player to pay R$ 50 to get released from Jail immediately.
+func (g *Game) PayJailBail(playerID string) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	p := g.getPlayer(playerID)
+	if p == nil {
+		return errors.New("jogador não encontrado")
+	}
+	if !p.InJail && !p.IsJailed {
+		return errors.New("jogador não está na prisão")
+	}
+	if p.Money < 50 {
+		return errors.New("saldo insuficiente para fiança (R$ 50)")
+	}
+	p.Money -= 50
+	p.InJail = false
+	p.IsJailed = false
+	p.JailTurns = 0
+	return nil
+}
+
+// UseGetOutOfJailCard uses a free pass to leave jail without cost.
+func (g *Game) UseGetOutOfJailCard(playerID string) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	p := g.getPlayer(playerID)
+	if p == nil {
+		return errors.New("jogador não encontrado")
+	}
+	if !p.InJail && !p.IsJailed {
+		return errors.New("jogador não está na prisão")
+	}
+	if p.GetOutOfJailCards <= 0 {
+		return errors.New("jogador não possui carta de saída livre da prisão")
+	}
+	p.GetOutOfJailCards--
+	p.InJail = false
+	p.IsJailed = false
+	p.JailTurns = 0
+	return nil
+}
+
+// CalculateNetWorth calculates total assets: dinheiro + preço propriedades (metade se hipotecada) + construções.
+func (g *Game) CalculateNetWorth(p *Player) int {
+	net := p.Money
+	if g.Board == nil {
+		return net
+	}
+	for _, idx := range p.Properties {
+		if idx >= 0 && idx < len(g.Board.Tiles) {
+			t := &g.Board.Tiles[idx]
+			if t.IsMortgaged || t.Mortgaged {
+				net += t.Price / 2
+			} else {
+				net += t.Price
+			}
+			net += t.Houses * t.HouseCost
+		}
+	}
+	return net
+}
+
+// PlayerRanking represents a player's standing based on Net Worth.
+type PlayerRanking struct {
+	ID              string `json:"id"`
+	Name            string `json:"name"`
+	NetWorth        int    `json:"net_worth"`
+	Money           int    `json:"money"`
+	PropertiesCount int    `json:"properties_count"`
+}
+
+// GetNetWorthRanking returns all active players sorted by Net Worth descending (tiebreaker: Money).
+func (g *Game) GetNetWorthRanking() []PlayerRanking {
+	var ranking []PlayerRanking
+	for _, p := range g.Players {
+		if !p.IsBankrupt {
+			ranking = append(ranking, PlayerRanking{
+				ID:              p.ID,
+				Name:            p.Name,
+				NetWorth:        g.CalculateNetWorth(p),
+				Money:           p.Money,
+				PropertiesCount: len(p.Properties),
+			})
+		}
+	}
+
+	for i := 0; i < len(ranking); i++ {
+		for j := i + 1; j < len(ranking); j++ {
+			if ranking[j].NetWorth > ranking[i].NetWorth ||
+				(ranking[j].NetWorth == ranking[i].NetWorth && ranking[j].Money > ranking[i].Money) {
+				ranking[i], ranking[j] = ranking[j], ranking[i]
+			}
+		}
+	}
+
+	return ranking
 }
 
 func (g *Game) declareBankruptcy(p *Player) {

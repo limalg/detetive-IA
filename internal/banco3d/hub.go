@@ -28,6 +28,7 @@ type RoomSnapshot struct {
 	EventSeq         int            `json:"event_seq"`
 	PendingDecision  string         `json:"pending_decision,omitempty"`
 	DecisionDeadline *time.Time     `json:"decision_deadline,omitempty"`
+	MatchEndsAt      *time.Time     `json:"match_ends_at,omitempty"`
 	LastActivity     time.Time      `json:"last_activity"`
 }
 
@@ -83,6 +84,7 @@ func (h *RoomHub) saveToDiskLocked() error {
 			EventSeq:         r.EventSeq,
 			PendingDecision:  r.PendingDecision,
 			DecisionDeadline: r.DecisionDeadline,
+			MatchEndsAt:      r.MatchEndsAt,
 			LastActivity:     r.LastActivity,
 		}
 		r.mu.Unlock()
@@ -160,6 +162,7 @@ func (h *RoomHub) LoadFromDisk() error {
 			EventSeq:         s.EventSeq,
 			PendingDecision:  s.PendingDecision,
 			DecisionDeadline: s.DecisionDeadline,
+			MatchEndsAt:      s.MatchEndsAt,
 			LastActivity:     s.LastActivity,
 		}
 		if r.TurnTimeout <= 0 {

@@ -39,6 +39,7 @@ func (h *Handler) formatRoomState(room *banco3d.Room, dice *banco3d.DiceResult) 
 		"events":            room.Events,
 		"pending_decision":  room.PendingDecision,
 		"decision_deadline": room.DecisionDeadline,
+		"match_ends_at":     room.MatchEndsAt,
 	}
 	if dice != nil {
 		res["dice"] = dice
@@ -351,6 +352,15 @@ func (h *Handler) HandleBanco3DRoomRoll(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	if room.Game == nil || !room.Game.IsStarted {
+		h.error(w, http.StatusBadRequest, "game not started")
+		return
+	}
+	if room.Game.CurrentTurnPlayerID != req.PlayerID {
+		h.error(w, http.StatusForbidden, "not your turn")
+		return
+	}
+
 	d1 := req.D1
 	d2 := req.D2
 	if (d1 <= 0 && d2 <= 0) || d1 > 6 || d2 > 6 || d1 < 0 || d2 < 0 {
@@ -437,6 +447,23 @@ func (h *Handler) HandleBanco3DRoomBuy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if room.Game == nil || !room.Game.IsStarted {
+		h.error(w, http.StatusBadRequest, "game not started")
+		return
+	}
+	if room.Game.CurrentTurnPlayerID != req.PlayerID {
+		h.error(w, http.StatusForbidden, "not your turn")
+		return
+	}
+	if room.PendingDecision != "buy" || (room.DecisionPlayerID != "" && room.DecisionPlayerID != req.PlayerID) {
+		h.error(w, http.StatusBadRequest, "no pending buy decision for player")
+		return
+	}
+	if room.DecisionDeadline != nil && time.Now().After(*room.DecisionDeadline) {
+		h.error(w, http.StatusBadRequest, "decision deadline expired")
+		return
+	}
+
 	if err := room.Game.BuyProperty(req.PlayerID); err != nil {
 		h.error(w, http.StatusBadRequest, err.Error())
 		return
@@ -513,6 +540,15 @@ func (h *Handler) HandleBanco3DRoomPass(w http.ResponseWriter, r *http.Request) 
 	room, ok := hub.GetRoom(req.RoomID)
 	if !ok {
 		h.error(w, http.StatusNotFound, "room not found")
+		return
+	}
+
+	if room.Game == nil || !room.Game.IsStarted {
+		h.error(w, http.StatusBadRequest, "game not started")
+		return
+	}
+	if room.Game.CurrentTurnPlayerID != req.PlayerID {
+		h.error(w, http.StatusForbidden, "not your turn")
 		return
 	}
 
@@ -661,6 +697,10 @@ func (h *Handler) HandleBanco3DRoomTrade(w http.ResponseWriter, r *http.Request)
 		}
 		tradeErr = room.DeclineTrade(callerID)
 	case "propose":
+		if room.Game != nil && room.Game.CurrentTurnPlayerID != callerID {
+			h.error(w, http.StatusForbidden, "apenas o jogador do turno pode iniciar propostas de troca")
+			return
+		}
 		proposal := banco3d.TradeProposal{
 			ID:             "trade-1",
 			SenderID:       req.SenderID,
@@ -671,21 +711,64 @@ func (h *Handler) HandleBanco3DRoomTrade(w http.ResponseWriter, r *http.Request)
 			RequestedCash:  req.RequestedCash,
 		}
 		tradeErr = room.ProposeTrade(proposal)
-		// Se o destinatário for bot legítimo (IsBot == true), auto-aceita
-		if tradeErr == nil {
-			var isBot bool
+		if tradeErr == nil && room.Game != nil {
+			var receiverPlayer *banco3d.Player
 			for _, p := range room.Game.Players {
 				if p.ID == req.ReceiverID {
-					isBot = p.IsBot
+					receiverPlayer = p
 					break
 				}
 			}
-			if isBot {
-				_ = room.AcceptTrade(req.ReceiverID)
+			if receiverPlayer != nil && receiverPlayer.IsBot {
+				diff := room.Config.Bots.Difficulty
+				if diff == "" {
+					diff = "normal"
+				}
+				if banco3d.BotAI.EvaluateTrade(room.Game, receiverPlayer, proposal, diff) {
+					_ = room.AcceptTrade(req.ReceiverID)
+				} else {
+					_ = room.DeclineTrade(req.ReceiverID)
+				}
 			}
 		}
 	default:
 		// Execução direta imediata
+		targetID := req.ReceiverID
+		if targetID == "" {
+			targetID = req.BuyerID
+		}
+		if room.Game != nil {
+			var receiverPlayer *banco3d.Player
+			for _, p := range room.Game.Players {
+				if p.ID == targetID {
+					receiverPlayer = p
+					break
+				}
+			}
+			if receiverPlayer != nil && receiverPlayer.IsBot {
+				diff := room.Config.Bots.Difficulty
+				if diff == "" {
+					diff = "normal"
+				}
+				proposal := banco3d.TradeProposal{
+					SenderID:       callerID,
+					ReceiverID:     targetID,
+					OfferedTiles:   req.OfferedTiles,
+					OfferedCash:    req.OfferedCash,
+					RequestedTiles: req.RequestedTiles,
+					RequestedCash:  req.RequestedCash,
+				}
+				if req.TileIndex > 0 || req.CashAmount > 0 {
+					proposal.RequestedTiles = []int{req.TileIndex}
+					proposal.OfferedCash = req.CashAmount
+				}
+				if !banco3d.BotAI.EvaluateTrade(room.Game, receiverPlayer, proposal, diff) {
+					tradeErr = errors.New("o bot recusou a proposta de troca")
+					h.error(w, http.StatusBadRequest, tradeErr.Error())
+					return
+				}
+			}
+		}
 		if len(req.OfferedTiles) > 0 || len(req.RequestedTiles) > 0 || req.SenderID != "" {
 			tradeErr = room.Game.TradeExchange(banco3d.TradeExchangeRequest{
 				SenderID:       req.SenderID,
@@ -702,6 +785,38 @@ func (h *Handler) HandleBanco3DRoomTrade(w http.ResponseWriter, r *http.Request)
 
 	if tradeErr != nil {
 		h.error(w, http.StatusBadRequest, tradeErr.Error())
+		return
+	}
+
+	go func() { _ = hub.SaveToDisk() }()
+	h.json(w, http.StatusOK, h.formatRoomState(room, nil))
+}
+
+// HandleBanco3DRoomLeave handles voluntary player forfeit/leave from the match.
+func (h *Handler) HandleBanco3DRoomLeave(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		h.error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req struct {
+		RoomID   string `json:"room_id"`
+		PlayerID string `json:"player_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.error(w, http.StatusBadRequest, "invalid payload")
+		return
+	}
+
+	hub := h.getBanco3DHub()
+	room, ok := hub.GetRoom(req.RoomID)
+	if !ok {
+		h.error(w, http.StatusNotFound, "room not found")
+		return
+	}
+
+	if err := room.LeavePlayer(req.PlayerID); err != nil {
+		h.error(w, http.StatusBadRequest, err.Error())
 		return
 	}
 

@@ -38,6 +38,7 @@ type RoomConfig struct {
 	StartingBalance int        `json:"starting_balance"`
 	TurnSeconds     int        `json:"turn_seconds"`
 	SalaryAmount    int        `json:"salary_amount"` // Salário ao passar ou parar no início (padrão 200)
+	MatchMinutes    int        `json:"match_minutes"` // 0=sem limite, 15/30/60/90
 	Rules           RuleConfig `json:"rules"`
 }
 
@@ -49,6 +50,7 @@ func DefaultRoomConfig() RoomConfig {
 		StartingBalance: 1500,
 		TurnSeconds:     30,
 		SalaryAmount:    200,
+		MatchMinutes:    0,
 		Rules: RuleConfig{
 			JailBail:          true,
 			JailTripleDoubles: true,
@@ -93,11 +95,13 @@ type GameEvent struct {
 	Value      int       `json:"value,omitempty"`
 	ToPlayerID string    `json:"to_player_id,omitempty"`
 	Tile       int       `json:"tile,omitempty"`
-	TileIndex  int       `json:"tile_index,omitempty"`
-	Text       string    `json:"text"`
-	Message    string    `json:"message,omitempty"`
-	Timestamp  time.Time `json:"timestamp"`
-	TS         int64     `json:"ts"` // unix ms
+	TileIndex  int         `json:"tile_index,omitempty"`
+	WinnerID   string      `json:"winner_id,omitempty"`
+	Ranking    any         `json:"ranking,omitempty"`
+	Text       string      `json:"text"`
+	Message    string      `json:"message,omitempty"`
+	Timestamp  time.Time   `json:"timestamp"`
+	TS         int64       `json:"ts"` // unix ms
 }
 
 // Room represents a multiplayer room for 40-tile Banco Imobiliário.
@@ -118,6 +122,7 @@ type Room struct {
 	DecisionDeadline *time.Time     `json:"decision_deadline,omitempty"`
 	PendingDecision  string         `json:"pending_decision,omitempty"`
 	DecisionPlayerID string         `json:"decision_player_id,omitempty"`
+	MatchEndsAt      *time.Time     `json:"match_ends_at,omitempty"`
 }
 
 // RecordEvent records an action in the room event stream.
@@ -315,6 +320,9 @@ func NewRoom(id, city string, opts ...*RoomConfig) (*Room, error) {
 		if userCfg.Bots.Count >= 0 {
 			cfg.Bots = userCfg.Bots
 		}
+		if userCfg.MatchMinutes >= 0 {
+			cfg.MatchMinutes = userCfg.MatchMinutes
+		}
 		cfg.Rules = userCfg.Rules
 	}
 	if cfg.SalaryAmount <= 0 {
@@ -446,6 +454,13 @@ func (r *Room) StartGame() error {
 	err := r.Game.Start()
 	if err != nil {
 		return err
+	}
+	if r.Config.MatchMinutes > 0 {
+		deadline := time.Now().Add(time.Duration(r.Config.MatchMinutes) * time.Minute)
+		r.MatchEndsAt = &deadline
+		if r.Game != nil {
+			r.Game.MatchEndsAt = &deadline
+		}
 	}
 	r.LastActivity = time.Now()
 	return nil
@@ -623,6 +638,30 @@ func (r *Room) CheckTurnTimeout() bool {
 		return false
 	}
 
+	// 0. Tempo total de partida esgotado -> encerra e elege vencedor por Maior Patrimônio
+	if r.MatchEndsAt != nil && time.Now().After(*r.MatchEndsAt) && !r.Game.IsOver {
+		r.Game.IsOver = true
+		ranking := r.Game.GetNetWorthRanking()
+		winnerID := ""
+		wName := ""
+		wNW := 0
+		if len(ranking) > 0 {
+			winnerID = ranking[0].ID
+			wName = ranking[0].Name
+			wNW = ranking[0].NetWorth
+			r.Game.WinnerID = winnerID
+		}
+		r.RecordEvent(GameEvent{
+			Type:       "game_over",
+			WinnerID:   winnerID,
+			PlayerName: wName,
+			Text:       fmt.Sprintf("Tempo de partida esgotado! Vencedor: %s com patrimônio de R$ %d", wName, wNW),
+			Ranking:    ranking,
+		})
+		r.LastActivity = time.Now()
+		return true
+	}
+
 	// 1. Pending buy decision deadline expired -> auto-pass (ou repete turno se foi dupla)
 	if r.PendingDecision == "buy" && r.DecisionDeadline != nil && time.Now().After(*r.DecisionDeadline) {
 		r.PendingDecision = ""
@@ -743,4 +782,87 @@ func (r *Room) DeclineTrade(callerPlayerID string) error {
 	r.PendingTrade = nil
 	r.LastActivity = time.Now()
 	return nil
+}
+
+// LeavePlayer marks a player as forfeiting/bankrupt, returning properties to bank and ending match if solitary.
+func (r *Room) LeavePlayer(playerID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	p := r.Game.getPlayer(playerID)
+	if p == nil {
+		return errors.New("jogador não encontrado")
+	}
+
+	p.IsBankrupt = true
+	p.Money = 0
+	for _, idx := range p.Properties {
+		if idx >= 0 && idx < len(r.Board.Tiles) {
+			t := &r.Board.Tiles[idx]
+			t.OwnerID = ""
+			t.Houses = 0
+			t.IsMortgaged = false
+			t.Mortgaged = false
+		}
+	}
+	p.Properties = nil
+	if r.Game.Board != nil {
+		r.Board = r.Game.Board
+	}
+
+	r.RecordEvent(GameEvent{
+		Type:       "leave",
+		PlayerID:   playerID,
+		PlayerName: p.Name,
+		Text:       fmt.Sprintf("%s saiu da partida", p.Name),
+	})
+
+	if r.Game.CurrentTurnPlayerID == playerID {
+		_ = r.Game.AutoPassTurn()
+	}
+
+	// Se restar apenas 1 jogador ativo no total ou 1 humano sem bots, a partida termina!
+	activeHumans := 0
+	activeBots := 0
+	var lastActive *Player
+	for _, pl := range r.Game.Players {
+		if !pl.IsBankrupt {
+			if pl.IsBot {
+				activeBots++
+			} else {
+				activeHumans++
+			}
+			lastActive = pl
+		}
+	}
+
+	if (activeHumans == 1 && activeBots == 0) || (activeHumans+activeBots <= 1) {
+		r.Game.IsOver = true
+		if lastActive != nil {
+			r.Game.WinnerID = lastActive.ID
+			r.RecordEvent(GameEvent{
+				Type:       "game_over",
+				WinnerID:   lastActive.ID,
+				PlayerName: lastActive.Name,
+				Text:       fmt.Sprintf("%s venceu por abandono dos adversários!", lastActive.Name),
+			})
+		}
+	}
+
+	r.LastActivity = time.Now()
+	return nil
+}
+
+// PayJailBail releases a player from jail by paying R$ 50.
+func (r *Room) PayJailBail(playerID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.Game.PayJailBail(playerID)
+}
+
+// UseGetOutOfJailCard releases a player using a free pass card.
+func (r *Room) UseGetOutOfJailCard(playerID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.Game.UseGetOutOfJailCard(playerID)
 }
