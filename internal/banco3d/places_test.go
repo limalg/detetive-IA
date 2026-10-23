@@ -285,33 +285,48 @@ func TestPlacesIntegrationOptional(t *testing.T) {
 	}
 }
 
-func TestLandmarksCityFirstThenRegion(t *testing.T) {
+func TestMageNeverLeaksOtherMunicipality(t *testing.T) {
+	foreign := []string{"Ipanema", "Cristo Redentor", "Pão de Açúcar", "Praça Vizinha"}
 	svc := mockService(func(r *http.Request) (int, string) {
-		if r.URL.Host == "nominatim.openstreetmap.org" {
-			return 200, `{"localname":"Cidadela","centroid":{"coordinates":[-50,-20]}}`
+		switch r.URL.Host {
+		case "nominatim.openstreetmap.org":
+			if strings.Contains(r.URL.Path, "details") {
+				return 200, `{"localname":"Magé","centroid":{"coordinates":[-43.04,-22.65]}}`
+			}
+			return 200, `[{"name":"Cristo Redentor","address":{"city":"Rio de Janeiro"}},{"name":"Museu Magé Antigo","address":{"city":"Magé"}}]`
+		case "pt.wikipedia.org":
+			return 200, `{"query":{"geosearch":[{"title":"Cristo Redentor"},{"title":"Ipanema"},{"title":"Praça Vizinha (Duque de Caxias)"},{"title":"Igreja da Piedade (Magé)"}]}}`
 		}
-		if strings.Contains(r.URL.Query().Get("data"), "80000") {
-			return 200, `{"elements":[{"tags":{"name":"Cataratas Regionais","tourism":"attraction","wikidata":"Q9"}},{"tags":{"name":"Museu do Estado","tourism":"museum","wikidata":"Q8"}}]}`
+		q := r.URL.Query().Get("data")
+		if strings.Contains(q, "80000") || strings.Contains(q, "around:6000") {
+			t.Errorf("regional/radius query must not exist: %s", q)
 		}
 		var els []string
 		for i := 0; i < 14; i++ {
 			els = append(els, fmt.Sprintf(`{"tags":{"name":"Rua Local %d","highway":"secondary"}}`, i))
 		}
-		els = append(els, `{"tags":{"name":"Praça da Matriz","historic":"yes","wikidata":"Q1"}}`)
+		els = append(els, `{"tags":{"name":"Praça da Matriz","historic":"yes","wikidata":"Q1"}}`,
+			`{"tags":{"name":"Ipanema","place":"suburb"}}`, `{"tags":{"name":"Pão de Açúcar","tourism":"attraction"}}`)
 		return 200, `{"elements":[` + strings.Join(els, ",") + `]}`
 	})
-	res, err := svc.GetLandmarks("", "osm_5")
+	res, err := svc.GetLandmarks("", "osm_mage")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Candidates[0] != "Praça da Matriz" {
-		t.Errorf("city landmark must lead candidates: %v", res.Candidates)
+	if res.City != "Magé" || !res.Partial {
+		t.Fatalf("city=%q partial=%v", res.City, res.Partial)
 	}
-	if !slices.Contains(res.Candidates, "Cataratas Regionais") {
-		t.Errorf("regional fame should top up candidates: %v", res.Candidates)
+	names := append([]string{}, res.Candidates...)
+	for _, l := range res.Landmarks {
+		names = append(names, l.Name)
 	}
-	if res.Landmarks[0].Name != "Praça da Matriz" {
-		t.Errorf("city places must precede regional: %v", res.Landmarks[:3])
+	for _, n := range names {
+		if slices.Contains(foreign, n) {
+			t.Errorf("other municipality leaked: %s in %v", n, names)
+		}
+	}
+	if !slices.Contains(res.Candidates, "Praça da Matriz") || !slices.Contains(names, "Igreja da Piedade") {
+		t.Errorf("own places must lead: %v", res.Candidates)
 	}
 }
 

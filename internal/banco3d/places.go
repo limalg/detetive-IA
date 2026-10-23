@@ -611,13 +611,12 @@ func countProps(ls []LandmarkItem) (n int) {
 	return
 }
 
-// fetchOverpassPlaces lists named features inside the municipality's own boundary (radius only as a fallback).
+// fetchOverpassPlaces lists named features strictly inside the municipality's own boundary.
 func (s *PlacesService) fetchOverpassPlaces(ctx context.Context, cityName string, lat, lon float64) []realPlace {
 	byArea := fmt.Sprintf(`rel(around:3000,%.4f,%.4f)["boundary"="administrative"]["admin_level"~"^[5-8]$"]["name"="%s"];map_to_area->.a;`,
 		lat, lon, strings.ReplaceAll(cityName, `"`, ``))
 	for _, scope := range []struct{ prelude, filter string }{
 		{byArea, "(area.a)"},
-		{"", fmt.Sprintf("(around:6000,%.4f,%.4f)", lat, lon)},
 	} {
 		els, err := s.overpass(ctx, overpassQuery(scope.prelude, scope.filter, overpassSecs(ctx)))
 		if err != nil {
@@ -691,7 +690,7 @@ func (s *PlacesService) overpass(ctx context.Context, query string) ([]map[strin
 	return nil, lastErr
 }
 
-// fetchWikipediaPlaces returns geotagged pt.wikipedia articles within 10 km (the API maximum): famous by definition.
+// fetchWikipediaPlaces returns geotagged pt.wikipedia articles within 5 km: famous by definition.
 func (s *PlacesService) fetchWikipediaPlaces(ctx context.Context, cityName string, lat, lon float64) []realPlace {
 	var data struct {
 		Query struct {
@@ -700,14 +699,17 @@ func (s *PlacesService) fetchWikipediaPlaces(ctx context.Context, cityName strin
 			} `json:"geosearch"`
 		} `json:"query"`
 	}
-	endpoint := fmt.Sprintf("https://pt.wikipedia.org/w/api.php?action=query&list=geosearch&gscoord=%.4f|%.4f&gsradius=10000&gslimit=100&format=json", lat, lon)
+	endpoint := fmt.Sprintf("https://pt.wikipedia.org/w/api.php?action=query&list=geosearch&gscoord=%.4f|%.4f&gsradius=5000&gslimit=100&format=json", lat, lon)
 	if err := s.getJSON(ctx, endpoint, srcTimeout(ctx), false, &data); err != nil {
 		return nil
 	}
 	var out []realPlace
 	for _, g := range data.Query.Geosearch {
 		t := strings.TrimSpace(g.Title)
-		if i := strings.Index(t, " ("); i > 0 { // "Praça X (Londrina)" -> "Praça X"
+		if i := strings.Index(t, " ("); i > 0 { // "Praça X (Londrina)" -> "Praça X"; "(Duque de Caxias)" is another municipality
+			if !strings.EqualFold(strings.Trim(t[i:], " ()"), cityName) {
+				continue
+			}
 			t = t[:i]
 		}
 		if len(t) < 4 || len(t) > 34 || strings.EqualFold(t, cityName) || isMediaOrClub(t) {
@@ -729,9 +731,8 @@ func (s *PlacesService) fetchWikipediaPlaces(ctx context.Context, cityName strin
 }
 
 // fetchAllSources queries the city sources in parallel (Overpass municipality, Wikipedia geosearch pt,
-// Nominatim city searches), merges them by fame, and only if the city is short appends the regional
-// ones (strictly after every city place). full=true is the background pass: every Nominatim query
-// and the unfiltered regional sweep.
+// Nominatim city searches), merges them by fame. Never looks outside the municipality. full=true is the background pass:
+// every Nominatim query.
 func (s *PlacesService) fetchAllSources(ctx context.Context, cityName string, lat, lon float64, full bool) []realPlace {
 	var wg sync.WaitGroup
 	results := make([][]realPlace, 3)
@@ -768,55 +769,33 @@ func (s *PlacesService) fetchAllSources(ctx context.Context, cityName string, la
 		return merged[i].Name < merged[j].Name
 	})
 
-	if countKind(merged, "property") < 22 || countTop(merged) < 4 {
-		for _, p := range s.fetchRegionalPlaces(ctx, cityName, lat, lon, full) {
-			if _, dup := byName[strings.ToLower(p.Name)]; !dup {
-				byName[strings.ToLower(p.Name)] = p
-				merged = append(merged, p)
-			}
-		}
-	}
-	return merged
+	return dropForeign(cityName, merged)
 }
 
-// fetchRegionalPlaces is the last resort when the city lacks places: real attractions within ~80 km,
-// i.e. the surrounding region. The fast pass keeps only wikidata-tagged (famous) ones; the full pass
-// also takes any named park/museum/historic site and Nominatim hits inside the 80 km box.
-func (s *PlacesService) fetchRegionalPlaces(ctx context.Context, cityName string, lat, lon float64, full bool) []realPlace {
-	f := fmt.Sprintf("(around:80000,%.4f,%.4f)", lat, lon)
-	wd := `["wikidata"]`
-	if full {
-		wd = ""
-	}
-	q := fmt.Sprintf(`[out:json][timeout:%d];(nwr`, overpassSecs(ctx)) + f + `["tourism"~"^(attraction|museum)$"]` + wd + `["name"];nwr` + f + `["historic"]` + wd + `["name"];nwr` + f + `["leisure"="park"]` + wd + `["name"];);out tags 600;`
-	var out []realPlace
-	if els, err := s.overpass(ctx, q); err == nil {
-		for _, p := range classifyElements(cityName, els) {
-			if p.Kind == "property" {
-				out = append(out, p)
-			}
-		}
-	}
-	if !full {
-		return out
-	}
-	// 0.72 degrees of latitude ~ 80 km; longitude is widened by 1/cos(lat).
-	dLat := 0.72
-	dLon := dLat / math.Max(math.Cos(lat*math.Pi/180), 0.2)
-	box := fmt.Sprintf("%.4f,%.4f,%.4f,%.4f", lon-dLon, lat+dLat, lon+dLon, lat-dLat)
-	for _, q := range []nominatimQuery{{"park", "property", 8, true}, {"museum", "property", 8, true}, {"stadium", "property", 6, true}} {
-		var hits []nominatimHit
-		endpoint := "https://nominatim.openstreetmap.org/search?format=json&addressdetails=0&limit=40&bounded=1&viewbox=" + box + "&q=" + url.QueryEscape(q.word)
-		if err := s.getJSON(ctx, endpoint, srcTimeout(ctx), true, &hits); err != nil {
-			if ctx.Err() != nil {
-				break
-			}
+// dropForeign removes names that belong to another catalog city's preset (e.g. Cristo Redentor in Magé):
+// only places of the chosen municipality may reach the board.
+func dropForeign(cityName string, ps []realPlace) []realPlace {
+	foreign := map[string]bool{}
+	for _, c := range offlineCities {
+		if strings.EqualFold(c.name, cityName) {
 			continue
 		}
-		for _, h := range hits {
-			if n := strings.TrimSpace(h.Name); validPlaceName(n, cityName) {
-				out = append(out, realPlace{Name: n, Kind: "property", Score: q.score, Top: false})
+		pr := resolveCityPreset(c.name)
+		for _, list := range [][]string{pr.props[:], pr.stations[:], pr.utilities[:], pr.candidates[:]} {
+			for _, n := range list {
+				foreign[strings.ToLower(n)] = true
 			}
+		}
+	}
+	if _, _, _, ok := offlinePlace(cityName); ok {
+		for _, n := range resolveCityPreset(cityName).props {
+			delete(foreign, strings.ToLower(n))
+		}
+	}
+	out := ps[:0:0]
+	for _, p := range ps {
+		if !foreign[strings.ToLower(p.Name)] {
+			out = append(out, p)
 		}
 	}
 	return out
@@ -1183,7 +1162,7 @@ func (s *PlacesService) backoff(resp *http.Response) {
 }
 
 // diskSchemaVersion invalidates caches written by older builds (v<2 could hold street names as cities).
-const diskSchemaVersion = 2
+const diskSchemaVersion = 3
 
 // diskCache is the on-disk snapshot of resolved places and landmark results.
 type diskCache struct {
