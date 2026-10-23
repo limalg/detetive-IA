@@ -121,6 +121,9 @@ func TestBanco3DMultiplayerThreeHumans(t *testing.T) {
 	// F5: reconectar mantem o mesmo player_id
 	re := mk()
 	_, rj := re.call("POST", "/api/banco3d/room/join", map[string]any{"room_id": "mp-1", "player_id": b.id})
+	if code, _ := mk().call("POST", "/api/banco3d/room/join", map[string]any{"room_id": "mp-1", "player_id": "p99", "name": "Fantasma"}); code != 404 {
+		t.Fatalf("reconnect with unknown player_id: want 404 got %d", code)
+	}
 	if rj["reconnected"] != true || rj["player"].(map[string]any)["id"] != b.id {
 		t.Fatalf("reconnect failed: %v", rj)
 	}

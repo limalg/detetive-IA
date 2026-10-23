@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"log"
 	"net/http"
@@ -46,7 +48,7 @@ func main() {
 	}
 
 	authService := auth.New(database)
-	_, _ = authService.EnsureAdminUser("admin", "admin1940")
+	ensureAdmin(authService, dbDir)
 
 	// Carregar configurações de IA do banco (padrão da nota credencias)
 	var aiURL, aiKey, aiModel, aiProvider string
@@ -100,4 +102,35 @@ func main() {
 	<-quit
 
 	fmt.Println("Encerrando servidor Detetive IA...")
+}
+
+// ensureAdmin cria o admin inicial a partir de ADMIN_USER/ADMIN_PASSWORD. Sem senha no env,
+// gera uma aleatória, grava em <dados>/admin_password.txt (0600) e loga apenas o caminho.
+func ensureAdmin(a *auth.Service, dataDir string) {
+	user := os.Getenv("ADMIN_USER")
+	if user == "" {
+		user = "admin"
+	}
+	pass := os.Getenv("ADMIN_PASSWORD")
+	generated := pass == ""
+	if generated {
+		b := make([]byte, 18)
+		if _, err := rand.Read(b); err != nil {
+			log.Fatalf("Erro fatal: falha ao gerar senha do admin: %v", err)
+		}
+		pass = base64.RawURLEncoding.EncodeToString(b)
+	}
+	created, err := a.EnsureAdminUser(user, pass)
+	if err != nil {
+		log.Printf("Aviso: falha ao criar admin: %v", err)
+		return
+	}
+	if created == nil || !generated {
+		return // já existia admin, ou senha veio do env
+	}
+	path := filepath.Join(dataDir, "admin_password.txt")
+	if err := os.WriteFile(path, []byte(pass+"\n"), 0600); err != nil {
+		log.Fatalf("Erro fatal: admin criado mas senha não pôde ser gravada em %s: %v", path, err)
+	}
+	log.Printf("Admin %q criado com senha aleatória; senha gravada em %s", user, path)
 }

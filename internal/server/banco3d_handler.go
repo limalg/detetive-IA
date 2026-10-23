@@ -194,13 +194,15 @@ func (h *Handler) HandleBanco3DRoomJoin(w http.ResponseWriter, r *http.Request) 
 
 	if req.PlayerID != "" {
 		p, err := room.ReconnectPlayer(req.PlayerID)
-		if err == nil {
-			h.json(w, http.StatusOK, map[string]interface{}{
-				"reconnected": true,
-				"player":      p,
-			})
+		if err != nil {
+			h.error(w, http.StatusNotFound, "player not found in room")
 			return
 		}
+		h.json(w, http.StatusOK, map[string]interface{}{
+			"reconnected": true,
+			"player":      p,
+		})
+		return
 	}
 
 	if req.Name == "" {

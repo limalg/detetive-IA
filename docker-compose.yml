@@ -7,6 +7,8 @@ services:
     environment:
       PORT: ${PORT:-8080}
       DB_PATH: ${DB_PATH:-/app/data/detetive.db}
+      ADMIN_USER: ${ADMIN_USER:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       BANCO3D_CACHE_FILE: ${BANCO3D_CACHE_FILE:-/app/data/banco3d_places.json}
     volumes:
       - detetive-data:/app/data

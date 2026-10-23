@@ -516,7 +516,7 @@
       const art = CARDIMG[c.kind] || '', img = $('cfxImg'); img.hidden = !art; if (art) img.src = art;
       $('cfxTitle').textContent = c.title || ''; $('cfxText').textContent = c.text || '';
       const fx = $('cfxFx'); fx.className = amt > 0 ? 'up' : amt < 0 ? 'down' : '';
-      fx.textContent = c.jail ? 'Vá para a Cadeia' : amt ? `${amt > 0 ? '+' : '−'}${brl(Math.abs(amt))}` : '';
+      fx.textContent = c.jail ? 'Vá para a Ilha Perdida' : amt ? `${amt > 0 ? '+' : '−'}${brl(Math.abs(amt))}` : '';
       card.className = 'cfx-card chance' + (art ? ' art' : '');
       box.hidden = false; void card.offsetWidth;
       card.classList.add('in'); await sleep(maxMotion() ? 450 : 1); card.classList.add('flip');
@@ -890,7 +890,9 @@
   async function join(id, name) {
     const st = await getRoom(id).catch(() => { throw new Error('Sala não encontrada'); });
     const saved = loadSaved(id);
-    const j = await api('/api/banco3d/room/join', { room_id: id, player_id: saved ? saved.player_id : '', name, color: COLORS[st.game.players.length % COLORS.length], piece: 'car' });
+    const body = { room_id: id, name, color: COLORS[st.game.players.length % COLORS.length], piece: 'car' };
+    // player_id salvo desconhecido na sala (404) -> entra como novo jogador pelo nome
+    const j = await api('/api/banco3d/room/join', { ...body, player_id: saved ? saved.player_id : '' }).catch((e) => { if (saved && saved.player_id) return api('/api/banco3d/room/join', { ...body, player_id: '' }); throw e; });
     roomId = id; meId = j.player.id;
     save(id, { player_id: meId, name });
     try { localStorage.setItem('banco3d:last', id); } catch { /* private mode */ }

@@ -23,6 +23,8 @@ import (
 	"detetive-ia/web"
 )
 
+const testAdminPass = "test-only-pw-9f3a"
+
 func TestDetectiveNightAndAdminE2EJourney(t *testing.T) {
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "detective_night_e2e.db")
@@ -40,7 +42,7 @@ func TestDetectiveNightAndAdminE2EJourney(t *testing.T) {
 	}
 
 	authService := auth.New(database)
-	if _, err := authService.EnsureAdminUser("admin", "admin1940"); err != nil {
+	if _, err := authService.EnsureAdminUser("admin", testAdminPass); err != nil {
 		t.Fatalf("falha ao criar admin default: %v", err)
 	}
 
@@ -101,7 +103,7 @@ func TestDetectiveNightAndAdminE2EJourney(t *testing.T) {
 
 		// Acesso via Basic Auth ao /admin
 		basicReq, _ := http.NewRequest(http.MethodGet, ts.URL+"/admin", nil)
-		basicReq.SetBasicAuth("admin", "admin1940")
+		basicReq.SetBasicAuth("admin", testAdminPass)
 		basicResp, err := http.DefaultClient.Do(basicReq)
 		if err != nil {
 			t.Fatalf("erro no acesso Basic Auth: %v", err)
@@ -115,7 +117,7 @@ func TestDetectiveNightAndAdminE2EJourney(t *testing.T) {
 		// Login como admin
 		loginPayload := map[string]string{
 			"username": "admin",
-			"password": "admin1940",
+			"password": testAdminPass,
 		}
 		body, _ := json.Marshal(loginPayload)
 		resp, err = client.Post(ts.URL+"/api/auth/login", "application/json", bytes.NewReader(body))
