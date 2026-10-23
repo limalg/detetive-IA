@@ -37,10 +37,11 @@
 
   // ---------- backend shape -> view shape ----------
   const TT = { GO: 'START', CHANCE: 'LUCK', CHEST: 'LUCK', FREE_PARKING: 'PARKING' };
+  const luckName = (t) => (t.deck === 'CHEST' ? 'Revés' : t.deck === 'CHANCE' ? 'Sorte' : 'Sorte ou Revés');
   function norm(r) {
     const g = r.game || {}, tiles = (r.board && r.board.tiles) || [];
     const players = (g.players || []).map((p) => ({ id: p.id, name: p.name, color: p.color, balance: p.money, position: p.position, bankrupt: p.is_bankrupt, properties: p.properties || [] }));
-    const board = tiles.map((t) => ({ position: t.index, type: TT[t.type] || t.type, name: t.name, group: t.group, price: t.price, rent: t.rent || [], rent_base: (t.rent || [])[0] || 0, build_cost: t.house_cost, image_kind: t.image_kind, description: t.description, mortgage: t.mortgage_value, owner_id: t.owner_id, houses: t.houses >= 5 ? 0 : t.houses, hotel: t.houses >= 5, queen: t.is_queen }));
+    const board = tiles.map((t) => ({ position: t.index, type: TT[t.type] || t.type, deck: t.type, name: t.name, group: t.group, price: t.price, rent: t.rent || [], rent_base: (t.rent || [])[0] || 0, build_cost: t.house_cost, image_kind: t.image_kind, description: t.description, mortgage: t.mortgage_value, owner_id: t.owner_id, houses: t.houses >= 5 ? 0 : t.houses, hotel: t.houses >= 5, queen: t.is_queen }));
     const cur = g.current_turn_player_id, me = players.find((p) => p.id === meId);
     const mine = cur === meId && g.is_started && !g.is_over, rolled = !!g.dice_rolled_this_turn;
     const t = me && board[me.position];
@@ -94,7 +95,7 @@
       el.dataset.side = side(i, q);
       el.style.gridArea = `${r} / ${c}`;
       if (t.type === 'PROPERTY') el.style.setProperty('--gc', `var(--g-${t.group})`);
-      const nm = CORNER[t.type] || (t.type === 'LUCK' ? 'Sorte ou Revés' : t.name);
+      const nm = CORNER[t.type] || (t.type === 'LUCK' ? luckName(t) : t.name);
       const icon = tileIcon(t, t.type === 'STATION' || t.type === 'UTILITY' ? sn++ : i);
       const th = ['PROPERTY', 'STATION', 'UTILITY'].includes(t.type) ? thumbFor(t) : null;
       el.innerHTML = corner ? `${use(icon)}<span class="nm">${esc(nm)}</span><span class="hs"></span>`
@@ -104,7 +105,7 @@
       board.appendChild(el);
     });
     board.appendChild(centerEl());
-    pawns.clear(); prevPos.clear(); pawnPos.clear(); boardBuilt = true;
+    pawns.clear(); prevPos.clear(); pawnPos.clear(); diceEls = null; boardBuilt = true;
     fitTiles();
   }
 
@@ -122,17 +123,17 @@
   let fitT;
   addEventListener('resize', () => { clearTimeout(fitT); fitT = setTimeout(() => boardBuilt && fitTiles(), 150); });
 
-  function dieHtml(id) {
+  function cubeHtml() {
     const P = { 1: [5], 2: [1, 9], 3: [1, 5, 9], 4: [1, 3, 7, 9], 5: [1, 3, 5, 7, 9], 6: [1, 3, 4, 6, 7, 9] };
     const face = (v) => `<b class="f${v}">${P[v].map((p) => `<i style="grid-area:${Math.ceil(p / 3)}/${((p - 1) % 3) + 1}"></i>`).join('')}</b>`;
-    return `<div class="dw"><div class="die" id="${id}">${[1, 2, 3, 4, 5, 6].map(face).join('')}</div></div>`;
+    return `<i class="dsh"></i><div class="dz"><div class="cube">${[1, 2, 3, 4, 5, 6].map(face).join('')}</div></div>`;
   }
   function centerEl() {
     const c = document.createElement('div');
     c.className = 'center';
     c.innerHTML =
       `<div class="logo"><svg viewBox="0 0 64 32" aria-hidden="true"><path d="M4 30V16l8-6v20M16 30V8l9-6v28M29 30V12l9-4v22M42 30V4l10 6v20M56 30V14l4 2v14" fill="none" stroke="currentColor" stroke-width="2.500"/></svg>BANCO IMOBILIÁRIO</div>` +
-      `<div class="piles"><div class="pile" title="Sorte">${use('q')}</div><div class="dice">${dieHtml('d1')}${dieHtml('d2')}</div><div class="pile" title="Revés">${use('house')}</div></div>`;
+      `<div class="piles"><div class="pile" title="Sorte">${use('q')}</div><div class="pile" title="Revés">${use('house')}</div></div>`;
     return c;
   }
 
@@ -182,6 +183,13 @@
     const t = $('board').children[pos];
     if (!t || !maxMotion()) return;
     t.classList.remove('land'); void t.offsetWidth; t.classList.add('land');
+    // same keyframes as .tile.land: the pawn rides the tile up (own `translate` prop) and gets a small extra hop of its own
+    const lift = parseFloat(getComputedStyle($('board')).fontSize) * 1.6;
+    pawns.forEach((el, id) => {
+      if (pawnPos.get(id) !== pos) return;
+      el.animate([{ translate: '0 0 0' }, { translate: `0 0 ${lift}px`, offset: .2 }, { translate: '0 0 0' }], { duration: 1000, easing: 'cubic-bezier(.25,.1,.25,1)' });
+      el.firstChild.animate([{ translate: '0 0' }, { translate: '0 0', offset: .2 }, { translate: `0 ${-lift * 1.4}px`, offset: .38 }, { translate: '0 0', offset: .56 }, { translate: '0 0' }], { duration: 1000, easing: 'ease-out' });
+    });
     setTimeout(() => t.classList.remove('land'), 1100);
   }
   async function walk(p, from, to) {
@@ -256,6 +264,12 @@
   // same name -> same variant, so a tile keeps its picture across reloads
   function thumbFor(t) { const l = PROPS[kindOf(t)] || []; return l.length ? l[hash(t.name) % l.length] : null; }
 
+  // ---------- event card art (assets/cards): image_kind -> file ----------
+  const CARDIMG = {};
+  const cardsReady = (async () => {
+    try { const r = await fetch('assets/cards/manifest.json'); if (r.ok) Object.entries((await r.json()).cards || {}).forEach(([k, f]) => { CARDIMG[k] = 'assets/cards/' + f; }); } catch { /* no manifest: cards show without art */ }
+  })();
+
   // ---------- players panel: persistent rows, balance tween, floating deltas ----------
   const rows = new Map(), bal = new Map();
   let fxSrc = new Map(); // player id -> element the coins should leave from (e.g. the Saída tile)
@@ -328,9 +342,42 @@
     if (!gains.length) losses.forEach(({ r, d }) => coins(r, center, n(d)));
   }
 
+  // ---------- my properties: vertical strip of group-coloured squares; hover = summary, click = full card ----------
+  const rentNow = (t) => (t.type === 'PROPERTY' && t.rent.length > 5 ? t.rent[t.hotel ? 5 : t.houses] : t.rent_base) || 0;
+  let mineSig = '', mineSet = new Set();
+  function renderMine() {
+    const mine = state.board.filter((t) => t.owner_id === meId).sort((x, y) => String(x.group || '~').localeCompare(String(y.group || '~')) || x.position - y.position);
+    const sig = mine.map((t) => `${t.position}:${t.houses}:${t.hotel}`).join('|');
+    $('myProps').dataset.empty = mine.length ? '' : '1';
+    if (sig === mineSig) return;
+    mineSig = sig;
+    const prev = mineSet; mineSet = new Set(mine.map((t) => t.position));
+    $('myList').innerHTML = mine.map((t) => {
+      const lv = t.hotel ? '★' : t.houses || '';
+      return `<button type="button" class="mp${prev.size && !prev.has(t.position) ? ' new' : ''}" data-i="${t.position}" style="--gc:${t.type === 'PROPERTY' ? `var(--g-${t.group})` : '#5b6b82'}" aria-label="${esc(t.name)}, ${brl(t.price)}${lv ? ', ' + (t.hotel ? 'hotel' : t.houses + ' casas') : ''}">${t.type === 'PROPERTY' ? '' : use(tileIcon(t, t.position))}${lv ? `<em>${lv}</em>` : ''}</button>`;
+    }).join('');
+    tipHide();
+  }
+  const tip = $('propTip');
+  function tipShow(btn) {
+    const t = state.board[+btn.dataset.i];
+    tip.innerHTML = `<b>${esc(t.name)}</b><span>Preço <i>${brl(t.price)}</i></span><span>Aluguel <i>${brl(rentNow(t))}</i></span><span>Casas <i>${t.hotel ? 'Hotel' : t.houses}</i></span>`;
+    tip.hidden = false;
+    const r = btn.getBoundingClientRect(), w = tip.offsetWidth, h = tip.offsetHeight;
+    tip.style.left = Math.max(8, r.left - w - 10) + 'px'; tip.style.top = Math.min(innerHeight - h - 8, Math.max(8, r.top + r.height / 2 - h / 2)) + 'px';
+  }
+  function tipHide() { tip.hidden = true; }
+  const mpBtn = (e) => e.target.closest('.mp');
+  $('myList').addEventListener('mouseover', (e) => { const b = mpBtn(e); if (b) tipShow(b); });
+  $('myList').addEventListener('mouseout', (e) => { if (mpBtn(e)) tipHide(); });
+  $('myList').addEventListener('focusin', (e) => { const b = mpBtn(e); if (b) tipShow(b); });
+  $('myList').addEventListener('focusout', tipHide);
+  $('myList').addEventListener('click', (e) => { const b = mpBtn(e); if (b) { tipHide(); showTile(+b.dataset.i); } });
+
   // ---------- render ----------
   function render() {
     renderPlayers();
+    renderMine();
     pawns.forEach((el, id) => el.classList.toggle('turn', id === state.current_turn));
     followTurn();
     $('cityName').textContent = state.city || 'Sua cidade';
@@ -338,7 +385,7 @@
     const cur = state.players.find((p) => p.id === state.current_turn);
     $('statusText').textContent = state.status === 'finished' ? `Fim! ${state.winner || ''} venceu` : mine ? 'Sua vez' : `Vez de ${cur ? cur.name : '…'}`;
     $('btnRoll').disabled = busy || !state.can_roll;
-    $('btnBuy').disabled = busy || !state.can_buy;
+    $('btnBuy').disabled = !state.can_buy; // stays armed while the pawn is still walking
     $('btnEnd').disabled = busy || !state.can_buy;
     $('btnBuild').disabled = true; $('btnBuild').title = 'Em breve';
     $('btnTrade').disabled = busy || state.status !== 'in_progress' || state.players.filter((p) => !p.bankrupt).length < 2;
@@ -348,7 +395,7 @@
       el.classList.toggle('owned', !!o);
       if (o) el.style.setProperty('--oc', o.color);
       el.querySelector('.hs').innerHTML = t.hotel ? '<i class="h"></i>' : '<i></i>'.repeat(t.houses || 0);
-      el.querySelector('.nm').textContent = CORNER[t.type] || (t.type === 'LUCK' ? 'Sorte ou Revés' : t.name);
+      el.querySelector('.nm').textContent = CORNER[t.type] || (t.type === 'LUCK' ? luckName(t) : t.name);
     });
   }
 
@@ -359,15 +406,53 @@
     clearTimeout(toastT); toastT = setTimeout(() => (t.hidden = true), 3600);
   }
 
-  const FACE = { 1: [0, 0], 2: [0, -90], 3: [-90, 0], 4: [90, 0], 5: [0, 90], 6: [0, 180] };
-  async function rollDice(dice) {
-    ['d1', 'd2'].forEach((id, k) => {
-      const d = $(id), [rx, ry] = FACE[dice[k]] || FACE[1], w = d.parentNode, n = (d._n = (d._n || 0) + 1);
-      w.classList.remove('roll'); void w.offsetWidth; w.classList.add('roll');
-      // spins on all 3 axes; always increasing so each roll tumbles forward; Z is a full turn so the face stays upright
-      d.style.transform = `rotateX(${rx + 720 * n + k * 360}deg) rotateY(${ry + 720 * n}deg) rotateZ(${360 * (n + k)}deg)`;
+  // ---------- dice: real cubes thrown from the thrower's edge, bouncing and rolling to a random spot on the table ----------
+  const FACE = { 1: [0, 0], 2: [0, -90], 3: [-90, 0], 4: [90, 0], 5: [0, 90], 6: [0, 180] }; // rotateX/rotateY that put face v on top
+  let diceEls = null; const diceRest = [];
+  const rnd = (a, b) => a + Math.random() * (b - a);
+  function ensureDice() {
+    if (diceEls && diceEls[0].isConnected) return diceEls;
+    diceEls = [0, 1].map(() => { const w = document.createElement('div'); w.className = 'dice-w'; w.hidden = true; w.innerHTML = cubeHtml(); $('board').appendChild(w); return w; });
+    return diceEls;
+  }
+  // dice rest as board fractions, so a resize keeps them on the same spot
+  function layoutDice() {
+    if (!diceEls || !diceEls[0].isConnected) return;
+    const b = $('board'), d = b.offsetWidth * .042;
+    diceEls.forEach((w, k) => { const r = diceRest[k]; if (!r) return; w.style.setProperty('--d', d + 'px'); w.style.transform = `translate(${r.fx * b.offsetWidth}px,${r.fy * b.offsetHeight}px)`; });
+  }
+  const T_IMP = [.3, .58, .8, .94], H_BOUNCE = [3, 1.5, .6, .2]; // impact times and bounce heights (in die sizes)
+  const heightAt = (t) => {
+    if (t <= T_IMP[0]) return H_BOUNCE[0] * (1 - (t / T_IMP[0]) ** 2);
+    for (let i = 1; i < 4; i++) if (t <= T_IMP[i]) { const u = (t - T_IMP[i - 1]) / (T_IMP[i] - T_IMP[i - 1]); return H_BOUNCE[i] * 4 * u * (1 - u); }
+    return 0;
+  };
+  async function rollDice(dice, who) {
+    const b = $('board'), c = b.querySelector('.center'), W = b.offsetWidth, H = b.offsetHeight, d = W * .042, els = ensureDice();
+    const x0 = c.offsetLeft + d, x1 = c.offsetLeft + c.offsetWidth - d, y0 = c.offsetTop + d, y1 = c.offsetTop + c.offsetHeight * .62; // above the card piles
+    let tg;
+    for (let n = 0; n < 40; n++) { tg = [0, 1].map(() => [rnd(x0, x1), rnd(y0, y1)]); if (Math.hypot(tg[0][0] - tg[1][0], tg[0][1] - tg[1][1]) > d * 2.5) break; }
+    const k0 = state.players.findIndex((p) => p.id === who), sd = who === meId ? 'B' : ['L', 'T', 'R'][Math.max(0, k0) % 3], o = rnd(.35, .65);
+    els.forEach((w, k) => {
+      const [rx, ry] = FACE[dice[k]] || FACE[1], yaw = rnd(0, 360), [x, y] = tg[k], sp = (k ? 1 : -1) * d * .8;
+      const [sx, sy] = sd === 'B' ? [W * o + sp, H + d * 2] : sd === 'T' ? [W * o + sp, -d * 2] : sd === 'L' ? [-d * 2, H * o + sp] : [W + d * 2, H * o + sp];
+      const dz = w.querySelector('.dz'), cube = w.querySelector('.cube'), sh = w.querySelector('.dsh');
+      diceRest[k] = { fx: x / W, fy: y / H };
+      w.hidden = false; w.style.setProperty('--d', d + 'px');
+      w.style.transform = `translate(${x}px,${y}px)`; dz.style.transform = `translateZ(${d / 2}px)`; cube.style.transform = `rotateZ(${yaw}deg) rotateX(${rx}deg) rotateY(${ry}deg)`;
+      if (!maxMotion()) return;
+      const spin = [0, 1, 2].map(() => (Math.random() < .5 ? -1 : 1) * 360 * rnd(1.5, 3)), N = 40, wk = [], zk = [], ck = [], sk = [];
+      for (let i = 0; i <= N; i++) {
+        const t = i / N, p = 1 - (1 - t) ** 2.4, z = heightAt(t) * d, e = 1 - p;
+        wk.push({ transform: `translate(${sx + (x - sx) * p}px,${sy + (y - sy) * p}px)` });
+        zk.push({ transform: `translateZ(${d / 2 + z}px)` });
+        ck.push({ transform: `rotateZ(${yaw + e * spin[0]}deg) rotateX(${rx + e * spin[1]}deg) rotateY(${ry + e * spin[2]}deg)` });
+        sk.push({ transform: `translateZ(.5px) scale(${1 / (1 + z / d * .7)})`, opacity: .45 / (1 + z / d) });
+      }
+      const opt = { duration: 1200, easing: 'linear' };
+      w.animate(wk, opt); dz.animate(zk, opt); cube.animate(ck, opt); sh.animate(sk, opt);
     });
-    await sleep(1200);
+    await sleep(maxMotion() ? 1200 : 1);
   }
 
   // apply a fresh room payload: roll dice + walk pawns for every mover, then redraw
@@ -379,13 +464,16 @@
     cardBusy = true;
     const box = $('cardFx'), card = $('cfxCard');
     while (cardQ.length) {
-      const c = cardQ.shift(), chest = /chest|rev/i.test(c.deck || ''), p = state.players.find((x) => x.id === c.who), amt = Number(c.amount) || 0;
+      const c = cardQ.shift();
+      if (c.destroy != null) { camera(c.destroy); crumble(c.destroy); await sleep(maxMotion() ? 1500 : 1); continue; }
+      const chest = /chest|rev/i.test(c.deck || ''), p = state.players.find((x) => x.id === c.who), amt = Number(c.amount) || 0;
       $('cfxDeck').textContent = chest ? 'Revés' : 'Sorte';
       $('cfxWho').textContent = `${chest ? 'Revés' : 'Sorte'}${p ? ' de ' + (p.id === meId ? 'você' : p.name) : ''}`;
+      const art = CARDIMG[c.kind] || '', img = $('cfxImg'); img.hidden = !art; if (art) img.src = art;
       $('cfxTitle').textContent = c.title || ''; $('cfxText').textContent = c.text || '';
       const fx = $('cfxFx'); fx.className = amt > 0 ? 'up' : amt < 0 ? 'down' : '';
       fx.textContent = c.jail ? 'Vá para a Cadeia' : amt ? `${amt > 0 ? '+' : '−'}${brl(Math.abs(amt))}` : '';
-      card.className = 'cfx-card ' + (chest ? 'chest' : 'chance');
+      card.className = 'cfx-card ' + (chest ? 'chest' : 'chance') + (art ? ' art' : '');
       box.hidden = false; void card.offsetWidth;
       card.classList.add('in'); await sleep(maxMotion() ? 450 : 1); card.classList.add('flip');
       await new Promise((ok) => { cardClose = ok; setTimeout(ok, 3300); });
@@ -394,7 +482,20 @@
     cardBusy = false;
   }
   $('cfxCard').onclick = () => cardClose && cardClose();
-  if (DEMO) window.__demo = { card: (c) => { cardQ.push(c); pumpCards(); } };
+  // a destroyed tile shakes, sags and drops dust
+  function crumble(pos) {
+    const t = $('board').children[pos];
+    if (!t || !maxMotion()) return;
+    const sh = (x, r) => ({ transform: `translateX(${x}em) rotate(${r}deg)` });
+    t.animate([sh(0, 0), sh(-.5, -2), sh(.5, 2), sh(-.6, -2.5), sh(.6, 2.5), sh(-.4, -1.5), sh(.3, 1), { transform: 'translateY(.35em) scale(.95,.88) rotate(1.5deg)', filter: 'saturate(.5) brightness(.85)', offset: .82 }, { transform: 'none', filter: 'none' }], { duration: 1400, easing: 'ease-in-out' });
+    for (let k = 0; k < 7; k++) {
+      const d = document.createElement('i');
+      d.className = 'dust'; d.style.left = 10 + Math.random() * 80 + '%'; d.style.top = 30 + Math.random() * 50 + '%';
+      t.appendChild(d);
+      d.animate([{ opacity: 0, transform: 'translateY(0) scale(.4)' }, { opacity: .8, offset: .25 }, { opacity: 0, transform: `translate(${(Math.random() - .5) * 1.5}em,-2.2em) scale(1.6)` }], { duration: 1100, delay: 250 + k * 60, easing: 'ease-out', fill: 'both' }).onfinish = () => d.remove();
+    }
+  }
+  if (DEMO) window.__demo = { card: (c) => { cardQ.push(c); pumpCards(); }, destroy: (pos) => { cardQ.push({ destroy: pos }); pumpCards(); } };
   // events[]: only entries not seen before are new; the first payload just primes the set
   const seenEv = new Set();
   const evKey = (e) => e.seq ?? e.id ?? `${e.timestamp}|${e.type}|${e.player_id}`;
@@ -418,7 +519,7 @@
   async function commit(r, quiet, rolled) {
     raw = r;
     const next = norm(r), old = new Map(prevPos);
-    await propsReady;
+    await Promise.all([propsReady, cardsReady]);
     if (!boardBuilt || $('board').children.length < next.board.length) { state = next; buildBoard(); }
     state = next;
     const evs = freshEvents(r), diceBy = new Map(), N = state.board.length;
@@ -428,7 +529,7 @@
       if (from !== undefined && from !== p.position && !p.bankrupt) {
         if (!(rolled && p.id === meId)) {
           const dice = diceBy.get(p.id) || guessDice(from, p.position, N);
-          if (dice) { if (p.id !== meId) toast(`${p.name} tirou ${dice[0] + dice[1]}`); await rollDice(dice); }
+          if (dice) { if (p.id !== meId) toast(`${p.name} tirou ${dice[0] + dice[1]}`); await rollDice(dice, p.id); }
         }
         if ((p.position - from + N) % N > 14) { placePawn(p, p.position); camera(p.position); land(p.position); } // card/jail teleport
         else await walk(p, from, p.position);
@@ -441,9 +542,10 @@
     checkOffer();
     autoTurn();
     if (cardEvs.length) cardEvSeen = true; // server emits card events: last_card_result is then only a stale duplicate
-    cardEvs.forEach((e) => cardQ.push({ deck: e.deck, title: e.title, text: e.text, amount: e.amount ?? e.value, jail: e.went_to_jail || /jail|prisao|cadeia/i.test(e.effect || ''), who: e.player_id }));
+    cardEvs.forEach((e) => cardQ.push({ kind: e.image_kind || e.kind, deck: e.deck, title: e.title, text: e.text, amount: e.amount ?? e.value, jail: e.went_to_jail || /jail|prisao|cadeia/i.test(e.effect || ''), who: e.player_id }));
     const c = state.card, fresh = c && seenCard !== undefined && c.key !== seenCard;
     seenCard = c ? c.key : (seenCard === undefined ? '' : seenCard);
+    (evs || []).filter((e) => e.type === 'destroy').forEach((e) => { const pos = e.tile ?? e.to ?? e.position; if (pos != null) cardQ.push({ destroy: +pos }); });
     if (fresh && !cardEvSeen) cardQ.push({ deck: c.deck, title: c.title, text: '', amount: c.delta, jail: c.jail, who: c.who });
     if (cardQ.length) pumpCards();
     if (!evs) return '';
@@ -497,12 +599,13 @@
     const r = await act('roll'); // the server rolls the dice
     const d = r.dice || r.result || {};
     const dice = [d.die1 || (d.dice && d.dice[0]) || 1, d.die2 || (d.dice && d.dice[1]) || 1];
-    await rollDice(dice);
+    await rollDice(dice, meId);
     const card = await commit(r.game ? r : await getRoom(roomId), true, true);
     const me = state.players.find((p) => p.id === meId), t = state.board[me.position];
     toast(`Tirou ${dice[0] + dice[1]}. ${t.name}.` + (state.can_buy ? ` Comprar por ${brl(t.price)}?` : '') + (card ? ' ' + card : ''));
   });
-  $('btnBuy').onclick = () => run(async () => { const r = await act('buy'); await commit(r.game ? r : await getRoom(roomId)); toast('Comprado!'); });
+  $('btnBuy').onclick = async () => { while (busy) await sleep(100); if (state.can_buy) buy(); };
+  const buy = () => run(async () => { const r = await act('buy'); await commit(r.game ? r : await getRoom(roomId)); toast('Comprado!'); });
   $('btnEnd').onclick = () => passTurn();
   $('btnMap').onclick = () => { const f = $('table').classList.toggle('flat'); $('btnMap').setAttribute('aria-pressed', f); if (f) camera(null); else followTurn(); setTimeout(placeAll, 1050); };
 
@@ -512,7 +615,7 @@
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') $('sheet').hidden = true; });
   function showTile(i) {
     const t = state.board[i], o = state.players.find((p) => p.id === t.owner_id);
-    if (!t.price) return sheet(CORNER[t.type] || (t.type === 'LUCK' ? 'Sorte ou Revés' : t.name), t.description ? `<p>${esc(t.description)}</p>` : '<p class="dim">Casa especial.</p>');
+    if (!t.price) return sheet(CORNER[t.type] || (t.type === 'LUCK' ? luckName(t) : t.name), t.description ? `<p>${esc(t.description)}</p>` : '<p class="dim">Casa especial.</p>');
     const k = kindOf(t), list = PROPS[k] || [], idx = list.length ? hash(t.name) % list.length : -1, gc = t.type === 'PROPERTY' ? `var(--g-${t.group})` : '#38bdf8';
     const rent = t.type === 'PROPERTY' && t.rent.length > 5
       ? ['Aluguel base', '1 casa', '2 casas', '3 casas', '4 casas', 'Hotel'].map((l, n) => `<dt>${l}</dt><dd>${brl(t.rent[n])}</dd>`).join('')
@@ -734,7 +837,7 @@
   }
   let timer;
   function startPolling() { clearInterval(timer); tick(); timer = setInterval(tick, 1000); }
-  addEventListener('resize', () => state && placeAll());
+  addEventListener('resize', () => { if (state) { placeAll(); layoutDice(); } });
 
   // ---------- city combobox: GET /api/banco3d/places/suggest?q= (free text always allowed) ----------
   function attachCombo(input) {

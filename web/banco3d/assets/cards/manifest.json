@@ -1,0 +1,14 @@
+{
+ "cards": {
+  "earthquake": "earthquake.webp",
+  "flood": "flood.webp",
+  "fire": "fire.webp",
+  "blackout": "blackout.webp",
+  "strike": "strike.webp",
+  "lottery": "lottery.webp",
+  "inheritance": "inheritance.webp",
+  "festival": "festival.webp",
+  "inspection": "inspection.webp",
+  "crisis": "crisis.webp"
+ }
+}

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#050b1a">
+<meta name="theme-color" content="#e3ecf6">
 <title>Banco Imobiliário 3D</title>
 <link rel="stylesheet" href="css/style.css">
 </head>
@@ -29,6 +29,9 @@
 <main class="stage" id="stage" aria-label="Mesa do Banco Imobiliário">
   <div class="city-bg" aria-hidden="true"></div>
 
+  <aside class="myprops" id="myProps" aria-label="Minhas propriedades"><h2>Minhas propriedades</h2><div class="mp-list" id="myList"></div></aside>
+  <div class="ptip" id="propTip" role="tooltip" hidden></div>
+
   <section class="glass players" id="players" aria-label="Jogadores"></section>
 
   <div class="table-wrap">
@@ -46,7 +49,7 @@
   <div class="cardfx" id="cardFx" hidden>
     <div class="cfx-card" id="cfxCard" role="status" aria-live="polite" tabindex="0">
       <div class="cf front"><svg aria-hidden="true"><use href="#i-q"/></svg><span id="cfxDeck">Sorte</span></div>
-      <div class="cf back"><small id="cfxWho"></small><h3 id="cfxTitle"></h3><p id="cfxText"></p><strong id="cfxFx"></strong></div>
+      <div class="cf back"><img id="cfxImg" alt="" hidden><small id="cfxWho"></small><h3 id="cfxTitle"></h3><p id="cfxText"></p><strong id="cfxFx"></strong></div>
     </div>
   </div>
 
