@@ -3,6 +3,7 @@ package banco3d
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"math"
@@ -352,10 +353,11 @@ func offlinePlace(key string) (string, float64, float64, bool) {
 
 // realPlace is a named OSM feature after classification and fame scoring.
 type realPlace struct {
-	Name  string
-	Kind  string // "property", "station", "utility"
-	Score int
-	Top   bool // landmark-grade (park/tourism/historic/wikipedia): eligible as vote candidate
+	Name      string
+	Kind      string // "property", "station", "utility"
+	Score     int
+	ImageKind string // optional override (official districts/neighbourhoods draw as streets)
+	Top       bool   // landmark-grade (park/tourism/historic/wikipedia): eligible as vote candidate
 }
 
 // classifyElements merges same-named elements (one street = many OSM ways) and scores their fame.
@@ -769,13 +771,14 @@ func (s *PlacesService) fetchWikipediaPlaces(ctx context.Context, cityName strin
 // every Nominatim query.
 func (s *PlacesService) fetchAllSources(ctx context.Context, cityName string, lat, lon float64, full bool) []realPlace {
 	var wg sync.WaitGroup
-	results := make([][]realPlace, 6)
+	results := make([][]realPlace, 7)
 	for i, fn := range []func() []realPlace{
 		func() []realPlace { return s.fetchOverpassPlaces(ctx, cityName, lat, lon) },
 		func() []realPlace { return s.fetchWikipediaPlaces(ctx, cityName, lat, lon) },
 		func() []realPlace { return s.fetchWikidataPlaces(ctx, cityName, lat, lon) },
 		func() []realPlace { return s.fetchWikiCategoryPlaces(ctx, cityName) },
 		func() []realPlace { return s.fetchIBGEPlaces(ctx, cityName, lat, lon) },
+		func() []realPlace { return s.fetchNominatimStreets(ctx, cityName, lat, lon, full) },
 		func() []realPlace { return s.fetchNominatimPlaces(ctx, cityName, lat, lon, full) },
 	} {
 		wg.Add(1)
@@ -1061,7 +1064,8 @@ func buildLandmarks(cityName string, real []realPlace) *CityLandmarksResult {
 	}
 
 	seen := map[string]bool{strings.ToLower(cityName): true}
-	var props, stations, utils, tops, spare []string
+	var props, stations, utils, tops, spare, spareStreets []string
+	kindOf := map[string]string{}
 	add := func(list *[]string, name string, limit int) {
 		k := strings.ToLower(name)
 		if name != "" && len(*list) < limit && !seen[k] {
@@ -1070,6 +1074,9 @@ func buildLandmarks(cityName string, real []realPlace) *CityLandmarksResult {
 		}
 	}
 	for _, p := range real {
+		if p.ImageKind != "" {
+			kindOf[p.Name] = p.ImageKind
+		}
 		switch p.Kind {
 		case "station":
 			add(&stations, p.Name, 4)
@@ -1080,8 +1087,10 @@ func buildLandmarks(cityName string, real []realPlace) *CityLandmarksResult {
 				tops = append(tops, p.Name)
 			}
 			if len(props) >= 22 && !seen[strings.ToLower(p.Name)] {
-				if k := ClassifyImageKind(p.Name, TileProperty); k != "street" && k != "avenue" {
+				if k := ClassifyImageKind(p.Name, TileProperty); k != "street" && k != "avenue" && p.ImageKind == "" {
 					spare = append(spare, p.Name) // real, unused: may fill empty utility slots
+				} else {
+					spareStreets = append(spareStreets, p.Name) // last resort
 				}
 			}
 			add(&props, p.Name, 22)
@@ -1096,7 +1105,7 @@ func buildLandmarks(cityName string, real []realPlace) *CityLandmarksResult {
 	for _, n := range preset.utilities {
 		add(&utils, n, 2)
 	}
-	for _, n := range spare { // no utility found: any real place (mall, hospital, university...) takes the slot
+	for _, n := range append(spare, spareStreets...) { // no utility found: any real place takes the slot, streets last
 		add(&utils, n, 2)
 	}
 
@@ -1117,7 +1126,11 @@ func buildLandmarks(cityName string, real []realPlace) *CityLandmarksResult {
 
 	var landmarks []LandmarkItem
 	for _, n := range props {
-		landmarks = append(landmarks, LandmarkItem{Name: n, Type: "property", ImageKind: ClassifyImageKind(n, TileProperty)})
+		ik := ClassifyImageKind(n, TileProperty)
+		if o := kindOf[n]; o != "" {
+			ik = o
+		}
+		landmarks = append(landmarks, LandmarkItem{Name: n, Type: "property", ImageKind: ik})
 	}
 	for _, n := range stations {
 		landmarks = append(landmarks, LandmarkItem{Name: n, Type: "station", ImageKind: "station"})
@@ -1204,7 +1217,7 @@ func (s *PlacesService) backoff(resp *http.Response) {
 }
 
 // diskSchemaVersion invalidates caches written by older builds (v<2 could hold street names as cities).
-const diskSchemaVersion = 6
+const diskSchemaVersion = 7
 
 // diskCache is the on-disk snapshot of resolved places and landmark results.
 type diskCache struct {
@@ -1540,7 +1553,52 @@ func (s *PlacesService) fetchIBGEPlaces(ctx context.Context, cityName string, la
 		}
 		for _, it := range items {
 			if n := strings.TrimSpace(it.Nome); validPlaceName(n, cityName) {
-				out = append(out, realPlace{Name: n, Kind: "property", Score: part.score})
+				out = append(out, realPlace{Name: n, Kind: "property", Score: part.score, ImageKind: "street"})
+			}
+		}
+	}
+	return out
+}
+
+var streetTerms = []string{"avenida", "rua", "rodovia", "estrada", "travessa", "alameda", "praça", "largo"}
+
+// fetchNominatimStreets lists real streets/avenues/highways/squares of the municipality through structured
+// Nominatim searches (street+city+state, Brazil only), best "importance" first. Foreground runs 2 terms
+// (1 req/s shared with the other Nominatim queries); the background pass runs them all.
+func (s *PlacesService) fetchNominatimStreets(ctx context.Context, cityName string, lat, lon float64, full bool) []realPlace {
+	state := s.stateOf(cityName, lat, lon)
+	if state == "" {
+		return nil
+	}
+	terms := streetTerms[:2]
+	if full {
+		terms = streetTerms
+	}
+	type hit struct {
+		Name       string            `json:"name"`
+		Importance float64           `json:"importance"`
+		Address    map[string]string `json:"address"`
+	}
+	var out []realPlace
+	for _, term := range terms {
+		var hits []hit
+		endpoint := "https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=40&countrycodes=br" +
+			"&street=" + url.QueryEscape(term) + "&city=" + url.QueryEscape(cityName) + "&state=" + url.QueryEscape(state)
+		if err := s.getJSON(ctx, endpoint, srcTimeout(ctx), true, &hits); err != nil {
+			if ctx.Err() != nil || errors.Is(err, errNominatimBlocked) {
+				break
+			}
+			continue
+		}
+		sort.SliceStable(hits, func(i, j int) bool { return hits[i].Importance > hits[j].Importance })
+		for _, h := range hits {
+			a := h.Address
+			if c := firstNonEmpty(a["city"], a["town"], a["municipality"], a["village"]); !strings.EqualFold(c, cityName) {
+				continue
+			}
+			n := strings.TrimSpace(h.Name)
+			if validPlaceName(n, cityName) {
+				out = append(out, realPlace{Name: n, Kind: "property", Score: 2 + int(h.Importance*5)})
 			}
 		}
 	}

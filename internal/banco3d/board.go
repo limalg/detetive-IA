@@ -126,7 +126,7 @@ func ClassifyImageKind(name string, t TileType) string {
 		if strings.HasPrefix(lower, "rua") || strings.Contains(lower, "calçadão") || strings.Contains(lower, "beco") || strings.Contains(lower, "travessa") {
 			return "street"
 		}
-		if strings.HasPrefix(lower, "avenida") || strings.HasPrefix(lower, "av.") || strings.HasPrefix(lower, "alameda") || strings.HasPrefix(lower, "rodovia") {
+		if strings.HasPrefix(lower, "avenida") || strings.HasPrefix(lower, "av.") || strings.HasPrefix(lower, "alameda") || strings.HasPrefix(lower, "rodovia") || strings.HasPrefix(lower, "estrada") {
 			return "avenue"
 		}
 		if strings.HasPrefix(lower, "praça") || strings.HasPrefix(lower, "praca") || strings.HasPrefix(lower, "largo") {

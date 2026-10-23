@@ -222,7 +222,7 @@ func TestGetLandmarksRealPlacesByPlaceID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.City != "Maringá" || len(res.Candidates) != 4 || len(res.Landmarks) != 24 || !res.Partial {
+	if res.City != "Maringá" || len(res.Candidates) != 4 || len(res.Landmarks) != 25 || !res.Partial {
 		t.Fatalf("city=%q cands=%d lm=%d", res.City, len(res.Candidates), len(res.Landmarks))
 	}
 	if res.Candidates[0] != "Catedral Basílica" && res.Candidates[0] != "Parque do Ingá" {
@@ -662,5 +662,54 @@ func TestIBGEDistrictsFillSmallCity(t *testing.T) {
 	}
 	if names["Magé"] || len(ibgeCalls) != 3 {
 		t.Errorf("city itself must not be a tile; IBGE calls: %v", ibgeCalls)
+	}
+}
+
+func TestStreetsFillBoardAndKinds(t *testing.T) {
+	var streetQueries []string
+	svc := mockService(func(r *http.Request) (int, string) {
+		switch r.URL.Host {
+		case "nominatim.openstreetmap.org":
+			q := r.URL.Query()
+			if q.Get("street") == "" {
+				return 200, `[{"place_id":10351030,"class":"boundary","place_rank":16,"lat":"-22.65","lon":"-43.04","display_name":"Magé","address":{"city":"Magé","state":"Rio de Janeiro","country":"Brasil"}}]`
+			}
+			streetQueries = append(streetQueries, q.Get("street")+"|"+q.Get("city")+"|"+q.Get("state")+"|"+q.Get("countrycodes"))
+			var hs []string
+			for i := 0; i < 15; i++ {
+				hs = append(hs, fmt.Sprintf(`{"name":"%s Magé %c","importance":0.%d,"address":{"city":"Magé"}}`, strings.ToUpper(q.Get("street")[:1])+q.Get("street")[1:], 'A'+i, i))
+			}
+			hs = append(hs, `{"name":"Avenida do Rio","importance":0.9,"address":{"city":"Duque de Caxias"}}`)
+			return 200, `[` + strings.Join(hs, ",") + `]`
+		case "servicodados.ibge.gov.br":
+			if strings.HasSuffix(r.URL.Path, "/RJ/municipios") {
+				return 200, `[{"id":1,"nome":"Magé"}]`
+			}
+			if strings.HasSuffix(r.URL.Path, "/distritos") {
+				return 200, `[{"nome":"Santo Aleixo"}]`
+			}
+		}
+		return 200, `{"elements":[]}`
+	})
+	sg, _ := svc.Suggest("Magé RJ")
+	res, err := svc.GetLandmarks("", sg[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Landmarks) != 24 { // 22 properties + 2 utility slots taken by real streets; no stations in this fixture
+		t.Errorf("streets should fill properties and empty utility slots: %d", len(res.Landmarks))
+	}
+	if len(streetQueries) != 2 || streetQueries[0] != "avenida|Magé|Rio de Janeiro|br" {
+		t.Errorf("structured street queries: %v", streetQueries)
+	}
+	kinds := map[string]string{}
+	for _, l := range res.Landmarks {
+		kinds[l.Name] = l.ImageKind
+		if l.Name == "Avenida do Rio" {
+			t.Error("street of another municipality leaked")
+		}
+	}
+	if kinds["Santo Aleixo"] != "street" || kinds["Avenida Magé M"] != "avenue" || kinds["Rua Magé J"] != "street" {
+		t.Errorf("image kinds: %v", kinds)
 	}
 }
