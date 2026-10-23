@@ -23,7 +23,9 @@
   <symbol id="i-dice" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="4" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="8.500" cy="8.500" r="1.500" fill="currentColor"/><circle cx="15.500" cy="8.500" r="1.500" fill="currentColor"/><circle cx="12" cy="12" r="1.500" fill="currentColor"/><circle cx="8.500" cy="15.500" r="1.500" fill="currentColor"/><circle cx="15.500" cy="15.500" r="1.500" fill="currentColor"/></symbol>
   <symbol id="i-swap" viewBox="0 0 24 24"><path d="M4 9h13l-3-3M20 15H7l3 3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
   <symbol id="i-map" viewBox="0 0 24 24"><path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2zM9 4v14M15 6v14" fill="none" stroke="currentColor" stroke-width="1.800" stroke-linejoin="round"/></symbol>
-  <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 22s7-6.200 7-12a7 7 0 0 0-14 0c0 5.800 7 12 7 12z" fill="currentColor"/><circle cx="12" cy="10" r="2.600" fill="#06101f"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 7v5l3 2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16" fill="none" stroke="currentColor" stroke-width="2.200" stroke-linecap="round"/></symbol>
+  <symbol id="i-pin"viewBox="0 0 24 24"><path d="M12 22s7-6.200 7-12a7 7 0 0 0-14 0c0 5.800 7 12 7 12z" fill="currentColor"/><circle cx="12" cy="10" r="2.600" fill="#06101f"/></symbol>
 </svg>
 
 <main class="stage" id="stage" aria-label="Mesa do Banco Imobiliário">
@@ -43,10 +45,15 @@
   <div class="glass city-chip" id="cityChip">
     <svg class="ico" aria-hidden="true"><use href="#i-pin"/></svg>
     <div><b id="cityName">Sua cidade</b><span><i class="dot"></i><em id="statusText" role="status" aria-live="polite">Carregando…</em></span></div>
-    <button type="button" class="motion-btn" id="btnMotion" aria-pressed="false">Animações: Máximo</button>
+  </div>
+
+  <div class="hud" id="hud">
+    <div class="clock" id="matchClock" role="timer" aria-label="Tempo restante da partida" hidden><svg aria-hidden="true"><use href="#i-clock"/></svg><b id="clockTxt">--:--</b></div>
+    <button type="button" class="menu-btn" id="btnMenu" aria-haspopup="dialog" aria-label="Menu de opções"><svg aria-hidden="true"><use href="#i-menu"/></svg></button>
   </div>
 
   <div class="cardfx" id="cardFx" hidden>
+    <button type="button" class="cfx-x" id="cfxX" aria-label="Fechar carta (Esc)">×</button>
     <div class="cfx-card" id="cfxCard" role="status" aria-live="polite" tabindex="0">
       <div class="cf front"><svg aria-hidden="true"><use href="#i-q"/></svg><span id="cfxDeck">Sorte</span></div>
       <div class="cf back"><img id="cfxImg" alt="" hidden><small id="cfxWho"></small><h3 id="cfxTitle"></h3><p id="cfxText"></p><strong id="cfxFx"></strong></div>
@@ -116,6 +123,7 @@
       <fieldset><legend>Bots de IA</legend><div class="segs" id="botSegs"><label class="seg"><input type="radio" name="bots" value="0" checked><span>0</span></label><label class="seg"><input type="radio" name="bots" value="1"><span>1</span></label><label class="seg"><input type="radio" name="bots" value="2"><span>2</span></label><label class="seg"><input type="radio" name="bots" value="3"><span>3</span></label><label class="seg"><input type="radio" name="bots" value="4"><span>4</span></label><label class="seg"><input type="radio" name="bots" value="5"><span>5</span></label></div></fieldset>
       <fieldset><legend>Dificuldade dos bots</legend><div class="segs" id="diffSegs"><label class="seg"><input type="radio" name="difficulty" value="easy"><span>Fácil</span></label><label class="seg"><input type="radio" name="difficulty" value="normal" checked><span>Normal</span></label><label class="seg"><input type="radio" name="difficulty" value="hard"><span>Difícil</span></label></div></fieldset>
       <fieldset><legend>Tempo do turno</legend><div class="segs"><label class="seg"><input type="radio" name="turn" value="15"><span>15s</span></label><label class="seg"><input type="radio" name="turn" value="30" checked><span>30s</span></label><label class="seg"><input type="radio" name="turn" value="60"><span>60s</span></label></div></fieldset>
+      <fieldset><legend>Duração da partida</legend><div class="segs"><label class="seg"><input type="radio" name="match" value="0" checked><span>Sem limite</span></label><label class="seg"><input type="radio" name="match" value="15"><span>15 min</span></label><label class="seg"><input type="radio" name="match" value="30"><span>30</span></label><label class="seg"><input type="radio" name="match" value="60"><span>60</span></label><label class="seg"><input type="radio" name="match" value="90"><span>90</span></label></div></fieldset>
       <fieldset class="rules"><legend>Regras da prisão</legend>
         <label class="chk"><input type="checkbox" name="bail" checked><span>Fiança</span></label>
         <label class="chk"><input type="checkbox" name="triple" checked><span>3 duplas</span></label>
@@ -123,6 +131,48 @@
       </fieldset>
       <footer><button type="button" class="ghost" id="cfgCancel">Cancelar</button><button type="submit" class="primary">Aplicar</button></footer>
     </form>
+  </div>
+
+  <div class="start modal" id="menu" hidden>
+    <div class="glass cfg-card menu-card" role="dialog" aria-modal="true" aria-labelledby="menuTitle">
+      <header><h2 id="menuTitle">Opções</h2><button type="button" id="menuX" aria-label="Fechar">×</button></header>
+      <button type="button" class="ghost" id="btnMotion" aria-pressed="false">Animações: Máximo</button>
+      <button type="button" class="ghost" id="btnRules">Regras</button>
+      <button type="button" class="ghost danger" id="btnLeave">Sair da partida</button>
+    </div>
+  </div>
+
+  <div class="start modal" id="rules" hidden>
+    <div class="glass cfg-card menu-card" role="dialog" aria-modal="true" aria-labelledby="rulesTitle">
+      <header><h2 id="rulesTitle">Regras</h2><button type="button" id="rulesX" aria-label="Fechar">×</button></header>
+      <ul class="rules-list">
+        <li>Role os dados no seu turno e ande pelas casas. Passar pela Saída paga salário.</li>
+        <li>Casa sem dono: compre pelo preço ou recuse. Não há leilão.</li>
+        <li>Casa de outro jogador: pague o aluguel. Mais casas e hotel aumentam o aluguel.</li>
+        <li>Dupla nos dados joga de novo. Três duplas seguidas levam à prisão, como a casa Vá para a Cadeia e algumas cartas.</li>
+        <li>Na prisão: pague fiança, use a carta de saída livre ou tire dupla (conforme as regras da sala).</li>
+        <li>Sorte e Revés trazem prêmios, multas e eventos. Terremotos raros podem derrubar uma propriedade.</li>
+        <li>Quem fica sem dinheiro e sem propriedades vai à falência. Vence o último jogador ou quem tiver mais patrimônio quando o tempo acabar.</li>
+      </ul>
+      <footer><button type="button" class="primary" id="rulesOk">Entendi</button></footer>
+    </div>
+  </div>
+
+  <div class="start modal" id="leave" hidden>
+    <div class="glass cfg-card menu-card" role="alertdialog" aria-modal="true" aria-labelledby="leaveTitle" aria-describedby="leaveTxt">
+      <header><h2 id="leaveTitle">Sair da partida?</h2></header>
+      <p id="leaveTxt" class="dim">Você volta ao início e sua vez passa para um bot ou para o próximo jogador.</p>
+      <footer><button type="button" class="ghost" id="leaveNo">Ficar</button><button type="button" class="primary danger" id="leaveYes">Sair</button></footer>
+    </div>
+  </div>
+
+  <div class="start modal" id="final" hidden>
+    <div class="glass cfg-card menu-card final-card" role="dialog" aria-modal="true" aria-labelledby="finalTitle">
+      <header><h2 id="finalTitle">Fim de jogo</h2></header>
+      <p id="finalWin" class="final-win"></p>
+      <ol class="rank" id="finalRank"></ol>
+      <footer><button type="button" class="primary" id="finalHome">Voltar ao início</button></footer>
+    </div>
   </div>
 
   <div class="start modal" id="trade" hidden>

@@ -42,12 +42,13 @@
     const g = r.game || {}, tiles = (g.board && g.board.tiles) || (r.board && r.board.tiles) || []; // game.board is the live one (owner_id); top-level board can be a stale copy
     const players = (g.players || []).map((p) => ({ id: p.id, name: p.name, color: p.color, balance: p.money, position: p.position, bankrupt: p.is_bankrupt, properties: p.properties || [] }));
     const board = tiles.map((t) => ({ position: t.index, type: TT[t.type] || t.type, deck: t.type, name: t.name, group: t.group, price: t.price, rent: t.rent || [], rent_base: (t.rent || [])[0] || 0, build_cost: t.house_cost, image_kind: t.image_kind, description: t.description, mortgage: t.mortgage_value, owner_id: t.owner_id, houses: t.houses >= 5 ? 0 : t.houses, hotel: t.houses >= 5, queen: t.is_queen }));
+    players.forEach((p) => { p.worth = p.balance + board.filter((t) => t.owner_id === p.id).reduce((s, t) => s + (t.price || 0) + (t.hotel ? 5 : t.houses || 0) * (t.build_cost || 0), 0); }); // net worth: cash + deeds + buildings
     const cur = g.current_turn_player_id, me = players.find((p) => p.id === meId);
     const mine = cur === meId && g.is_started && !g.is_over, rolled = !!g.dice_rolled_this_turn;
     const t = me && board[me.position];
     const buyable = t && t.price > 0 && !t.owner_id && ['PROPERTY', 'STATION', 'UTILITY'].includes(t.type);
     const win = players.find((p) => p.id === g.winner_id);
-    return { city: r.city, board, players, current_turn: cur, status: g.is_over ? 'finished' : 'in_progress', winner: win && win.name, turn_start: g.turn_start_time, decision_deadline: g.decision_deadline || r.decision_deadline || null,
+    return { city: r.city, board, players, current_turn: cur, status: g.is_over ? 'finished' : 'in_progress', winner: win && win.name, match_end: g.match_ends_at || r.match_ends_at || null, turn_start: g.turn_start_time, decision_deadline: g.decision_deadline || r.decision_deadline || null,
       can_roll: mine && !rolled, can_buy: mine && rolled && !!buyable, can_end_turn: mine && rolled,
       card: g.last_card_result && g.last_card_result.card ? { key: g.turn_index + ':' + g.last_card_result.card.id + ':' + g.last_card_result.player_id, deck: g.last_card_result.card.deck || g.last_card_result.card.type, title: g.last_card_result.card.title, delta: g.last_card_result.money_delta, jail: g.last_card_result.went_to_jail, who: g.last_card_result.player_id } : null };
   }
@@ -481,7 +482,12 @@
     }
     cardBusy = false;
   }
-  $('cfxCard').onclick = () => cardClose && cardClose();
+  // close: X button, Esc, click outside the card or on it. Local only: other clients keep showing their own copy
+  const dismissCard = () => cardClose && cardClose();
+  $('cfxCard').onclick = $('cfxX').onclick = dismissCard;
+  $('cardFx').addEventListener('click', (e) => { if (!e.target.closest('#cfxCard')) dismissCard(); });
+  addEventListener('keydown', (e) => { if (e.key === 'Escape' && cardClose) { e.stopPropagation(); dismissCard(); } }, true);
+  const cardShown = new Set(); // events already queued, so a dismissed card never comes back
   // a destroyed tile shakes, sags and drops dust
   function crumble(pos) {
     const t = $('board').children[pos];
@@ -517,6 +523,7 @@
     return Math.random() < .5 ? [a, b] : [b, a];
   }
   async function commit(r, quiet, rolled) {
+    if (!roomId) return ''; // left the match while a request was in flight
     raw = r;
     const next = norm(r), old = new Map(prevPos);
     await Promise.all([propsReady, cardsReady]);
@@ -541,8 +548,10 @@
     render();
     checkOffer();
     autoTurn();
+    const over = (evs || []).find((e) => e.type === 'game_over');
+    if (over || state.status === 'finished') showFinal(over);
     if (cardEvs.length) cardEvSeen = true; // server emits card events: last_card_result is then only a stale duplicate
-    cardEvs.forEach((e) => cardQ.push({ kind: e.image_kind || e.kind, deck: e.deck, title: e.title, text: e.text, amount: e.amount ?? e.value, jail: e.went_to_jail || /jail|prisao|cadeia/i.test(e.effect || ''), who: e.player_id }));
+    cardEvs.filter((e) => !cardShown.has(evKey(e)) && cardShown.add(evKey(e))).forEach((e) => cardQ.push({ kind: e.image_kind || e.kind, deck: e.deck, title: e.title, text: e.text, amount: e.amount ?? e.value, jail: e.went_to_jail || /jail|prisao|cadeia/i.test(e.effect || ''), who: e.player_id }));
     const c = state.card, fresh = c && seenCard !== undefined && c.key !== seenCard;
     seenCard = c ? c.key : (seenCard === undefined ? '' : seenCard);
     (evs || []).filter((e) => e.type === 'destroy').forEach((e) => { const pos = e.tile ?? e.to ?? e.position; if (pos != null) cardQ.push({ destroy: +pos }); });
@@ -690,7 +699,7 @@
 
   // ---------- match config modal ----------
   const CFG_KEY = 'banco3d:config';
-  const DEFAULT_CFG = { city: '', players: 4, balance: 1500, bots: 0, difficulty: 'normal', turn: 30, bail: true, triple: true, freecard: true };
+  const DEFAULT_CFG = { city: '', players: 4, balance: 1500, bots: 0, difficulty: 'normal', turn: 30, match: 0, bail: true, triple: true, freecard: true };
   let cfg = { ...DEFAULT_CFG };
   try { cfg = { ...cfg, ...JSON.parse(localStorage.getItem(CFG_KEY)) }; } catch { /* first run */ }
   let cfgOpener = null;
@@ -699,7 +708,7 @@
     const f = cf();
     f.city.value = $('fHome').city.value;
     f.balance.value = cfg.balance;
-    for (const k of ['players', 'bots', 'difficulty', 'turn']) f.querySelectorAll(`[name=${k}]`).forEach((r) => (r.checked = String(r.value) === String(cfg[k])));
+    for (const k of ['players', 'bots', 'difficulty', 'turn', 'match']) f.querySelectorAll(`[name=${k}]`).forEach((r) => (r.checked = String(r.value) === String(cfg[k])));
     for (const k of ['bail', 'triple', 'freecard']) f[k].checked = cfg[k];
     syncBots();
   }
@@ -719,12 +728,79 @@
   cf().onsubmit = (e) => {
     e.preventDefault();
     const f = cf();
-    cfg = { players: +f.players.value, balance: Math.min(10000, Math.max(500, +f.balance.value || 1500)), bots: +f.bots.value, difficulty: f.difficulty.value, turn: +f.turn.value, bail: f.bail.checked, triple: f.triple.checked, freecard: f.freecard.checked };
+    cfg = { players: +f.players.value, balance: Math.min(10000, Math.max(500, +f.balance.value || 1500)), bots: +f.bots.value, difficulty: f.difficulty.value, turn: +f.turn.value, match: +f.match.value, bail: f.bail.checked, triple: f.triple.checked, freecard: f.freecard.checked };
     try { localStorage.setItem(CFG_KEY, JSON.stringify(cfg)); } catch { /* private mode */ }
     $('fHome').city.value = f.city.value.trim();
     closeCfg();
   };
-  const cfgPayload = () => ({ max_players: cfg.players, bots: { count: cfg.bots, difficulty: cfg.difficulty }, starting_balance: cfg.balance, turn_seconds: cfg.turn, rules: { jail_bail: cfg.bail, jail_triple_doubles: cfg.triple, get_out_free_card: cfg.freecard } });
+  const cfgPayload = () => ({ max_players: cfg.players, bots: { count: cfg.bots, difficulty: cfg.difficulty }, starting_balance: cfg.balance, turn_seconds: cfg.turn, match_minutes: cfg.match, rules: { jail_bail: cfg.bail, jail_triple_doubles: cfg.triple, get_out_free_card: cfg.freecard } });
+
+  // ---------- match clock (top HUD) ----------
+  const mmss = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  function clockTick() {
+    const end = state && state.status === 'in_progress' && state.match_end ? Date.parse(state.match_end) : NaN, el = $('matchClock');
+    el.hidden = !(end > 0);
+    if (el.hidden) return;
+    const left = Math.max(0, Math.ceil((end - Date.now()) / 1000));
+    const txt = mmss(left);
+    if ($('clockTxt').textContent !== txt) $('clockTxt').textContent = txt;
+    el.classList.toggle('low', left <= 60);
+  }
+  setInterval(clockTick, 500);
+
+  // ---------- modals: options menu, rules, leave confirmation, final ranking ----------
+  function modal(id, focusId) {
+    const el = $(id); let opener = null;
+    const m = { open() { opener = document.activeElement; el.hidden = false; $(focusId).focus(); }, close() { el.hidden = true; if (opener && opener.focus) opener.focus(); } };
+    el.addEventListener('keydown', (e) => { if (e.key === 'Escape' && id !== 'final') m.close(); });
+    el.addEventListener('mousedown', (e) => { if (e.target === el && id !== 'final') m.close(); });
+    return m;
+  }
+  const mMenu = modal('menu', 'btnMotion'), mRules = modal('rules', 'rulesOk'), mLeave = modal('leave', 'leaveNo'), mFinal = modal('final', 'finalHome');
+  $('btnMenu').onclick = mMenu.open;
+  $('menuX').onclick = mMenu.close;
+  $('btnRules').onclick = () => { mMenu.close(); mRules.open(); };
+  $('rulesX').onclick = $('rulesOk').onclick = mRules.close;
+  $('btnLeave').onclick = () => { mMenu.close(); mLeave.open(); };
+  $('leaveNo').onclick = mLeave.close;
+
+  // back to the hub: forget the room, stop everything that polls or animates
+  function resetLocal() {
+    const id = roomId;
+    clearInterval(timer); stopAuto();
+    if (id) forget(id);
+    roomId = meId = raw = state = null; busy = polling = false; lastTurn = null; boardBuilt = false; localVoting = null; myVote = -1; starting = false;
+    seenEv.clear(); seenEv.primed = false; seenCard = undefined; cardEvSeen = false; cardShown.clear(); cardQ.length = 0; cardClose && cardClose();
+    prevPos.clear(); pawnPos.clear(); mineSig = ''; finalShown = false;
+    ['menu', 'rules', 'leave', 'final', 'sheet', 'trade'].forEach((x) => { $(x).hidden = true; });
+    $('cardFx').hidden = true; $('matchClock').hidden = true;
+    const u = new URL(location.href); u.searchParams.delete('sala'); history.replaceState(null, '', u);
+    setView('home');
+  }
+  $('leaveYes').onclick = async () => {
+    $('leaveYes').disabled = true;
+    try { await api('/api/banco3d/room/leave', { room_id: roomId, player_id: meId }); } catch { /* room gone or already out: leave locally anyway */ }
+    $('leaveYes').disabled = false;
+    resetLocal();
+  };
+  $('finalHome').onclick = resetLocal;
+
+  let finalShown = false;
+  async function showFinal(over) {
+    if (finalShown) return;
+    finalShown = true;
+    while (cardBusy || cardQ.length) await sleep(200); // let the last card play first
+    if (!roomId) return;
+    const list = over && (over.ranking || over.standings || over.results);
+    const wid = (over && (over.winner_id || over.winner)) || (state.players.find((p) => p.name === state.winner) || {}).id, wp = state.players.find((p) => p.id === wid);
+    let rank = Array.isArray(list) && list.length
+      ? list.map((x) => { const p = state.players.find((q) => q.id === (x.player_id || x.id)) || {}; return { name: x.name || p.name || 'Jogador', color: p.color, bankrupt: p.bankrupt, id: p.id, worth: x.net_worth ?? x.networth ?? x.worth ?? x.patrimonio ?? x.total ?? p.worth ?? 0 }; })
+      : state.players.map((p) => ({ name: p.name, color: p.color, bankrupt: p.bankrupt, id: p.id, worth: p.worth })).sort((a, b) => (b.id === wid) - (a.id === wid) || a.bankrupt - b.bankrupt || b.worth - a.worth); // the winner leads even on a tie
+    const winner = (wp && wp.name) || (over && over.winner_name) || state.winner || (rank[0] && rank[0].name) || '';
+    $('finalWin').textContent = winner ? `${wp && wp.id === meId ? 'Você venceu' : winner + ' venceu'} a partida!` : 'A partida terminou.';
+    $('finalRank').innerHTML = rank.map((r, i) => `<li class="${i === 0 ? 'first' : ''}" style="--c:${esc(r.color || '#888')}"><span class="pos">${i + 1}º</span><i></i><b>${esc(r.name)}${r.id === meId ? ' (você)' : ''}${r.bankrupt ? ' · falido' : ''}</b><em>${brl(r.worth)}</em></li>`).join('');
+    mFinal.open();
+  }
 
   // ---------- lobby / voting / room flow ----------
   const setView = (v) => {

@@ -499,3 +499,37 @@ html[data-motion="reduced"] *, html[data-motion="reduced"] *::before, html[data-
   .mp { width: 40px; height: 40px; }
   .myprops[data-empty="1"] { display: none; }
 }
+
+/* ---------- v1.0: HUD (match clock + menu), card close, menu/rules/leave/final ---------- */
+.hud { position: absolute; top: 12px; right: 16px; z-index: 7; display: flex; align-items: center; gap: 8px; }
+.clock { display: flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 14px; border-radius: 999px; background: #fff; border: 1px solid var(--glass-line); color: var(--ink); font-variant-numeric: tabular-nums; }
+.clock[hidden] { display: none; }
+.clock svg { width: 18px; height: 18px; color: var(--ink-dim); }
+.clock b { font-size: 16px; font-weight: 700; }
+.clock.low { border-color: #b91c1c; color: #b91c1c; }
+.clock.low svg { color: #b91c1c; }
+.menu-btn { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 50%; background: #fff; border: 1px solid var(--glass-line); color: var(--ink); }
+.menu-btn svg { width: 22px; height: 22px; }
+.menu-btn:hover { border-color: var(--neon); }
+.menu-btn:focus-visible, .cfx-x:focus-visible { outline: 3px solid var(--neon); outline-offset: 2px; }
+.cardfx:not([hidden]) { pointer-events: auto; background: rgba(15, 28, 51, .28); }
+.cfx-x { position: absolute; top: 16px; right: 16px; width: 44px; height: 44px; border-radius: 50%; background: #fff; color: var(--ink); border: 1px solid var(--glass-line); font-size: 26px; line-height: 1; z-index: 1; }
+.cfx-x:hover { border-color: var(--neon); }
+.menu-card { grid-template-columns: 1fr; width: min(420px, 100%); align-content: start; }
+.menu-card > button.ghost { width: 100%; min-height: 48px; border-radius: 999px; background: none; border: 1px solid var(--glass-line); font-weight: 600; color: var(--ink); }
+.menu-card > button.ghost:hover { border-color: var(--neon); }
+.menu-card .danger.ghost { color: #b91c1c; border-color: #e6b4b4; }
+.menu-card footer .danger { background: #b91c1c; color: #fff; }
+.menu-card footer .primary { border: 0; background: var(--neon); color: #fff; }
+.menu-card p, .rules-list { color: var(--ink-dim); font-size: 14px; line-height: 1.5; }
+.rules-list { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
+.final-win { font-size: 20px; font-weight: 700; color: var(--ink) !important; }
+.rank { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.rank li { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 12px; border-radius: 12px; background: #fff; border: 1px solid var(--glass-line); }
+.rank li.first { border-color: var(--neon); background: #eef4ff; }
+.rank .pos { width: 28px; font-weight: 700; color: var(--ink-dim); }
+.rank i { width: 14px; height: 14px; border-radius: 50%; background: var(--c); }
+.rank b { flex: 1; font-weight: 600; color: var(--ink); }
+.rank em { font-style: normal; font-variant-numeric: tabular-nums; color: var(--ink); font-weight: 600; }
+@media (max-width: 820px) { .hud { top: 84px; right: 8px; } .clock, .menu-btn { min-height: 40px; height: 40px; } .menu-btn { width: 40px; } .cfx-x { top: 8px; right: 8px; } }
+@media (prefers-reduced-motion: reduce) { .cfx-card { transition: none !important; } }
