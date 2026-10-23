@@ -567,8 +567,8 @@ func (r *Room) executeBotTurnLocked(bot *Player, fixedD1, fixedD2 int) error {
 
 	r.RecordTurnRollAndMove(bot.ID, bot.Name, diceRes)
 
-	// Se o jogador foi para a prisão (ex.: 3ª dupla consecutiva, casa 30 ou carta):
-	if bot.InJail {
+	// Se o jogador foi enviado para a prisão neste turno (3ª dupla consecutiva, casa 30 ou carta):
+	if bot.InJail && diceRes.NewPosition == 10 && (diceRes.OldPosition != 10 || (diceRes.CardDrawn != nil && diceRes.CardDrawn.WentToJail)) {
 		r.RecordEvent(GameEvent{
 			Type:       "jail",
 			PlayerID:   bot.ID,
@@ -755,7 +755,19 @@ func (r *Room) CheckTurnTimeout() bool {
 		r.PendingDecision = ""
 		r.DecisionDeadline = nil
 		r.DecisionPlayerID = ""
+		timedOutPlayerID := r.Game.CurrentTurnPlayerID
+		p := r.Game.getPlayer(timedOutPlayerID)
+		pName := timedOutPlayerID
+		if p != nil {
+			pName = p.Name
+		}
 		_ = r.Game.AutoPassTurn()
+		r.RecordEvent(GameEvent{
+			Type:       "pass",
+			PlayerID:   timedOutPlayerID,
+			PlayerName: pName,
+			Text:       fmt.Sprintf("%s ficou inativo e passou a vez por tempo", pName),
+		})
 		r.LastActivity = time.Now()
 		next := r.Game.getPlayer(r.Game.CurrentTurnPlayerID)
 		if next != nil && next.IsBot {

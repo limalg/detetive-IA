@@ -174,6 +174,38 @@ func (g *Game) RollDice(playerID string, d1, d2 int) (*DiceResult, error) {
 
 	oldPos := p.Position
 
+	// Se o jogador está na prisão:
+	if p.InJail {
+		if isDouble {
+			// Sai da prisão ao tirar duplas!
+			p.InJail = false
+			p.IsJailed = false
+			p.JailTurns = 0
+		} else {
+			p.JailTurns++
+			if p.JailTurns >= 3 {
+				// Sai pagando fiança após 3 tentativas
+				p.Money -= 50
+				p.InJail = false
+				p.IsJailed = false
+				p.JailTurns = 0
+			} else {
+				// Permanece na prisão
+				g.DiceRolledThisTurn = true
+				res := &DiceResult{
+					Die1:        d1,
+					Die2:        d2,
+					Total:       total,
+					IsDouble:    false,
+					OldPosition: 10,
+					NewPosition: 10,
+				}
+				g.LastDiceResult = res
+				return res, nil
+			}
+		}
+	}
+
 	// Regra clássica: 3 duplas consecutivas no mesmo turno leva direto para a prisão!
 	if isDouble && g.ConsecutiveDoubles >= 3 {
 		p.Position = 10

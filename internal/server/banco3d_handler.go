@@ -717,6 +717,7 @@ func (h *Handler) HandleBanco3DRoomTrade(w http.ResponseWriter, r *http.Request)
 		callerID = req.SenderID
 	}
 
+	var tradeStatus string
 	var tradeErr error
 	switch req.Action {
 	case "accept":
@@ -725,12 +726,18 @@ func (h *Handler) HandleBanco3DRoomTrade(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		tradeErr = room.AcceptTrade(callerID)
+		if tradeErr == nil {
+			tradeStatus = "accepted"
+		}
 	case "decline":
 		if room.PendingTrade != nil && room.PendingTrade.ReceiverID != callerID {
 			h.error(w, http.StatusForbidden, "apenas o destinatário pode aceitar ou recusar a proposta")
 			return
 		}
 		tradeErr = room.DeclineTrade(callerID)
+		if tradeErr == nil {
+			tradeStatus = "declined"
+		}
 	case "propose":
 		if room.Game != nil && room.Game.CurrentTurnPlayerID != callerID {
 			h.error(w, http.StatusForbidden, "apenas o jogador do turno pode iniciar propostas de troca")
@@ -761,8 +768,10 @@ func (h *Handler) HandleBanco3DRoomTrade(w http.ResponseWriter, r *http.Request)
 				}
 				if banco3d.BotAI.EvaluateTrade(room.Game, receiverPlayer, proposal, diff) {
 					_ = room.AcceptTrade(req.ReceiverID)
+					tradeStatus = "accepted"
 				} else {
 					_ = room.DeclineTrade(req.ReceiverID)
+					tradeStatus = "declined"
 				}
 			}
 		}
@@ -824,7 +833,11 @@ func (h *Handler) HandleBanco3DRoomTrade(w http.ResponseWriter, r *http.Request)
 	}
 
 	go func() { _ = hub.SaveToDisk() }()
-	h.json(w, http.StatusOK, h.formatRoomState(room, nil))
+	resp := h.formatRoomState(room, nil)
+	if tradeStatus != "" {
+		resp["trade_status"] = tradeStatus
+	}
+	h.json(w, http.StatusOK, resp)
 }
 
 // HandleBanco3DRoomLeave handles voluntary player forfeit/leave from the match.
