@@ -593,3 +593,33 @@ func TestWikidataAndCategoriesFillMage(t *testing.T) {
 		t.Errorf("candidates ranked by sitelinks: %v", res.Candidates)
 	}
 }
+
+func TestSuggestBrazilFirstAndStateAware(t *testing.T) {
+	var queries []string
+	svc := mockService(func(r *http.Request) (int, string) {
+		queries = append(queries, r.URL.RawQuery)
+		if r.URL.Query().Get("countrycodes") != "br" {
+			return 200, `[{"place_id":307444734,"class":"boundary","place_rank":16,"display_name":"Magdalena, Colombia","address":{"city":"Magdalena","country":"Colômbia"}}]`
+		}
+		return 200, `[{"place_id":1,"class":"boundary","place_rank":16,"display_name":"Magé","address":{"city":"Magé","state":"Rio de Janeiro","country":"Brasil"}},
+{"place_id":2,"class":"boundary","place_rank":16,"display_name":"Magé, MG","address":{"city":"Magé","state":"Minas Gerais","country":"Brasil"}}]`
+	})
+	got, err := svc.Suggest("Mage RJ")
+	if err != nil || len(got) != 1 || got[0].ID != "osm_1" || got[0].Description != "Rio de Janeiro, Brasil" {
+		t.Fatalf("want only Magé/RJ, got %+v %v", got, err)
+	}
+	if len(queries) != 1 || !strings.Contains(queries[0], "countrycodes=br") || !strings.Contains(queries[0], "Rio+de+Janeiro") {
+		t.Errorf("UF typed: single Brazil-only query expected: %v", queries)
+	}
+	got, _ = svc.Suggest("Magé")
+	if len(got) == 0 || got[0].ID != "osm_1" || strings.Contains(got[0].Name, "Magdalena") {
+		t.Errorf("Brazilian Magé must lead: %+v", got)
+	}
+	if p, st := parseStateSuffix("Caxias do Sul, Rio Grande do Sul"); p != "Caxias do Sul" || st != "Rio Grande do Sul" {
+		t.Errorf("parse: %q %q", p, st)
+	}
+	empty := mockService(func(r *http.Request) (int, string) { return 200, `[]` })
+	if got, _ := empty.Suggest("Zzzzxx RJ"); got == nil || len(got) != 0 {
+		t.Errorf("suggestions must be [] not nil: %#v", got)
+	}
+}

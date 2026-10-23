@@ -106,32 +106,22 @@ func (s *PlacesService) Suggest(query string) ([]PlaceSuggestion, error) {
 	s.mu.Unlock()
 
 	// Merge known catalog matches with remote suggestions
-	offlineMatches := s.filterOfflineCatalog(q)
-
-	// Try OpenStreetMap / Nominatim search
-	remoteSuggestions, err := s.fetchNominatimSuggest(q)
-	if err == nil && len(remoteSuggestions) > 0 {
+	// Brazil first ("Magé" must be Magé/RJ, not Magdalena); a typed UF/state never falls back to the world.
+	place, state := parseStateSuffix(q)
+	offlineMatches := s.filterOfflineCatalog(place)
+	remote, err := s.fetchNominatimSuggest(place, state, true)
+	if err == nil && len(remote) == 0 && state == "" {
+		remote, err = s.fetchNominatimSuggest(place, "", false)
+	}
+	if err == nil && len(remote) > 0 {
 		seen := make(map[string]bool)
-		var merged []PlaceSuggestion
-		for _, o := range offlineMatches {
-			key := strings.ToLower(o.Name)
-			if !seen[key] {
+		merged := []PlaceSuggestion{}
+		for _, o := range append(offlineMatches, remote...) {
+			key := strings.ToLower(o.Name + "|" + o.Description)
+			if !seen[key] && len(merged) < 6 {
 				seen[key] = true
 				merged = append(merged, o)
 			}
-		}
-		for _, r := range remoteSuggestions {
-			key := strings.ToLower(r.Name)
-			if !seen[key] {
-				seen[key] = true
-				merged = append(merged, r)
-			}
-			if len(merged) >= 6 {
-				break
-			}
-		}
-		if len(merged) > 6 {
-			merged = merged[:6]
 		}
 		s.mu.Lock()
 		s.suggestCache[norm] = merged
@@ -140,14 +130,52 @@ func (s *PlacesService) Suggest(query string) ([]PlaceSuggestion, error) {
 	}
 
 	// Fallback to offline catalog
+	if offlineMatches == nil {
+		offlineMatches = []PlaceSuggestion{}
+	}
 	s.mu.Lock()
 	s.suggestCache[norm] = offlineMatches
 	s.mu.Unlock()
 	return offlineMatches, nil
 }
 
-func (s *PlacesService) fetchNominatimSuggest(query string) ([]PlaceSuggestion, error) {
-	endpoint := fmt.Sprintf("https://nominatim.openstreetmap.org/search?q=%s&format=json&addressdetails=1&limit=6", url.QueryEscape(query))
+var brStates = map[string]string{"ac": "Acre", "al": "Alagoas", "ap": "Amapá", "am": "Amazonas", "ba": "Bahia", "ce": "Ceará",
+	"df": "Distrito Federal", "es": "Espírito Santo", "go": "Goiás", "ma": "Maranhão", "mt": "Mato Grosso", "ms": "Mato Grosso do Sul",
+	"mg": "Minas Gerais", "pa": "Pará", "pb": "Paraíba", "pr": "Paraná", "pe": "Pernambuco", "pi": "Piauí", "rj": "Rio de Janeiro",
+	"rn": "Rio Grande do Norte", "rs": "Rio Grande do Sul", "ro": "Rondônia", "rr": "Roraima", "sc": "Santa Catarina",
+	"sp": "São Paulo", "se": "Sergipe", "to": "Tocantins"}
+
+var accentFold = strings.NewReplacer("á", "a", "à", "a", "â", "a", "ã", "a", "ä", "a", "é", "e", "ê", "e", "è", "e", "í", "i", "î", "i",
+	"ó", "o", "ô", "o", "õ", "o", "ú", "u", "ü", "u", "ç", "c")
+
+// fold lower-cases and strips accents so Mage/Magé and São/Sao compare equal.
+func fold(s string) string { return accentFold.Replace(strings.ToLower(strings.TrimSpace(s))) }
+
+// parseStateSuffix splits "Magé RJ" / "Magé, Rio de Janeiro" into the place and the state name (empty if none).
+func parseStateSuffix(q string) (place, state string) {
+	f := strings.Join(strings.Fields(strings.NewReplacer(",", " ", "-", " ").Replace(q)), " ")
+	words := strings.Fields(f)
+	// longest suffix first, so "Rio Grande do Sul" wins over "Sul"
+	for n := min(4, len(words)-1); n >= 1; n-- {
+		suffix := fold(strings.Join(words[len(words)-n:], " "))
+		for uf, name := range brStates {
+			if suffix == fold(name) || n == 1 && suffix == uf {
+				return strings.Join(words[:len(words)-n], " "), name
+			}
+		}
+	}
+	return strings.TrimSpace(q), ""
+}
+
+func (s *PlacesService) fetchNominatimSuggest(query, state string, brOnly bool) ([]PlaceSuggestion, error) {
+	q := query
+	if state != "" {
+		q += ", " + state
+	}
+	endpoint := fmt.Sprintf("https://nominatim.openstreetmap.org/search?q=%s&format=json&addressdetails=1&limit=8", url.QueryEscape(q))
+	if brOnly {
+		endpoint += "&countrycodes=br"
+	}
 	if err := s.throttle(); err != nil {
 		return nil, err
 	}
@@ -191,12 +219,15 @@ func (s *PlacesService) fetchNominatimSuggest(query string) ([]PlaceSuggestion, 
 		return nil, err
 	}
 
-	var suggestions []PlaceSuggestion
+	suggestions := []PlaceSuggestion{}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	for _, r := range results {
 		if r.PlaceRank >= 20 || r.Class == "highway" || r.Class == "building" { // streets and buildings are not cities
+			continue
+		}
+		if state != "" && fold(r.Address.State) != fold(state) {
 			continue
 		}
 		cityName := r.Address.City
@@ -249,7 +280,7 @@ func (s *PlacesService) fetchNominatimSuggest(query string) ([]PlaceSuggestion, 
 }
 
 func (s *PlacesService) filterOfflineCatalog(query string) []PlaceSuggestion {
-	q := strings.ToLower(strings.TrimSpace(query))
+	q := fold(query)
 	all := []PlaceSuggestion{
 		{ID: "pl_curitiba", Name: "Curitiba", Description: "Paraná, Brasil"},
 		{ID: "pl_londrina", Name: "Londrina", Description: "Paraná, Brasil"},
@@ -276,7 +307,7 @@ func (s *PlacesService) filterOfflineCatalog(query string) []PlaceSuggestion {
 
 	var matched []PlaceSuggestion
 	for _, p := range all {
-		if strings.Contains(strings.ToLower(p.Name), q) || strings.Contains(strings.ToLower(p.Description), q) {
+		if q != "" && (strings.Contains(fold(p.Name), q) || strings.Contains(fold(p.Description), q)) {
 			matched = append(matched, p)
 			if len(matched) >= 6 {
 				break
