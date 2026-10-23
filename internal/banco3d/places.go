@@ -736,10 +736,12 @@ func (s *PlacesService) fetchWikipediaPlaces(ctx context.Context, cityName strin
 // every Nominatim query.
 func (s *PlacesService) fetchAllSources(ctx context.Context, cityName string, lat, lon float64, full bool) []realPlace {
 	var wg sync.WaitGroup
-	results := make([][]realPlace, 3)
+	results := make([][]realPlace, 5)
 	for i, fn := range []func() []realPlace{
 		func() []realPlace { return s.fetchOverpassPlaces(ctx, cityName, lat, lon) },
 		func() []realPlace { return s.fetchWikipediaPlaces(ctx, cityName, lat, lon) },
+		func() []realPlace { return s.fetchWikidataPlaces(ctx, cityName, lat, lon) },
+		func() []realPlace { return s.fetchWikiCategoryPlaces(ctx, cityName) },
 		func() []realPlace { return s.fetchNominatimPlaces(ctx, cityName, lat, lon, full) },
 	} {
 		wg.Add(1)
@@ -1070,6 +1072,14 @@ func buildLandmarks(cityName string, real []realPlace) *CityLandmarksResult {
 			candidates = append(candidates, n)
 		}
 	}
+	for _, n := range props { // fewer than 4 notable: complete with the best real names so the vote never breaks
+		if len(candidates) >= 4 {
+			break
+		}
+		if !slices.Contains(candidates, n) {
+			candidates = append(candidates, n)
+		}
+	}
 
 	var landmarks []LandmarkItem
 	for _, n := range props {
@@ -1160,7 +1170,7 @@ func (s *PlacesService) backoff(resp *http.Response) {
 }
 
 // diskSchemaVersion invalidates caches written by older builds (v<2 could hold street names as cities).
-const diskSchemaVersion = 4
+const diskSchemaVersion = 5
 
 // diskCache is the on-disk snapshot of resolved places and landmark results.
 type diskCache struct {
@@ -1318,4 +1328,125 @@ func dedupeVariants(ps []realPlace) []realPlace {
 		}
 	}
 	return out
+}
+
+// wikidataClasses are the useful P31 classes (church, museum, square, park, station, stadium, bridge, beach,
+// fortress, neighbourhood, university, hospital, heritage/tourist sites); subclasses match via P279*.
+const wikidataClasses = "wd:Q16970 wd:Q33506 wd:Q174782 wd:Q22698 wd:Q55488 wd:Q483110 wd:Q12280 wd:Q40080 wd:Q57821 wd:Q123705 wd:Q3918 wd:Q16917 wd:Q2065736 wd:Q570116"
+
+// fetchWikidataPlaces lists items located in the municipality (P131*), found by its pt label near lat/lon,
+// ordered by sitelinks (fame).
+func (s *PlacesService) fetchWikidataPlaces(ctx context.Context, cityName string, lat, lon float64) []realPlace {
+	q := fmt.Sprintf(`SELECT ?label (MAX(?sl) AS ?links) (MAX(?st) AS ?station) WHERE {
+  ?city rdfs:label "%s"@pt; wdt:P625 ?cc.
+  FILTER(geof:distance(?cc, "Point(%.4f %.4f)"^^geo:wktLiteral) < 25)
+  ?item wdt:P131+ ?city; wdt:P625 ?c; wikibase:sitelinks ?sl; rdfs:label ?label.
+  FILTER(LANG(?label) = "pt")
+  ?item wdt:P31/wdt:P279* ?cls. VALUES ?cls { %s }
+  BIND(IF(?cls = wd:Q55488, 1, 0) AS ?st)
+} GROUP BY ?label ORDER BY DESC(?links) LIMIT 120`, strings.ReplaceAll(cityName, `"`, ``), lon, lat, wikidataClasses)
+	var data struct {
+		Results struct {
+			Bindings []struct {
+				Label   struct{ Value string } `json:"label"`
+				Links   struct{ Value string } `json:"links"`
+				Station struct{ Value string } `json:"station"`
+			} `json:"bindings"`
+		} `json:"results"`
+	}
+	if err := s.getJSON(ctx, "https://query.wikidata.org/sparql?format=json&query="+url.QueryEscape(q), srcTimeout(ctx), false, &data); err != nil {
+		return nil
+	}
+	var out []realPlace
+	for _, b := range data.Results.Bindings {
+		n := cleanName(b.Label.Value)
+		if !validPlaceName(n, cityName) {
+			continue
+		}
+		links, _ := strconv.Atoi(b.Links.Value)
+		kind := "property"
+		if b.Station.Value == "1" {
+			kind = "station"
+		}
+		out = append(out, realPlace{Name: n, Kind: kind, Score: 100 + min(links, 100), Top: kind == "property"})
+	}
+	return out
+}
+
+// fetchWikiCategoryPlaces reads pt.wikipedia "Categoria:<city>" and its tourism/buildings/beaches/districts
+// subcategories: membership of the city's own category ties every article to the municipality.
+func (s *PlacesService) fetchWikiCategoryPlaces(ctx context.Context, cityName string) []realPlace {
+	members := func(cat string) (pages, subcats []string) {
+		var data struct {
+			Query struct {
+				Categorymembers []struct {
+					Title string `json:"title"`
+					NS    int    `json:"ns"`
+				} `json:"categorymembers"`
+			} `json:"query"`
+		}
+		endpoint := "https://pt.wikipedia.org/w/api.php?action=query&list=categorymembers&cmlimit=200&format=json&cmtitle=" + url.QueryEscape(cat)
+		if s.getJSON(ctx, endpoint, srcTimeout(ctx), false, &data) != nil {
+			return nil, nil
+		}
+		for _, m := range data.Query.Categorymembers {
+			switch m.NS {
+			case 0:
+				pages = append(pages, m.Title)
+			case 14:
+				subcats = append(subcats, m.Title)
+			}
+		}
+		return
+	}
+	var out []realPlace
+	add := func(titles []string, all bool, score int) {
+		for _, t := range titles {
+			if i := strings.Index(t, " ("); i > 0 {
+				if !strings.EqualFold(strings.Trim(t[i:], " ()"), cityName) {
+					continue
+				}
+				t = t[:i]
+			}
+			if !validPlaceName(t, cityName) || !all && !isPlaceLike(t) {
+				continue
+			}
+			if k := wikiInfraKind(t); k != "" {
+				out = append(out, realPlace{Name: t, Kind: k, Score: 8})
+				continue
+			}
+			out = append(out, realPlace{Name: t, Kind: "property", Score: score, Top: score >= 50})
+		}
+	}
+	pages, subcats := members("Categoria:" + cityName)
+	add(pages, false, 50) // main category also holds people/events: landmarks only
+	n := 0
+	for _, sc := range subcats {
+		l := strings.ToLower(sc)
+		switch {
+		case containsAny(l, "pessoas", "naturais", "político", "esport", "clube", "mídia", "imprensa", "rádio", "empresas"):
+			continue
+		case containsAny(l, "bairro", "distrito", "localidade"):
+			p, _ := members(sc)
+			add(p, true, 25)
+		case containsAny(l, "turismo", "constru", "praia", "edifício", "igreja", "patrimônio", "monumento", "parque"):
+			p, _ := members(sc)
+			add(p, true, 50)
+		default:
+			continue
+		}
+		if n++; n >= 6 {
+			break
+		}
+	}
+	return out
+}
+
+func containsAny(s string, subs ...string) bool {
+	for _, w := range subs {
+		if strings.Contains(s, w) {
+			return true
+		}
+	}
+	return false
 }

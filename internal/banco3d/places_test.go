@@ -222,7 +222,7 @@ func TestGetLandmarksRealPlacesByPlaceID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.City != "Maringá" || len(res.Candidates) != 2 || len(res.Landmarks) != 24 || !res.Partial {
+	if res.City != "Maringá" || len(res.Candidates) != 4 || len(res.Landmarks) != 24 || !res.Partial {
 		t.Fatalf("city=%q cands=%d lm=%d", res.City, len(res.Candidates), len(res.Landmarks))
 	}
 	if res.Candidates[0] != "Catedral Basílica" && res.Candidates[0] != "Parque do Ingá" {
@@ -529,7 +529,67 @@ func TestQualityFilterDropsBadNames(t *testing.T) {
 		t.Fatalf("got %v", got)
 	}
 	res := buildLandmarks("Magé", dedupeVariants(goodNames(in)))
-	if len(res.Candidates) != 1 || res.Candidates[0] != "Igreja de Nossa Senhora da Piedade" {
+	if len(res.Candidates) != 2 || res.Candidates[0] != "Igreja de Nossa Senhora da Piedade" {
 		t.Errorf("candidates must be notable only: %v", res.Candidates)
+	}
+}
+
+func TestWikidataAndCategoriesFillMage(t *testing.T) {
+	var sparql string
+	svc := mockService(func(r *http.Request) (int, string) {
+		switch r.URL.Host {
+		case "nominatim.openstreetmap.org":
+			if strings.Contains(r.URL.Path, "details") {
+				return 200, `{"localname":"Magé","centroid":{"coordinates":[-43.04,-22.65]}}`
+			}
+			return 200, `[]`
+		case "query.wikidata.org":
+			sparql = r.URL.Query().Get("query")
+			return 200, `{"results":{"bindings":[
+{"label":{"value":"Igreja de Nossa Senhora da Piedade"},"links":{"value":"9"},"station":{"value":"0"}},
+{"label":{"value":"Estação de Fragoso"},"links":{"value":"4"},"station":{"value":"1"}},
+{"label":{"value":"Guia de Pacobaíba"},"links":{"value":"6"},"station":{"value":"0"}}]}}`
+		case "pt.wikipedia.org":
+			q := r.URL.Query()
+			if q.Get("list") == "categorymembers" {
+				switch q.Get("cmtitle") {
+				case "Categoria:Magé":
+					return 200, `{"query":{"categorymembers":[{"title":"Categoria:Bairros de Magé","ns":14},{"title":"Categoria:Naturais de Magé","ns":14},{"title":"Fulano de Tal","ns":0}]}}`
+				case "Categoria:Bairros de Magé":
+					var m []string
+					for _, n := range []string{"Piabetá", "Santo Aleixo", "Suruí", "Fragoso", "Inhomirim", "Rio do Ouro", "Parada Modelo", "Ipanema (Rio de Janeiro)"} {
+						m = append(m, `{"title":"`+n+`","ns":0}`)
+					}
+					return 200, `{"query":{"categorymembers":[` + strings.Join(m, ",") + `]}}`
+				}
+				t.Errorf("unexpected category %s", q.Get("cmtitle"))
+			}
+			return 200, `{"query":{"geosearch":[]}}`
+		}
+		return 200, `{"elements":[]}`
+	})
+	res, err := svc.GetLandmarks("", "osm_mage2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(sparql, `"Magé"@pt`) || !strings.Contains(sparql, "wdt:P131+") {
+		t.Errorf("sparql must be bound to the municipality: %s", sparql)
+	}
+	names := map[string]bool{}
+	for _, l := range res.Landmarks {
+		names[l.Name] = true
+	}
+	for _, want := range []string{"Guia de Pacobaíba", "Santo Aleixo", "Piabetá", "Estação de Fragoso"} {
+		if !names[want] {
+			t.Errorf("missing real place %s in %v", want, names)
+		}
+	}
+	for _, bad := range []string{"Fulano de Tal", "Ipanema"} {
+		if names[bad] {
+			t.Errorf("must not appear: %s", bad)
+		}
+	}
+	if len(res.Candidates) != 4 || res.Candidates[0] != "Igreja de Nossa Senhora da Piedade" {
+		t.Errorf("candidates ranked by sitelinks: %v", res.Candidates)
 	}
 }
