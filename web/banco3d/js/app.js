@@ -209,7 +209,12 @@
   try { if (localStorage.getItem('banco3d:motion') === 'reduced') motion = 'reduced'; } catch { /* storage blocked */ }
   const maxMotion = () => motion === 'max';
   // screen/modal changes: View Transitions API where available (CSS animation fallback otherwise); fn runs either way
-  const vt = (fn) => { if (document.startViewTransition && maxMotion()) document.startViewTransition(fn); else fn(); };
+  // a hidden or throttled page may never run the callback, so it is also forced after 600ms (state must not depend on the animation)
+  const vt = (fn) => {
+    if (!document.startViewTransition || !maxMotion() || document.visibilityState !== 'visible') return fn();
+    let done = false; const go = () => { if (!done) { done = true; fn(); } };
+    document.startViewTransition(go); setTimeout(go, 600);
+  };
   function camera(pos) {
     const st = $('table').style, b = $('board');
     if (pos == null || !maxMotion() || $('table').classList.contains('flat') || !boardBuilt) {
@@ -706,8 +711,15 @@
   // ---------- incoming trade offer ----------
   let offerKey = null;
   const tilesTxt = (ids, cash) => [...ids.map((i) => state.board[i].name), cash ? brl(cash) : ''].filter(Boolean).join(', ') || 'nada';
+  let sentTrade = null; // my own proposal waiting for a human answer; the outcome is read from ownership when it clears
   function checkOffer() {
     const t = raw && raw.pending_trade;
+    if (t && t.status === 'pending' && t.sender_id === meId) sentTrade = t;
+    else if (sentTrade) {
+      const s = sentTrade, to = state.players.find((p) => p.id === s.receiver_id), nm = to ? to.name : 'O jogador'; sentTrade = null;
+      const got = s.requested_tiles || [], gave = s.offered_tiles || [];
+      toast((got.length ? got.every((i) => state.board[i].owner_id === meId) : gave.every((i) => state.board[i].owner_id === s.receiver_id)) ? `${nm} aceitou a troca` : `${nm} recusou a proposta`);
+    }
     if (!t || t.status !== 'pending') { if (offerKey) { offerKey = null; if ($('sheetTitle').textContent === 'Proposta de troca') $('sheet').hidden = true; } return; }
     if (t.receiver_id !== meId) return;
     const key = t.id + t.created_at;
@@ -969,7 +981,8 @@
     if (!roomId || polling || busy) return;
     polling = true;
     try {
-      const r = await getRoom(roomId);
+      const id = roomId, r = await getRoom(id);
+      if (roomId !== id) return; // left the room while this poll was in flight
       raw = r;
       if (r.game.is_started) {
         if (curView !== 'game') { setView('game'); boardBuilt = false; }
