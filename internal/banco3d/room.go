@@ -126,7 +126,8 @@ type Room struct {
 	DecisionDeadline *time.Time     `json:"decision_deadline,omitempty"`
 	PendingDecision  string         `json:"pending_decision,omitempty"`
 	DecisionPlayerID string         `json:"decision_player_id,omitempty"`
-	MatchEndsAt      *time.Time     `json:"match_ends_at,omitempty"`
+	MatchEndsAt         *time.Time     `json:"match_ends_at,omitempty"`
+	LastTimeoutPlayerID string         `json:"last_timeout_player_id,omitempty"`
 }
 
 // RecordEvent records an action in the room event stream.
@@ -756,6 +757,7 @@ func (r *Room) CheckTurnTimeout() bool {
 		r.DecisionDeadline = nil
 		r.DecisionPlayerID = ""
 		timedOutPlayerID := r.Game.CurrentTurnPlayerID
+		r.LastTimeoutPlayerID = timedOutPlayerID
 		p := r.Game.getPlayer(timedOutPlayerID)
 		pName := timedOutPlayerID
 		if p != nil {
@@ -763,10 +765,16 @@ func (r *Room) CheckTurnTimeout() bool {
 		}
 		_ = r.Game.AutoPassTurn()
 		r.RecordEvent(GameEvent{
+			Type:       "timeout",
+			PlayerID:   timedOutPlayerID,
+			PlayerName: pName,
+			Text:       fmt.Sprintf("%s passou a vez por inatividade", pName),
+		})
+		r.RecordEvent(GameEvent{
 			Type:       "pass",
 			PlayerID:   timedOutPlayerID,
 			PlayerName: pName,
-			Text:       fmt.Sprintf("%s ficou inativo e passou a vez por tempo", pName),
+			Text:       fmt.Sprintf("%s passou a vez por inatividade", pName),
 		})
 		r.LastActivity = time.Now()
 		next := r.Game.getPlayer(r.Game.CurrentTurnPlayerID)

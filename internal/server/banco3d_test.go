@@ -3,13 +3,51 @@ package server_test
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"strings"
 	"testing"
+	"time"
 
 	"detetive-ia/internal/banco3d"
 	"detetive-ia/internal/server"
 )
+
+type mockRoundTripper func(req *http.Request) (*http.Response, error)
+
+func (m mockRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	return m(req)
+}
+
+func TestMain(m *testing.M) {
+	// Garante execucao 100% hermetica sem trafego de rede para Nominatim, Overpass ou Wikipedia
+	banco3d.GlobalPlacesService.SetMinGap(0)
+	banco3d.GlobalPlacesService.SetHTTPClient(&http.Client{
+		Transport: mockRoundTripper(func(req *http.Request) (*http.Response, error) {
+			urlStr := req.URL.String()
+			var body string
+			if strings.Contains(urlStr, "nominatim.openstreetmap.org/search") {
+				body = `[{"place_id":420024688,"licence":"Data OpenStreetMap contributors","osm_type":"relation","osm_id":298132,"lat":"-23.3103","lon":"-51.1628","class":"boundary","type":"administrative","place_rank":16,"importance":0.65,"addresstype":"city","name":"Londrina","display_name":"Londrina, Parana, Brasil"}]`
+			} else if strings.Contains(urlStr, "nominatim.openstreetmap.org/details") {
+				body = `{"place_id":420024688,"localname":"Londrina","names":{"name":"Londrina"},"geometry":{"type":"Point","coordinates":[-51.1628,-23.3103]},"calculated_wikipedia":"pt:Londrina"}`
+			} else if strings.Contains(urlStr, "overpass-api.de") {
+				body = `{"elements":[{"tags":{"name":"Catedral Metropolitana","historic":"church"}},{"tags":{"name":"Parque do Lago","leisure":"park"}},{"tags":{"name":"Avenida Higienopolis","highway":"primary"}},{"tags":{"name":"Terminal Urbano","amenity":"bus_station"}},{"tags":{"name":"Aeroporto Municipal","aeroway":"aerodrome"}}]}`
+			} else if strings.Contains(urlStr, "wikipedia.org") {
+				body = `{"query":{"geosearch":[{"title":"Catedral de Londrina","lat":-23.3103,"lon":-51.1628}]}}`
+			} else {
+				body = `{}`
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(body)),
+				Header:     make(http.Header),
+			}, nil
+		}),
+	})
+	os.Exit(m.Run())
+}
 
 func TestBanco3DEndpoints(t *testing.T) {
 	router := server.NewRouter(server.Config{Banco3DHub: banco3d.NewRoomHub(":memory:")})
@@ -509,6 +547,51 @@ func TestTradeHTTPRejectionUnauthorizedAndHumanConsent(t *testing.T) {
 	if stateAfterBotProp.PendingTrade != nil {
 		t.Fatalf("troca para bot legítimo deveria ter sido auto-aceita e pending_trade limpo, mas está: %+v", stateAfterBotProp.PendingTrade)
 	}
+
+	var respAccepted struct {
+		TradeStatus string `json:"trade_status"`
+		Reason      string `json:"reason"`
+		TradeReason string `json:"trade_reason"`
+	}
+	_ = json.Unmarshal(rrPropBot.Body.Bytes(), &respAccepted)
+	if respAccepted.TradeStatus != "accepted" {
+		t.Errorf("esperava trade_status 'accepted', obtido '%s'", respAccepted.TradeStatus)
+	}
+	if respAccepted.Reason == "" {
+		t.Errorf("esperava reason não-vazia")
+	}
+
+	// Propor troca desvantajosa ao bot -> deve retornar trade_status='declined' com reason
+	propBadBot, _ := json.Marshal(map[string]interface{}{
+		"room_id":      "sala-trade-bot-auto",
+		"action":       "propose",
+		"player_id":    soloRes.Player.ID,
+		"to_player_id": botID,
+		"give": map[string]interface{}{
+			"props": []int{},
+			"cash":  0,
+		},
+		"want": map[string]interface{}{
+			"props": []int{},
+			"cash":  500,
+		},
+	})
+	rrPropBadBot := httptest.NewRecorder()
+	router.ServeHTTP(rrPropBadBot, httptest.NewRequest("POST", "/api/banco3d/room/trade", bytes.NewReader(propBadBot)))
+	if rrPropBadBot.Code != http.StatusOK {
+		t.Fatalf("falha ao enviar proposta para bot: %d - %s", rrPropBadBot.Code, rrPropBadBot.Body.String())
+	}
+	var respDeclined struct {
+		TradeStatus string `json:"trade_status"`
+		Reason      string `json:"reason"`
+	}
+	_ = json.Unmarshal(rrPropBadBot.Body.Bytes(), &respDeclined)
+	if respDeclined.TradeStatus != "declined" {
+		t.Errorf("esperava trade_status 'declined' para troca desvantajosa, obtido '%s'", respDeclined.TradeStatus)
+	}
+	if respDeclined.Reason == "" {
+		t.Errorf("esperava reason não-vazia para recusa do bot")
+	}
 }
 
 func TestBanco3DPlacesAndEventsAPI(t *testing.T) {
@@ -667,5 +750,80 @@ func TestBanco3DPlacesAndEventsAPI(t *testing.T) {
 	// Tile 3 (1+2=3) é propriedade comprável, portanto pending_decision deve ser 'buy'
 	if stateAfterRoll.PendingDecision != "buy" {
 		t.Errorf("esperava pending_decision 'buy', obteve %s", stateAfterRoll.PendingDecision)
+	}
+}
+
+func TestTurnTimeoutEventAndLastTimeoutPlayerState(t *testing.T) {
+	hub := banco3d.NewRoomHub(":memory:")
+	router := server.NewRouter(server.Config{Banco3DHub: hub})
+
+	createRoom, _ := json.Marshal(map[string]interface{}{
+		"room_id": "sala-timeout-test",
+		"city":    "Curitiba",
+	})
+	rrCreate := httptest.NewRecorder()
+	router.ServeHTTP(rrCreate, httptest.NewRequest("POST", "/api/banco3d/room/create", bytes.NewReader(createRoom)))
+
+	joinP1, _ := json.Marshal(map[string]interface{}{
+		"room_id": "sala-timeout-test",
+		"name":    "P1",
+		"color":   "#3b82f6",
+	})
+	rrP1 := httptest.NewRecorder()
+	router.ServeHTTP(rrP1, httptest.NewRequest("POST", "/api/banco3d/room/join", bytes.NewReader(joinP1)))
+	var p1Res struct{
+		Player struct{ ID string `json:"id"` } `json:"player"`
+	}
+	_ = json.Unmarshal(rrP1.Body.Bytes(), &p1Res)
+
+	joinP2, _ := json.Marshal(map[string]interface{}{
+		"room_id": "sala-timeout-test",
+		"name":    "P2",
+		"color":   "#ef4444",
+	})
+	rrP2 := httptest.NewRecorder()
+	router.ServeHTTP(rrP2, httptest.NewRequest("POST", "/api/banco3d/room/join", bytes.NewReader(joinP2)))
+
+	startPayload, _ := json.Marshal(map[string]interface{}{
+		"room_id":   "sala-timeout-test",
+		"player_id": p1Res.Player.ID,
+	})
+	rrStart := httptest.NewRecorder()
+	router.ServeHTTP(rrStart, httptest.NewRequest("POST", "/api/banco3d/room/start", bytes.NewReader(startPayload)))
+
+	room, _ := hub.GetRoom("sala-timeout-test")
+	// Força TurnStartTime no passado para simular ociosidade
+	room.TurnTimeout = 100 * time.Millisecond
+	room.Game.TurnStartTime = time.Now().Add(-5 * time.Second)
+
+	// Faz polling de estado -> deve acionar CheckTurnTimeout
+	reqState := httptest.NewRequest("GET", "/api/banco3d/room/state?room_id=sala-timeout-test", nil)
+	rrState := httptest.NewRecorder()
+	router.ServeHTTP(rrState, reqState)
+
+	var stateRes struct {
+		LastTimeoutPlayerID string `json:"last_timeout_player_id"`
+		Events              []struct {
+			Type     string `json:"type"`
+			PlayerID string `json:"player_id"`
+		} `json:"events"`
+	}
+	if err := json.Unmarshal(rrState.Body.Bytes(), &stateRes); err != nil {
+		t.Fatalf("erro ao decodificar state: %v", err)
+	}
+
+	if stateRes.LastTimeoutPlayerID != p1Res.Player.ID {
+		t.Errorf("esperava last_timeout_player_id=%s, obtido %s", p1Res.Player.ID, stateRes.LastTimeoutPlayerID)
+	}
+
+	hasTimeoutEvent := false
+	for _, ev := range stateRes.Events {
+		if ev.Type == "timeout" && ev.PlayerID == p1Res.Player.ID {
+			hasTimeoutEvent = true
+			break
+		}
+	}
+	if !hasTimeoutEvent {
+		t.Errorf("esperava evento type='timeout' emitido para o jogador que estourou tempo")
 	}
 }

@@ -39,7 +39,8 @@ func (h *Handler) formatRoomState(room *banco3d.Room, dice *banco3d.DiceResult) 
 		"events":            room.Events,
 		"pending_decision":  room.PendingDecision,
 		"decision_deadline": room.DecisionDeadline,
-		"match_ends_at":     room.MatchEndsAt,
+		"match_ends_at":          room.MatchEndsAt,
+		"last_timeout_player_id": room.LastTimeoutPlayerID,
 	}
 	if dice != nil {
 		res["dice"] = dice
@@ -718,6 +719,7 @@ func (h *Handler) HandleBanco3DRoomTrade(w http.ResponseWriter, r *http.Request)
 	}
 
 	var tradeStatus string
+	var tradeReason string
 	var tradeErr error
 	switch req.Action {
 	case "accept":
@@ -728,6 +730,7 @@ func (h *Handler) HandleBanco3DRoomTrade(w http.ResponseWriter, r *http.Request)
 		tradeErr = room.AcceptTrade(callerID)
 		if tradeErr == nil {
 			tradeStatus = "accepted"
+			tradeReason = "proposta aceita"
 		}
 	case "decline":
 		if room.PendingTrade != nil && room.PendingTrade.ReceiverID != callerID {
@@ -737,6 +740,7 @@ func (h *Handler) HandleBanco3DRoomTrade(w http.ResponseWriter, r *http.Request)
 		tradeErr = room.DeclineTrade(callerID)
 		if tradeErr == nil {
 			tradeStatus = "declined"
+			tradeReason = "proposta recusada"
 		}
 	case "propose":
 		if room.Game != nil && room.Game.CurrentTurnPlayerID != callerID {
@@ -769,10 +773,15 @@ func (h *Handler) HandleBanco3DRoomTrade(w http.ResponseWriter, r *http.Request)
 				if banco3d.BotAI.EvaluateTrade(room.Game, receiverPlayer, proposal, diff) {
 					_ = room.AcceptTrade(req.ReceiverID)
 					tradeStatus = "accepted"
+					tradeReason = "oferta vantajosa aceita pelo bot"
 				} else {
 					_ = room.DeclineTrade(req.ReceiverID)
 					tradeStatus = "declined"
+					tradeReason = "oferta insuficiente recusada pelo bot"
 				}
+			} else {
+				tradeStatus = "pending"
+				tradeReason = "aguardando resposta do jogador"
 			}
 		}
 	default:
@@ -836,6 +845,8 @@ func (h *Handler) HandleBanco3DRoomTrade(w http.ResponseWriter, r *http.Request)
 	resp := h.formatRoomState(room, nil)
 	if tradeStatus != "" {
 		resp["trade_status"] = tradeStatus
+		resp["reason"] = tradeReason
+		resp["trade_reason"] = tradeReason
 	}
 	h.json(w, http.StatusOK, resp)
 }
