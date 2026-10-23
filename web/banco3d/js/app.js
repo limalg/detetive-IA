@@ -737,7 +737,7 @@
     const others = state.players.filter((p) => p.id !== meId && !p.bankrupt);
     $('tradeTo').innerHTML = others.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');
     $('tradeForm').giveCash.value = 0; $('tradeForm').wantCash.value = 0;
-    $('tradeMsg').textContent = 'A troca vale na hora, sem aceite do outro jogador.'; $('tradeMsg').classList.remove('bad');
+    $('tradeMsg').textContent = 'O outro jogador ou o bot decide: aceita ou recusa na hora.'; $('tradeMsg').classList.remove('bad');
     tradeOpener = document.activeElement; fillTrade(); vt(() => { $('trade').hidden = false; $('tradeTo').focus(); });
   }
   function closeTrade() { vt(() => { $('trade').hidden = true; if (tradeOpener && tradeOpener.focus) tradeOpener.focus(); }); }
