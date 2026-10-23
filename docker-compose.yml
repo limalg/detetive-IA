@@ -1,0 +1,15 @@
+services:
+  detetive:
+    build: .
+    image: detetive-ia:latest
+    ports:
+      - "${HOST_PORT:-8080}:${PORT:-8080}"
+    environment:
+      PORT: ${PORT:-8080}
+      DB_PATH: ${DB_PATH:-/app/data/detetive.db}
+      BANCO3D_CACHE_FILE: ${BANCO3D_CACHE_FILE:-/app/data/banco3d_places.json}
+    volumes:
+      - detetive-data:/app/data
+    restart: unless-stopped
+volumes:
+  detetive-data:

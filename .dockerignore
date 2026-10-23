@@ -1,0 +1,13 @@
+.git
+.maestri
+.agents
+.env
+*.exe
+*.db
+*.db-*
+data
+bin
+dist
+docs
+tmp
+skills-lock.json
