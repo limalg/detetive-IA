@@ -58,6 +58,7 @@ type Game struct {
 	LastCardResult      *CardResult  `json:"last_card_result,omitempty"`
 	LastDiceResult      *DiceResult  `json:"last_dice_result,omitempty"`
 	SalaryAmount        int          `json:"salary_amount,omitempty"`
+	ConsecutiveDoubles  int          `json:"consecutive_doubles,omitempty"`
 }
 
 // ResetForDoubleRoll resets the turn state allowing the player to roll again (classical doubles rule).
@@ -160,7 +161,36 @@ func (g *Game) RollDice(playerID string, d1, d2 int) (*DiceResult, error) {
 		return nil, errors.New("jogador inválido ou falido")
 	}
 
+	isDouble := d1 == d2
+	if isDouble {
+		g.ConsecutiveDoubles++
+	} else {
+		g.ConsecutiveDoubles = 0
+	}
+
 	oldPos := p.Position
+
+	// Regra clássica: 3 duplas consecutivas no mesmo turno leva direto para a prisão!
+	if isDouble && g.ConsecutiveDoubles >= 3 {
+		p.Position = 10
+		p.InJail = true
+		p.IsJailed = true
+		p.JailTurns = 0
+		g.ConsecutiveDoubles = 0
+		g.DiceRolledThisTurn = true
+
+		res := &DiceResult{
+			Die1:        d1,
+			Die2:        d2,
+			Total:       total,
+			IsDouble:    true,
+			OldPosition: oldPos,
+			NewPosition: 10,
+		}
+		g.LastDiceResult = res
+		return res, nil
+	}
+
 	newPos := (oldPos + total) % 40
 	p.Position = newPos
 
@@ -178,7 +208,7 @@ func (g *Game) RollDice(playerID string, d1, d2 int) (*DiceResult, error) {
 		Die1:        d1,
 		Die2:        d2,
 		Total:       total,
-		IsDouble:    d1 == d2,
+		IsDouble:    isDouble,
 		OldPosition: oldPos,
 		NewPosition: newPos,
 		SalaryPaid:  salaryPaid,
@@ -492,6 +522,7 @@ func (g *Game) advanceTurn() {
 			}
 			g.CurrentTurnPlayerID = candidate.ID
 			g.DiceRolledThisTurn = false
+			g.ConsecutiveDoubles = 0
 			g.TurnStartTime = time.Now()
 			return
 		}

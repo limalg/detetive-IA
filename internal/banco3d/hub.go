@@ -65,11 +65,16 @@ func (h *RoomHub) saveToDiskLocked() error {
 	snaps := make(map[string]RoomSnapshot)
 	for id, r := range h.Rooms {
 		r.mu.Lock()
+		boardToSave := r.Board
+		if r.Game != nil && r.Game.Board != nil {
+			boardToSave = r.Game.Board
+			r.Board = r.Game.Board
+		}
 		snaps[id] = RoomSnapshot{
 			ID:               r.ID,
 			City:             r.City,
 			Config:           r.Config,
-			Board:            r.Board,
+			Board:            boardToSave,
 			Candidates:       r.Candidates,
 			Voting:           r.Voting,
 			Game:             r.Game,
@@ -159,6 +164,9 @@ func (h *RoomHub) LoadFromDisk() error {
 		}
 		if r.TurnTimeout <= 0 {
 			r.TurnTimeout = 30 * time.Second
+		}
+		if r.Game != nil && r.Game.Board != nil {
+			r.Board = r.Game.Board
 		}
 		h.Rooms[id] = r
 	}

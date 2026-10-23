@@ -22,11 +22,16 @@ func (h *Handler) getBanco3DHub() *banco3d.RoomHub {
 
 func (h *Handler) formatRoomState(room *banco3d.Room, dice *banco3d.DiceResult) map[string]interface{} {
 	room.CheckTurnTimeout()
+	board := room.Board
+	if room.Game != nil && room.Game.Board != nil {
+		room.Board = room.Game.Board
+		board = room.Game.Board
+	}
 	res := map[string]interface{}{
 		"room_id":           room.ID,
 		"city":              room.City,
 		"config":            room.Config,
-		"board":             room.Board,
+		"board":             board,
 		"candidates":        room.Candidates,
 		"game":              room.Game,
 		"voting":            room.Voting,
@@ -515,22 +520,34 @@ func (h *Handler) HandleBanco3DRoomPass(w http.ResponseWriter, r *http.Request) 
 	room.DecisionDeadline = nil
 	room.DecisionPlayerID = ""
 
-	if err := room.Game.PassTurn(req.PlayerID); err != nil {
-		h.error(w, http.StatusBadRequest, err.Error())
-		return
-	}
-
 	p := room.Game.GetPlayer(req.PlayerID)
 	pName := req.PlayerID
 	if p != nil {
 		pName = p.Name
 	}
-	room.RecordEvent(banco3d.GameEvent{
-		Type:       "pass",
-		PlayerID:   req.PlayerID,
-		PlayerName: pName,
-		Text:       fmt.Sprintf("%s passou a vez", pName),
-	})
+
+	isDouble := room.Game.LastDiceResult != nil && room.Game.LastDiceResult.IsDouble
+	if isDouble && p != nil && !p.InJail {
+		// Regra clássica: quem tirou dupla joga novamente mesmo recusando a compra
+		room.Game.ResetForDoubleRoll()
+		room.RecordEvent(banco3d.GameEvent{
+			Type:       "double_roll",
+			PlayerID:   req.PlayerID,
+			PlayerName: pName,
+			Text:       fmt.Sprintf("%s tirou duplas e joga novamente!", pName),
+		})
+	} else {
+		if err := room.Game.PassTurn(req.PlayerID); err != nil {
+			h.error(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		room.RecordEvent(banco3d.GameEvent{
+			Type:       "pass",
+			PlayerID:   req.PlayerID,
+			PlayerName: pName,
+			Text:       fmt.Sprintf("%s passou a vez", pName),
+		})
+	}
 
 	go func() { _ = hub.SaveToDisk() }()
 	h.json(w, http.StatusOK, h.formatRoomState(room, nil))

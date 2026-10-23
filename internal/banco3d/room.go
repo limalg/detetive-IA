@@ -451,8 +451,34 @@ func (r *Room) StartGame() error {
 	return nil
 }
 
+// BuyProperty purchases the tile at player position, keeping board synchronized.
+func (r *Room) BuyProperty(playerID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if err := r.Game.BuyProperty(playerID); err != nil {
+		return err
+	}
+	if r.Game.Board != nil {
+		r.Board = r.Game.Board
+	}
+	r.LastActivity = time.Now()
+	return nil
+}
+
+// GetBoard returns the active board, ensuring top-level and game boards are unified.
+func (r *Room) GetBoard() *Board {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.Game != nil && r.Game.Board != nil {
+		r.Board = r.Game.Board
+		return r.Game.Board
+	}
+	return r.Board
+}
+
 // executeBotTurnLocked executes a bot player's turn (caller must hold r.mu).
-func (r *Room) executeBotTurnLocked(bot *Player) error {
+func (r *Room) executeBotTurnLocked(bot *Player, fixedD1, fixedD2 int) error {
 	if !r.Game.IsStarted || r.Game.IsOver || r.Game.CurrentTurnPlayerID != bot.ID {
 		return errors.New("não é a vez deste bot")
 	}
@@ -462,22 +488,56 @@ func (r *Room) executeBotTurnLocked(bot *Player) error {
 		diff = "normal"
 	}
 
-	d1 := 1 + rand.Intn(6)
-	d2 := 1 + rand.Intn(6)
+	d1 := fixedD1
+	d2 := fixedD2
+	if d1 <= 0 || d2 <= 0 {
+		d1 = 1 + rand.Intn(6)
+		d2 = 1 + rand.Intn(6)
+	}
+
 	diceRes, err := r.Game.RollDice(bot.ID, d1, d2)
 	if err != nil {
 		_ = r.Game.AutoPassTurn()
 		return err
 	}
 
+	// Unificar fonte de verdade do tabuleiro
+	if r.Game.Board != nil {
+		r.Board = r.Game.Board
+	}
+
 	r.RecordTurnRollAndMove(bot.ID, bot.Name, diceRes)
+
+	// Se o jogador foi para a prisão (ex.: 3ª dupla consecutiva, casa 30 ou carta):
+	if bot.InJail {
+		r.RecordEvent(GameEvent{
+			Type:       "jail",
+			PlayerID:   bot.ID,
+			PlayerName: bot.Name,
+			Tile:       10,
+			TileIndex:  10,
+			Text:       fmt.Sprintf("%s foi para a prisão!", bot.Name),
+		})
+		_ = r.Game.AutoPassTurn()
+		r.RecordEvent(GameEvent{
+			Type:       "pass",
+			PlayerID:   bot.ID,
+			PlayerName: bot.Name,
+			Text:       fmt.Sprintf("%s passou a vez", bot.Name),
+		})
+		r.LastActivity = time.Now()
+		return nil
+	}
 
 	tile := &r.Board.Tiles[bot.Position]
 
-	// Buy decision
+	// Decisão de compra
 	if (tile.Type == TileProperty || tile.Type == TileStation || tile.Type == TileUtility) && !bot.InJail {
 		if tile.OwnerID == "" && BotAI.ShouldBuy(r.Game, bot, tile, diff) {
 			if buyErr := r.Game.BuyProperty(bot.ID); buyErr == nil {
+				if r.Game.Board != nil {
+					r.Board = r.Game.Board
+				}
 				r.RecordEvent(GameEvent{
 					Type:       "buy",
 					PlayerID:   bot.ID,
@@ -490,13 +550,16 @@ func (r *Room) executeBotTurnLocked(bot *Player) error {
 		}
 	}
 
-	// Build decision
+	// Decisão de construção
 	for {
 		tileIdx, canBuild := BotAI.DecideBuild(r.Game, bot, diff)
 		if !canBuild {
 			break
 		}
 		if bldErr := r.Game.BuildHouse(bot.ID, tileIdx); bldErr == nil {
+			if r.Game.Board != nil {
+				r.Board = r.Game.Board
+			}
 			t := &r.Board.Tiles[tileIdx]
 			r.RecordEvent(GameEvent{
 				Type:       "build",
@@ -511,7 +574,20 @@ func (r *Room) executeBotTurnLocked(bot *Player) error {
 		}
 	}
 
-	// Pass turn
+	// REGRA CLÁSSICA: Se tirou dupla e não foi para a prisão nem faliu: NÃO passa a vez, joga novamente!
+	if diceRes.IsDouble && !bot.InJail && !bot.IsBankrupt {
+		r.Game.ResetForDoubleRoll()
+		r.RecordEvent(GameEvent{
+			Type:       "double_roll",
+			PlayerID:   bot.ID,
+			PlayerName: bot.Name,
+			Text:       fmt.Sprintf("%s tirou duplas (%d+%d) e joga novamente!", bot.Name, diceRes.Die1, diceRes.Die2),
+		})
+		r.LastActivity = time.Now()
+		return nil
+	}
+
+	// Não tirou dupla: encerra o turno e passa a vez
 	_ = r.Game.AutoPassTurn()
 	r.RecordEvent(GameEvent{
 		Type:       "pass",
@@ -528,7 +604,14 @@ func (r *Room) executeBotTurnLocked(bot *Player) error {
 func (r *Room) ExecuteBotTurn(bot *Player) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.executeBotTurnLocked(bot)
+	return r.executeBotTurnLocked(bot, 0, 0)
+}
+
+// ExecuteBotTurnWithDice runs a turn for a bot player with specific dice values (testing/simulation).
+func (r *Room) ExecuteBotTurnWithDice(bot *Player, d1, d2 int) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.executeBotTurnLocked(bot, d1, d2)
 }
 
 // CheckTurnTimeout verifies if the decision deadline or inactive turn timeout has passed.
@@ -540,29 +623,51 @@ func (r *Room) CheckTurnTimeout() bool {
 		return false
 	}
 
-	// 1. Pending buy decision deadline expired -> auto-pass
+	// 1. Pending buy decision deadline expired -> auto-pass (ou repete turno se foi dupla)
 	if r.PendingDecision == "buy" && r.DecisionDeadline != nil && time.Now().After(*r.DecisionDeadline) {
 		r.PendingDecision = ""
 		r.DecisionDeadline = nil
+		decPlayerID := r.DecisionPlayerID
 		r.DecisionPlayerID = ""
-		_ = r.Game.AutoPassTurn()
-		r.LastActivity = time.Now()
-		next := r.Game.getPlayer(r.Game.CurrentTurnPlayerID)
-		if next != nil && next.IsBot {
-			_ = r.executeBotTurnLocked(next)
+		p := r.Game.getPlayer(decPlayerID)
+		isDouble := r.Game.LastDiceResult != nil && r.Game.LastDiceResult.IsDouble
+		if isDouble && p != nil && !p.InJail {
+			r.Game.ResetForDoubleRoll()
+			r.RecordEvent(GameEvent{
+				Type:       "double_roll",
+				PlayerID:   decPlayerID,
+				PlayerName: p.Name,
+				Text:       fmt.Sprintf("%s tirou duplas e joga novamente!", p.Name),
+			})
+			if p.IsBot {
+				_ = r.executeBotTurnLocked(p, 0, 0)
+			}
+		} else {
+			_ = r.Game.AutoPassTurn()
+			r.RecordEvent(GameEvent{
+				Type:       "pass",
+				PlayerID:   decPlayerID,
+				PlayerName: p.Name,
+				Text:       fmt.Sprintf("%s passou a vez", p.Name),
+			})
+			next := r.Game.getPlayer(r.Game.CurrentTurnPlayerID)
+			if next != nil && next.IsBot {
+				_ = r.executeBotTurnLocked(next, 0, 0)
+			}
 		}
+		r.LastActivity = time.Now()
 		return true
 	}
 
-	// 2. If current player is bot and no decision is pending, execute bot turn
+	// 2. Se o jogador da vez for bot e nenhuma decisão estiver pendente, executa o turno do bot
 	cur := r.Game.getPlayer(r.Game.CurrentTurnPlayerID)
 	if cur != nil && cur.IsBot && r.PendingDecision == "" {
-		_ = r.executeBotTurnLocked(cur)
+		_ = r.executeBotTurnLocked(cur, 0, 0)
 		r.LastActivity = time.Now()
 		return true
 	}
 
-	// 3. Inactive turn timeout (30s) - apenas quando não há decisão de compra pendente
+	// 3. Timeout por inatividade (30s) quando não há decisão de compra pendente
 	if r.PendingDecision == "" && time.Since(r.Game.TurnStartTime) >= r.TurnTimeout {
 		r.PendingDecision = ""
 		r.DecisionDeadline = nil
@@ -571,7 +676,7 @@ func (r *Room) CheckTurnTimeout() bool {
 		r.LastActivity = time.Now()
 		next := r.Game.getPlayer(r.Game.CurrentTurnPlayerID)
 		if next != nil && next.IsBot {
-			_ = r.executeBotTurnLocked(next)
+			_ = r.executeBotTurnLocked(next, 0, 0)
 		}
 		return true
 	}
