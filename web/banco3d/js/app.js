@@ -38,10 +38,12 @@
   // ---------- backend shape -> view shape ----------
   const TT = { GO: 'START', CHANCE: 'LUCK', CHEST: 'LUCK', FREE_PARKING: 'PARKING' };
   const luckName = (t) => (t.deck === 'CHEST' ? 'Revés' : t.deck === 'CHANCE' ? 'Sorte' : 'Sorte ou Revés');
+  // festival_until: ISO date or a turn number; unknown/absent = no festival
+  const festOn = (f, turn) => !!f && (typeof f === 'string' ? Date.parse(f) > Date.now() : typeof f === 'number' ? f > (turn || 0) : !!f);
   function norm(r) {
     const g = r.game || {}, tiles = (g.board && g.board.tiles) || (r.board && r.board.tiles) || []; // game.board is the live one (owner_id); top-level board can be a stale copy
     const players = (g.players || []).map((p) => ({ id: p.id, name: p.name, color: p.color, balance: p.money, position: p.position, bankrupt: p.is_bankrupt, properties: p.properties || [] }));
-    const board = tiles.map((t) => ({ position: t.index, type: TT[t.type] || t.type, deck: t.type, name: t.name, group: t.group, price: t.price, rent: t.rent || [], rent_base: (t.rent || [])[0] || 0, build_cost: t.house_cost, image_kind: t.image_kind, description: t.description, mortgage: t.mortgage_value, owner_id: t.owner_id, houses: t.houses >= 5 ? 0 : t.houses, hotel: t.houses >= 5, queen: t.is_queen }));
+    const board = tiles.map((t) => ({ position: t.index, type: TT[t.type] || t.type, deck: t.type, name: t.name, group: t.group, price: t.price, rent: t.rent || [], rent_base: (t.rent || [])[0] || 0, build_cost: t.house_cost, image_kind: t.image_kind, description: t.description, mortgage: t.mortgage_value, owner_id: t.owner_id, houses: t.houses >= 5 ? 0 : t.houses, hotel: t.houses >= 5, queen: t.is_queen, festival: festOn(t.festival_until, g.turn_index) }));
     players.forEach((p) => { p.worth = p.balance + board.filter((t) => t.owner_id === p.id).reduce((s, t) => s + (t.price || 0) + (t.hotel ? 5 : t.houses || 0) * (t.build_cost || 0), 0); }); // net worth: cash + deeds + buildings
     const cur = g.current_turn_player_id, me = players.find((p) => p.id === meId);
     const mine = cur === meId && g.is_started && !g.is_over, rolled = !!g.dice_rolled_this_turn;
@@ -55,7 +57,10 @@
 
   // ---------- board ----------
   const STATION_ICONS = ['bolt', 'drop', 'wifi', 'train'];
-  const CORNER = { START: 'Saída', JAIL: 'Prisão', PARKING: 'Visitante', GO_TO_JAIL: 'Vá para a Cadeia' };
+  const CORNER = { START: 'Saída', JAIL: 'Ilha Perdida', PARKING: 'Campeonato', GO_TO_JAIL: 'Vá para a Ilha' };
+  const CSUB = { START: 'Receba o salário', JAIL: 'Só visitando', PARKING: 'Visitante', GO_TO_JAIL: 'Direto para a prisão' };
+  // short price for the tiles: R$ 60, R$ 400, R$ 1,2K
+  const kshort = (n) => (n >= 1000 ? 'R$ ' + (n / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + 'K' : 'R$ ' + n);
   const side = (i, q) => (i < q ? 'L' : i < 2 * q ? 'T' : i < 3 * q ? 'R' : 'B');
   function cell(i, q) {
     const S = q + 1;
@@ -71,9 +76,9 @@
   const use = (id) => `<svg aria-hidden="true"><use href="#i-${id}"/></svg>`;
   function tileIcon(t, n) {
     if (t.type === 'START') return 'arrow';
-    if (t.type === 'JAIL') return 'bank';
-    if (t.type === 'PARKING') return 'user';
-    if (t.type === 'GO_TO_JAIL') return 'car';
+    if (t.type === 'JAIL') return 'island';
+    if (t.type === 'PARKING') return 'trophy';
+    if (t.type === 'GO_TO_JAIL') return 'plane';
     if (t.type === 'LUCK') return 'q';
     if (t.type === 'TAX') return 'coin';
     if (t.type === 'STATION' || t.type === 'UTILITY') return STATION_ICONS[n % 4];
@@ -98,9 +103,10 @@
       if (t.type === 'PROPERTY') el.style.setProperty('--gc', `var(--g-${t.group})`);
       const nm = CORNER[t.type] || (t.type === 'LUCK' ? luckName(t) : t.name);
       const icon = tileIcon(t, t.type === 'STATION' || t.type === 'UTILITY' ? sn++ : i);
-      const th = ['PROPERTY', 'STATION', 'UTILITY'].includes(t.type) ? thumbFor(t) : null;
-      el.innerHTML = corner ? `${use(icon)}<span class="nm">${esc(nm)}</span><span class="hs"></span>`
-        : `${th ? `<img class="th" src="${th}" alt="" onerror="this.remove()">` : ''}${use(icon)}<span class="tx"><span class="nm">${esc(nm)}</span>${t.price ? `<span class="pr">${brl(t.price)}</span>` : ''}</span><span class="hs"></span>`;
+      const own = ['PROPERTY', 'STATION', 'UTILITY'].includes(t.type);
+      if (own) el.classList.add('ownable');
+      el.innerHTML = corner ? `${use(icon)}<span class="nm">${esc(nm)}</span><small class="sb">${CSUB[t.type] || ''}</small>`
+        : `${own ? '<i class="band"></i>' : ''}<span class="tx">${t.type === 'PROPERTY' ? '' : use(icon)}<span class="nm">${esc(nm)}</span>${t.price ? `<span class="pr">${kshort(t.price)}</span>` : ''}</span>${t.type === 'PROPERTY' ? '<span class="bld"></span>' : ''}${own ? '<i class="flag" aria-hidden="true"></i><i class="fl2" aria-hidden="true"></i>' : ''}${t.type === 'PROPERTY' ? '<i class="seal" title="Monopólio: aluguel dobrado" aria-hidden="true">×2</i>' : ''}`;
       el.setAttribute('aria-label', `${nm}${t.price ? ', ' + brl(t.price) : ''}`);
       el.onclick = () => showTile(i);
       board.appendChild(el);
@@ -113,11 +119,11 @@
   // shrink each name until name + price fit inside the tile (no clipped text, price always visible)
   function fitTiles() {
     $('board').querySelectorAll('.tile').forEach((t) => {
-      const nm = t.querySelector('.nm');
+      const nm = t.querySelector('.nm'), tx = t.querySelector('.tx') || t;
       if (!nm) return;
       nm.style.fontSize = '';
       let fs = parseFloat(getComputedStyle(nm).fontSize);
-      const over = () => t.scrollHeight > t.clientHeight + 1 || t.scrollWidth > t.clientWidth + 1 || nm.scrollWidth > nm.clientWidth + 1;
+      const over = () => tx.scrollHeight > tx.clientHeight + 1 || tx.scrollWidth > tx.clientWidth + 1 || nm.scrollWidth > nm.clientWidth + 1;
       while (over() && fs > 4.5) { fs -= .5; nm.style.fontSize = fs + 'px'; }
     });
   }
@@ -133,6 +139,7 @@
     const c = document.createElement('div');
     c.className = 'center';
     c.innerHTML =
+      `<div class="clock" id="matchClock" role="timer" aria-label="Tempo restante da partida" hidden>${use('clock')}<b id="clockTxt">--:--</b></div>` +
       `<div class="logo"><svg viewBox="0 0 64 32" aria-hidden="true"><path d="M4 30V16l8-6v20M16 30V8l9-6v28M29 30V12l9-4v22M42 30V4l10 6v20M56 30V14l4 2v14" fill="none" stroke="currentColor" stroke-width="2.500"/></svg>BANCO IMOBILIÁRIO</div>` +
       `<div class="piles"><div class="pile" title="Sorte">${use('q')}</div><div class="pile" title="Revés">${use('house')}</div></div>`;
     return c;
@@ -375,6 +382,9 @@
   $('myList').addEventListener('focusout', tipHide);
   $('myList').addEventListener('click', (e) => { const b = mpBtn(e); if (b) { tipHide(); showTile(+b.dataset.i); } });
 
+  // one 3D building: front / right / left walls + roof lid, built from the footprint up
+  const bxHtml = (cls, rise) => `<i class="bx ${cls}${rise ? ' rise' : ''}"><b class="ft"></b><b class="rt"></b><b class="lf"></b><b class="tp"></b></i>`;
+
   // ---------- render ----------
   function render() {
     renderPlayers();
@@ -390,12 +400,25 @@
     $('btnEnd').disabled = busy || !state.can_buy;
     $('btnBuild').disabled = true; $('btnBuild').title = 'Em breve';
     $('btnTrade').disabled = busy || state.status !== 'in_progress' || state.players.filter((p) => !p.bankrupt).length < 2;
+    const gOwn = {}, mono = {}; // monopoly = every tile of the group has the same owner
+    state.board.forEach((t) => { if (t.type === 'PROPERTY') (gOwn[t.group] = gOwn[t.group] || []).push(t.owner_id || ''); });
+    Object.entries(gOwn).forEach(([g, l]) => { mono[g] = !!l[0] && l.every((x) => x === l[0]); });
     state.board.forEach((t, i) => {
       const el = $('board').children[i];
       const o = state.players.find((p) => p.id === t.owner_id);
       el.classList.toggle('owned', !!o);
       if (o) el.style.setProperty('--oc', o.color);
-      el.querySelector('.hs').innerHTML = t.hotel ? '<i class="h"></i>' : '<i></i>'.repeat(t.houses || 0);
+      const bl = el.querySelector('.bld');
+      if (bl) {
+        const lv = t.hotel ? 5 : t.houses || 0, prev = +bl.dataset.lv || 0;
+        if (bl.dataset.lv !== String(lv)) {
+          const fresh = bl.dataset.init && lv > prev && maxMotion(); // first paint and reloads don't animate
+          bl.dataset.lv = lv; bl.dataset.init = 1;
+          bl.innerHTML = lv === 5 ? bxHtml('hotel', fresh) : Array.from({ length: lv }, (_, k) => bxHtml('', fresh && k >= prev)).join('');
+        }
+      }
+      el.classList.toggle('mono', t.type === 'PROPERTY' && mono[t.group]);
+      el.classList.toggle('fest', !!t.festival);
       el.querySelector('.nm').textContent = CORNER[t.type] || (t.type === 'LUCK' ? luckName(t) : t.name);
     });
   }
@@ -543,6 +566,7 @@
       } else if (!pawns.has(p.id)) placePawn(p, p.position);
       prevPos.set(p.id, p.position);
     }
+    (evs || []).filter((e) => e.type === 'festival').forEach((e) => { const t = $('board').children[e.tile ?? e.position ?? e.to]; if (t && maxMotion()) { t.classList.remove('fest-pop'); void t.offsetWidth; t.classList.add('fest-pop'); setTimeout(() => t.classList.remove('fest-pop'), 1600); } });
     const salary = (evs || []).filter((e) => e.type === 'salary'), cardEvs = (evs || []).filter((e) => e.type === 'card');
     salary.forEach((e) => fxSrc.set(e.player_id, $('board').children[0]));
     render();
