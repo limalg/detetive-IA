@@ -14,36 +14,39 @@ type cityPreset struct {
 
 // resolveCityPreset matches a query to a dedicated catalog preset or generates a procedural fallback.
 func resolveCityPreset(query string) cityPreset {
-	norm := strings.ToLower(strings.TrimSpace(query))
-	switch {
-	case strings.Contains(norm, "curitiba"):
+	// Exact catalog match only (alias or full name, after dropping a typed UF/state): a substring match let
+	// "Magé, Rio de Janeiro" hit the Rio preset. Any other city gets the procedural preset.
+	place, _ := parseStateSuffix(query)
+	name, _, _, _ := offlinePlace(place)
+	switch name {
+	case "Curitiba":
 		return curitibaPreset()
-	case strings.Contains(norm, "londrina"):
+	case "Londrina":
 		return londrinaPreset()
-	case strings.Contains(norm, "recife"):
+	case "Recife":
 		return recifePreset()
-	case strings.Contains(norm, "porto alegre") || strings.Contains(norm, "poa"):
+	case "Porto Alegre":
 		return portoAlegrePreset()
-	case strings.Contains(norm, "brasília") || strings.Contains(norm, "brasilia") || strings.Contains(norm, "distrito federal"):
+	case "Brasília":
 		return brasiliaPreset()
-	case strings.Contains(norm, "fortaleza"):
+	case "Fortaleza":
 		return fortalezaPreset()
-	case strings.Contains(norm, "florianópolis") || strings.Contains(norm, "florianopolis") || strings.Contains(norm, "floripa"):
+	case "Florianópolis":
 		return florianopolisPreset()
-	case strings.Contains(norm, "são paulo") || strings.Contains(norm, "sao paulo") || strings.Contains(norm, "sp"):
+	case "São Paulo":
 		return saoPauloPreset()
-	case strings.Contains(norm, "rio"):
+	case "Rio de Janeiro":
 		return rioPreset()
-	case strings.Contains(norm, "belo horizonte") || strings.Contains(norm, "bh"):
+	case "Belo Horizonte":
 		return beloHorizontePreset()
-	case strings.Contains(norm, "salvador"):
+	case "Salvador":
 		return salvadorPreset()
-	case strings.Contains(norm, "nova york") || strings.Contains(norm, "new york") || strings.Contains(norm, "nyc"):
+	case "New York":
 		return newYorkPreset()
-	case strings.Contains(norm, "paris"):
+	case "Paris":
 		return parisPreset()
 	default:
-		return proceduralPreset(query)
+		return proceduralPreset(place)
 	}
 }
 

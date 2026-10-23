@@ -332,7 +332,7 @@ var offlineCities = []struct {
 	{"Curitiba", -25.4284, -49.2733, []string{"pl_curitiba"}},
 	{"São Paulo", -23.5505, -46.6333, []string{"pl_sp", "sp", "sao paulo"}},
 	{"Rio de Janeiro", -22.9068, -43.1729, []string{"pl_rio", "rio"}},
-	{"Brasília", -15.7975, -47.8919, []string{"pl_brasilia", "brasilia", "df"}},
+	{"Brasília", -15.7975, -47.8919, []string{"pl_brasilia", "brasilia"}},
 	{"Fortaleza", -3.7319, -38.5267, []string{"pl_fortaleza"}},
 	{"Florianópolis", -27.5954, -48.5480, []string{"pl_florianopolis", "florianopolis", "floripa"}},
 	{"Belo Horizonte", -19.9167, -43.9345, []string{"pl_bh", "bh"}},
@@ -342,9 +342,9 @@ var offlineCities = []struct {
 }
 
 func offlinePlace(key string) (string, float64, float64, bool) {
-	k := strings.ToLower(strings.TrimSpace(key))
+	k := fold(key)
 	for _, c := range offlineCities {
-		if k == strings.ToLower(c.name) || slices.Contains(c.aliases, k) {
+		if k == fold(c.name) || slices.Contains(c.aliases, k) {
 			return c.name, c.lat, c.lon, true
 		}
 	}
@@ -1603,4 +1603,16 @@ func (s *PlacesService) fetchNominatimStreets(ctx context.Context, cityName stri
 		}
 	}
 	return out
+}
+
+// ResolveCity maps an autocomplete place_id to its real municipality name; an unresolvable id is an
+// UnavailableError (never another city).
+func (s *PlacesService) ResolveCity(placeID string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), totalBudget)
+	defer cancel()
+	name, _, _, err := s.resolvePlaceID(ctx, placeID)
+	if err != nil {
+		return "", s.unavailable("place_id could not be resolved: " + err.Error())
+	}
+	return name, nil
 }

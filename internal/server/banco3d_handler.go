@@ -96,20 +96,46 @@ func (h *Handler) HandleBanco3DPlacesLandmarks(w http.ResponseWriter, r *http.Re
 	h.json(w, http.StatusOK, res)
 }
 
+// resolveCityParam returns the city to build a board for: the autocomplete place_id wins over the free
+// text (never fuzzy-matched); an unresolvable place_id answers 503 instead of another city.
+func (h *Handler) resolveCityParam(w http.ResponseWriter, placeID, city string) (string, bool) {
+	if strings.TrimSpace(placeID) == "" {
+		return city, true
+	}
+	name, err := banco3d.GlobalPlacesService.ResolveCity(placeID)
+	var unavailable *banco3d.UnavailableError
+	if errors.As(err, &unavailable) {
+		secs := int(unavailable.RetryAfter.Seconds())
+		w.Header().Set("Retry-After", strconv.Itoa(secs))
+		h.json(w, http.StatusServiceUnavailable, map[string]interface{}{"error": unavailable.Msg, "retry_after": secs})
+		return "", false
+	}
+	return name, true
+}
+
 // HandleBanco3DCity returns the 40-tile board and 4 iconic candidates for a city query.
 func (h *Handler) HandleBanco3DCity(w http.ResponseWriter, r *http.Request) {
 	cityQuery := r.URL.Query().Get("q")
+	placeID := r.URL.Query().Get("place_id")
 	if cityQuery == "" {
 		cityQuery = r.URL.Query().Get("city")
 	}
 
 	if r.Method == http.MethodPost {
 		var body struct {
-			City string `json:"city"`
+			City    string `json:"city"`
+			PlaceID string `json:"place_id"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err == nil && body.City != "" {
 			cityQuery = body.City
 		}
+		if body.PlaceID != "" {
+			placeID = body.PlaceID
+		}
+	}
+	cityQuery, ok := h.resolveCityParam(w, placeID, cityQuery)
+	if !ok {
+		return
 	}
 
 	if strings.TrimSpace(cityQuery) == "" {
@@ -138,10 +164,16 @@ func (h *Handler) HandleBanco3DRoomCreate(w http.ResponseWriter, r *http.Request
 
 	var req struct {
 		RoomID string              `json:"room_id"`
-		City   string              `json:"city"`
-		Config *banco3d.RoomConfig `json:"config,omitempty"`
+		City    string              `json:"city"`
+		PlaceID string              `json:"place_id"`
+		Config  *banco3d.RoomConfig `json:"config,omitempty"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&req)
+
+	var ok bool
+	if req.City, ok = h.resolveCityParam(w, req.PlaceID, req.City); !ok {
+		return
+	}
 
 	if strings.TrimSpace(req.RoomID) == "" {
 		req.RoomID = "sala-1"

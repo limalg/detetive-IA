@@ -713,3 +713,46 @@ func TestStreetsFillBoardAndKinds(t *testing.T) {
 		t.Errorf("image kinds: %v", kinds)
 	}
 }
+
+func TestStateNameNeverSelectsCatalogRio(t *testing.T) {
+	for _, q := range []string{"Magé RJ", "Magé, Rio de Janeiro", "Mage - Rio de Janeiro, Brasil", "Esperança SP", "Copacabana"} {
+		pr, rio := resolveCityPreset(q), rioPreset()
+		for _, n := range append(rio.props[:], rio.candidates[:]...) {
+			if slices.Contains(pr.props[:], n) || slices.Contains(pr.candidates[:], n) {
+				t.Errorf("%q leaked Rio catalog name %q", q, n)
+			}
+		}
+	}
+	if resolveCityPreset("Rio de Janeiro, RJ").props != rioPreset().props || resolveCityPreset("curitiba pr").props != curitibaPreset().props {
+		t.Error("catalog cities must still match exactly (with UF)")
+	}
+	b, cands, _ := GenerateCityBoard("Magé RJ", "")
+	for _, c := range cands {
+		if strings.Contains(c, "Cristo") || strings.Contains(c, "Ipanema") {
+			t.Errorf("Rio candidate in Magé board: %v", cands)
+		}
+	}
+	for _, tl := range b.Tiles {
+		if tl.Name == "Copacabana" || tl.Name == "Ipanema" {
+			t.Errorf("Rio tile in Magé board: %s", tl.Name)
+		}
+	}
+}
+
+func TestCleanCacheResolution(t *testing.T) {
+	// empty cache + Nominatim down: 503-style error, never another city
+	down := mockService(func(r *http.Request) (int, string) { return 503, "" })
+	if name, err := down.ResolveCity("osm_10351030"); err == nil || name != "" {
+		t.Fatalf("want UnavailableError, got %q %v", name, err)
+	}
+	if _, err := down.GetLandmarks("", "osm_10351030"); err == nil {
+		t.Fatal("unresolvable place_id must be an error")
+	}
+	// empty cache + Nominatim ok: the real municipality
+	up := mockService(func(r *http.Request) (int, string) {
+		return 200, `{"localname":"Magé","rank_address":16,"category":"boundary","centroid":{"coordinates":[-43.04,-22.65]}}`
+	})
+	if name, err := up.ResolveCity("osm_10351030"); err != nil || name != "Magé" {
+		t.Fatalf("got %q %v", name, err)
+	}
+}
