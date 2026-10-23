@@ -344,12 +344,26 @@ func (g *Game) BuildHouse(playerID string, tileIndex int) error {
 		return errors.New("limite máximo de construções atingido (hotel construído)")
 	}
 
+	// Construção uniforme obrigatória:
+	for i := range g.Board.Tiles {
+		other := &g.Board.Tiles[i]
+		if other.Group == tile.Group && other.Type == TileProperty && other.Index != tile.Index {
+			if tile.Houses > other.Houses {
+				return errors.New("construção uniforme obrigatória: construa primeiro nas propriedades do grupo com menos casas")
+			}
+		}
+	}
+
 	p := g.getPlayer(playerID)
-	if p.Money < tile.HouseCost {
+	cost := tile.HouseCost
+	if cost <= 0 {
+		cost = 50
+	}
+	if p.Money < cost {
 		return errors.New("saldo insuficiente para construir")
 	}
 
-	p.Money -= tile.HouseCost
+	p.Money -= cost
 	tile.Houses++
 	return nil
 }
@@ -538,13 +552,21 @@ func (g *Game) advanceTurn() {
 		return
 	}
 
-	// Reduz TTL de festivais ativos nas propriedades
+	// Reduz TTL de festivais e campeonatos ativos nas propriedades
 	if g.Board != nil {
 		for i := range g.Board.Tiles {
 			if g.Board.Tiles[i].FestivalRounds > 0 {
 				g.Board.Tiles[i].FestivalRounds--
 				if g.Board.Tiles[i].FestivalRounds <= 0 {
 					g.Board.Tiles[i].FestivalMultiplier = 1
+					g.Board.Tiles[i].FestivalUntil = nil
+				}
+			}
+			if g.Board.Tiles[i].ChampionshipRounds > 0 {
+				g.Board.Tiles[i].ChampionshipRounds--
+				if g.Board.Tiles[i].ChampionshipRounds <= 0 {
+					g.Board.Tiles[i].ChampionshipMultiplier = 1
+					g.Board.Tiles[i].ChampionshipUntil = nil
 				}
 			}
 		}
@@ -620,9 +642,9 @@ func (g *Game) calculateRent(tile *Tile, diceTotal int) int {
 }
 
 // ActivateChampionship triggers Business Tour World Championships on tile 20.
-// If player owns properties, doubles rent on their highest value property.
+// Triples rent on chosen or highest value property (aluguel x3 por 1 rodada).
 // If player owns no properties, awards sports incentive bonus (R$ 50).
-func (g *Game) ActivateChampionship(playerID string) *Tile {
+func (g *Game) ActivateChampionship(playerID string, chosenTileIndex ...int) *Tile {
 	p := g.getPlayer(playerID)
 	if p == nil || p.IsBankrupt {
 		return nil
@@ -633,28 +655,46 @@ func (g *Game) ActivateChampionship(playerID string) *Tile {
 		for i := range g.Board.Tiles {
 			if g.Board.Tiles[i].OwnerID == playerID && g.Board.Tiles[i].ChampionshipMultiplier > 1 {
 				g.Board.Tiles[i].ChampionshipMultiplier = 1
+				g.Board.Tiles[i].ChampionshipRounds = 0
+				g.Board.Tiles[i].ChampionshipUntil = nil
 			}
 		}
 	}
 
-	var bestTile *Tile
-	bestValue := -1
-	for _, idx := range p.Properties {
-		if idx >= 0 && g.Board != nil && idx < len(g.Board.Tiles) {
-			t := &g.Board.Tiles[idx]
-			if t.Type == TileProperty {
-				val := t.Price + t.Houses*t.HouseCost
-				if val > bestValue {
-					bestValue = val
-					bestTile = t
+	var targetTile *Tile
+	if len(chosenTileIndex) > 0 && chosenTileIndex[0] >= 0 && g.Board != nil && chosenTileIndex[0] < len(g.Board.Tiles) {
+		t := &g.Board.Tiles[chosenTileIndex[0]]
+		if t.OwnerID == playerID && t.Type == TileProperty {
+			targetTile = t
+		}
+	}
+
+	if targetTile == nil {
+		bestValue := -1
+		for _, idx := range p.Properties {
+			if idx >= 0 && g.Board != nil && idx < len(g.Board.Tiles) {
+				t := &g.Board.Tiles[idx]
+				if t.Type == TileProperty {
+					val := t.Price + t.Houses*t.HouseCost
+					if val > bestValue {
+						bestValue = val
+						targetTile = t
+					}
 				}
 			}
 		}
 	}
 
-	if bestTile != nil {
-		bestTile.ChampionshipMultiplier = 2
-		return bestTile
+	if targetTile != nil {
+		targetTile.ChampionshipMultiplier = 3
+		rounds := len(g.Players)
+		if rounds <= 0 {
+			rounds = 4
+		}
+		targetTile.ChampionshipRounds = rounds
+		until := time.Now().Add(time.Duration(rounds*30) * time.Second)
+		targetTile.ChampionshipUntil = &until
+		return targetTile
 	}
 
 	// Sem propriedades: premiação esportiva
@@ -824,6 +864,7 @@ func (g *Game) CalculateNetWorth(p *Player) int {
 
 // PlayerRanking represents a player's standing based on Net Worth.
 type PlayerRanking struct {
+	PlayerID        string `json:"player_id"`
 	ID              string `json:"id"`
 	Name            string `json:"name"`
 	NetWorth        int    `json:"net_worth"`
@@ -837,6 +878,7 @@ func (g *Game) GetNetWorthRanking() []PlayerRanking {
 	for _, p := range g.Players {
 		if !p.IsBankrupt {
 			ranking = append(ranking, PlayerRanking{
+				PlayerID:        p.ID,
 				ID:              p.ID,
 				Name:            p.Name,
 				NetWorth:        g.CalculateNetWorth(p),

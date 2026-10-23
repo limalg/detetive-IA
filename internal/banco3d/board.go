@@ -3,6 +3,7 @@ package banco3d
 import (
 	"fmt"
 	"strings"
+	"time"
 )
 
 // TileType represents the type of a board tile.
@@ -57,7 +58,10 @@ type Tile struct {
 	DarkMode      bool       `json:"dark_mode,omitempty"`
 	FestivalMultiplier     int        `json:"festival_multiplier,omitempty"`
 	FestivalRounds         int        `json:"festival_rounds,omitempty"`
+	FestivalUntil          *time.Time `json:"festival_until,omitempty"`
 	ChampionshipMultiplier int        `json:"championship_multiplier,omitempty"`
+	ChampionshipRounds     int        `json:"championship_rounds,omitempty"`
+	ChampionshipUntil      *time.Time `json:"championship_until,omitempty"`
 }
 
 // Board represents the 40-tile game board for a specific city.
@@ -252,7 +256,7 @@ func NewStandardBoard(cityName string, customTiles []Tile) *Board {
 	tiles[19] = makeProp(19, fmt.Sprintf("Laranja C (%s)", cityName), ColorOrange, false)
 
 	// Side 3 (20-29)
-	tiles[20] = Tile{Index: 20, Name: "VISITANTE", Type: TileFreeParking, Group: ColorNone, ImageKind: "visitor_chair", Description: "Área de descanso livre"}
+	tiles[20] = Tile{Index: 20, Name: "Campeonato", Type: TileFreeParking, Group: ColorNone, ImageKind: "trophy", Description: "Campeonato Mundial: aluguel ×3 na sua propriedade por 1 rodada"}
 	tiles[21] = makeProp(21, fmt.Sprintf("Vermelho A (%s)", cityName), ColorRed, false)
 	tiles[22] = Tile{Index: 22, Name: "Sorte", Type: TileChance, Group: ColorNone, ImageKind: "chance_card_chest", Description: "Carta surpresa de sorte"}
 	tiles[23] = makeProp(23, fmt.Sprintf("Vermelho B (%s)", cityName), ColorRed, false)

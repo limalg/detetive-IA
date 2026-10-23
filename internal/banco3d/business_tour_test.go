@@ -89,9 +89,9 @@ func TestWorldChampionshipTile20(t *testing.T) {
 		t.Fatalf("esperava cair na casa 20, caiu em %d", dice.NewPosition)
 	}
 
-	// Casa 39 (mais cara) deve receber ChampionshipMultiplier = 2
-	if board.Tiles[39].ChampionshipMultiplier != 2 {
-		t.Errorf("casa 39 deveria ter ChampionshipMultiplier = 2, obtido %d", board.Tiles[39].ChampionshipMultiplier)
+	// Casa 39 (mais cara) deve receber ChampionshipMultiplier = 3 (conforme spec Master: aluguel x3)
+	if board.Tiles[39].ChampionshipMultiplier != 3 {
+		t.Errorf("casa 39 deveria ter ChampionshipMultiplier = 3, obtido %d", board.Tiles[39].ChampionshipMultiplier)
 	}
 	if board.Tiles[1].ChampionshipMultiplier != 0 && board.Tiles[1].ChampionshipMultiplier != 1 {
 		t.Errorf("casa 1 NÃO deveria ter campeonato, obtido %d", board.Tiles[1].ChampionshipMultiplier)
@@ -167,5 +167,104 @@ func TestBusinessTourFastModeLightningVictory(t *testing.T) {
 	winnerDisabled, _ := room.Game.CheckLightningVictory()
 	if winnerDisabled != nil {
 		t.Errorf("com FastMode desativado NÃO deve haver vitória relâmpago!")
+	}
+}
+
+// TestBuildUniformHouseAndHotelRules validates that:
+// - Building requires full group ownership
+// - Building requires player's turn
+// - Uniform building is strictly enforced (cannot build 2nd house if another property has 0)
+// - 5th building creates a hotel
+// - Max 5 builds (hotel)
+// - Monopoly doubles base rent
+func TestBuildUniformHouseAndHotelRules(t *testing.T) {
+	room, err := banco3d.NewRoom("room-build-test", "Curitiba")
+	if err != nil {
+		t.Fatalf("falha ao criar sala: %v", err)
+	}
+
+	p1, _ := room.JoinPlayer("Alice", "#3b82f6", "car")
+	p2, _ := room.JoinPlayer("Bob", "#ef4444", "hat")
+	_ = room.StartGame()
+
+	board := room.Game.Board
+
+	// 1. Alice possui apenas casa 1 (do grupo Marrom: casas 1 e 3)
+	board.Tiles[1].OwnerID = p1.ID
+	p1.Properties = []int{1}
+
+	// Tentar construir na casa 1 sem ter o grupo completo -> DEVE FALHAR
+	if err := room.Game.BuildHouse(p1.ID, 1); err == nil {
+		t.Errorf("construção sem grupo completo DEVE retornar erro")
+	}
+
+	// 2. Bob tenta construir na casa 1 na vez da Alice -> DEVE FALHAR (não é a vez)
+	if err := room.Game.BuildHouse(p2.ID, 1); err == nil {
+		t.Errorf("construção fora da vez DEVE retornar erro")
+	}
+
+	// 3. Alice completa o grupo Marrom (casas 1 e 3)
+	board.Tiles[3].OwnerID = p1.ID
+	p1.Properties = []int{1, 3}
+
+	// Sem casas: verificar que monopólio dobra o aluguel base
+	rentBase := board.Tiles[1].Rent[0]
+	// Bob cai na casa 1 sem casas:
+	room.Game.CurrentTurnPlayerID = p2.ID
+	room.Game.DiceRolledThisTurn = false
+	p2.Position = 0
+	diceRes, _ := room.Game.RollDice(p2.ID, 0, 1)
+	if diceRes.RentPaid != rentBase*2 {
+		t.Errorf("monopólio sem casas deve dobrar aluguel base: esperado %d, obtido %d", rentBase*2, diceRes.RentPaid)
+	}
+
+	// Volta a vez para Alice
+	room.Game.CurrentTurnPlayerID = p1.ID
+	room.Game.DiceRolledThisTurn = true
+
+	// 4. Alice constrói 1 casa na casa 1 -> sucesso!
+	initialMoney := p1.Money
+	cost := board.Tiles[1].HouseCost
+	if err := room.Game.BuildHouse(p1.ID, 1); err != nil {
+		t.Fatalf("falha ao construir 1ª casa na casa 1: %v", err)
+	}
+	if board.Tiles[1].Houses != 1 {
+		t.Errorf("esperava 1 casa, obtido %d", board.Tiles[1].Houses)
+	}
+	if p1.Money != initialMoney-cost {
+		t.Errorf("esperava desconto de R$ %d, saldo foi de %d para %d", cost, initialMoney, p1.Money)
+	}
+
+	// 5. Alice tenta construir a 2ª casa na casa 1 enquanto a casa 3 tem 0 casas -> DEVE FALHAR (construção uniforme)
+	if err := room.Game.BuildHouse(p1.ID, 1); err == nil {
+		t.Errorf("construção não uniforme (2 casas na 1 enquanto casa 3 tem 0) DEVE retornar erro")
+	}
+
+	// 6. Constrói 1ª casa na casa 3 -> sucesso!
+	if err := room.Game.BuildHouse(p1.ID, 3); err != nil {
+		t.Fatalf("falha ao construir casa na 3 para nivelar: %v", err)
+	}
+
+	// 7. Agora ambas têm 1 casa: construir até 4 casas e depois hotel (5)
+	for level := 2; level <= 4; level++ {
+		if err := room.Game.BuildHouse(p1.ID, 1); err != nil {
+			t.Fatalf("falha ao construir nível %d na casa 1: %v", level, err)
+		}
+		if err := room.Game.BuildHouse(p1.ID, 3); err != nil {
+			t.Fatalf("falha ao construir nível %d na casa 3: %v", level, err)
+		}
+	}
+
+	// 8. Construir hotel (nível 5)
+	if err := room.Game.BuildHouse(p1.ID, 1); err != nil {
+		t.Fatalf("falha ao construir hotel (nível 5) na casa 1: %v", err)
+	}
+	if board.Tiles[1].Houses != 5 {
+		t.Errorf("esperava 5 construções (hotel), obtido %d", board.Tiles[1].Houses)
+	}
+
+	// 9. Tentar construir além de hotel -> DEVE FALHAR
+	if err := room.Game.BuildHouse(p1.ID, 1); err == nil {
+		t.Errorf("construção além de hotel DEVE retornar erro")
 	}
 }

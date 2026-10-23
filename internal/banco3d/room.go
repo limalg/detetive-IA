@@ -26,6 +26,7 @@ type BotConfig struct {
 // RuleConfig defines rule modifications for custom matches.
 type RuleConfig struct {
 	JailBail          bool `json:"jail_bail"`
+	JailBailAmount    int  `json:"jail_bail_amount,omitempty"`
 	JailTripleDoubles bool `json:"jail_triple_doubles"`
 	GetOutFreeCard    bool `json:"get_out_free_card"`
 	Auction           bool `json:"auction"`
@@ -39,7 +40,8 @@ type RoomConfig struct {
 	TurnSeconds     int        `json:"turn_seconds"`
 	SalaryAmount    int        `json:"salary_amount"` // Salário ao passar ou parar no início (padrão 200)
 	MatchMinutes    int        `json:"match_minutes"` // 0=sem limite, 15/30/60/90
-	FastMode        bool       `json:"fast_mode"`     // Business Tour vitória relâmpago: 3 grupos, lado completo ou 4 estações
+	FastWin         bool       `json:"fast_win"`      // Business Tour vitória relâmpago: 3 grupos, lado completo ou 4 estações
+	FastMode        bool       `json:"fast_mode"`     // Alias compatibilidade
 	Rules           RuleConfig `json:"rules"`
 }
 
@@ -87,6 +89,7 @@ type GameEvent struct {
 	Effect     string    `json:"effect,omitempty"`
 	ImageKind  string    `json:"image_kind,omitempty"`
 	What       string    `json:"what,omitempty"` // "house" | "hotel"
+	Level      int       `json:"level,omitempty"` // 1..4 (casas), 5 (hotel)
 	Dice       *[2]int   `json:"dice,omitempty"`
 	Die1       int       `json:"die1,omitempty"`
 	Die2       int       `json:"die2,omitempty"`
@@ -348,14 +351,17 @@ func NewRoom(id, city string, opts ...*RoomConfig) (*Room, error) {
 		if userCfg.MatchMinutes >= 0 {
 			cfg.MatchMinutes = userCfg.MatchMinutes
 		}
-		cfg.FastMode = userCfg.FastMode
+		if userCfg.FastWin || userCfg.FastMode {
+			cfg.FastWin = true
+			cfg.FastMode = true
+		}
 		cfg.Rules = userCfg.Rules
 	}
 	if cfg.SalaryAmount <= 0 {
 		cfg.SalaryAmount = 200
 	}
 	game.SalaryAmount = cfg.SalaryAmount
-	game.FastMode = cfg.FastMode
+	game.FastMode = cfg.FastMode || cfg.FastWin
 
 	return &Room{
 		ID:           id,

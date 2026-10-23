@@ -5,6 +5,7 @@ import (
 	"math/rand"
 	"strings"
 	"sync"
+	"time"
 )
 
 // CardType defines the deck category (CHANCE or CHEST).
@@ -549,6 +550,8 @@ func (g *Game) ResolveCard(playerID string, card Card) (*CardResult, error) {
 				rounds = 4
 			}
 			festTile.FestivalRounds = rounds
+			until := time.Now().Add(time.Duration(rounds*30) * time.Second)
+			festTile.FestivalUntil = &until
 			result.FestivalTile = festTile.Index
 		}
 	case CardActionSanitaryInspection:

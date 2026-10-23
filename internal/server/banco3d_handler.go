@@ -613,10 +613,45 @@ func (h *Handler) HandleBanco3DRoomBuild(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	if room.Game == nil || !room.Game.IsStarted {
+		h.error(w, http.StatusBadRequest, "game not started")
+		return
+	}
+	if room.Game.CurrentTurnPlayerID != req.PlayerID {
+		h.error(w, http.StatusForbidden, "not your turn")
+		return
+	}
+
 	if err := room.Game.BuildHouse(req.PlayerID, req.TileIndex); err != nil {
 		h.error(w, http.StatusBadRequest, err.Error())
 		return
 	}
+
+	if room.Game.Board != nil {
+		room.Board = room.Game.Board
+	}
+
+	p := room.Game.GetPlayer(req.PlayerID)
+	pName := req.PlayerID
+	if p != nil {
+		pName = p.Name
+	}
+	tile := &room.Game.Board.Tiles[req.TileIndex]
+	buildWhat := "casa"
+	if tile.Houses == 5 {
+		buildWhat = "hotel"
+	}
+	room.RecordEvent(banco3d.GameEvent{
+		Type:       "build",
+		PlayerID:   req.PlayerID,
+		PlayerName: pName,
+		Tile:       req.TileIndex,
+		TileIndex:  req.TileIndex,
+		Level:      tile.Houses,
+		What:       buildWhat,
+		Amount:     tile.HouseCost,
+		Text:       fmt.Sprintf("%s construiu %s na casa %d (%s)", pName, buildWhat, req.TileIndex, tile.Name),
+	})
 
 	go func() { _ = hub.SaveToDisk() }()
 	h.json(w, http.StatusOK, h.formatRoomState(room, nil))
